@@ -1,5 +1,6 @@
 #include <iostream>
 #include <fstream>
+#include <filesystem>
 
 #include <cairo.h>
 #include <cairo-pdf.h>
