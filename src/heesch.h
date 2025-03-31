@@ -128,9 +128,7 @@ private:
 	void extendLevelWithTransforms( size_t lev, const xform_set<coord_t>& Ts );
 
 	size_t allCoronas( CMSat::SATSolver& solv, solution_cb<coord_t> cb ) const;
-	// bool checkIsohedralTiling_deprecated( CMSat::SATSolver& solv );
 	bool checkIsohedralTiling( CMSat::SATSolver& solv );
-	// bool isSurroundIsohedral( const Solution<coord_t>& soln ) const;
 
 	Shape<grid> shape_;
 	Cloud<grid> cloud_;
@@ -695,139 +693,6 @@ bool HeeschSolver<grid>::hasCorona(
 		return false;
 	}
 }
-
-#if 0
-template<typename grid>
-bool HeeschSolver<grid>::isSurroundIsohedral( 
-	const Solution<coord_t>& soln ) const
-{
-/*
-	// Check for translations and halfturns only.
-	bool has_halfturns = false;
-
-	for( const auto& p : soln ) {
-		const xform_t& T = p.second;
-		if( T.isHalfturn() ) {
-			has_halfturns = true;
-		} else if( !T.isTranslation() ) {
-			return false;
-		}
-	}
-
-	if( has_halfturns ) {
-		++halfturn_tilings;
-	} else {
-		++translation_tilings;
-	}
-*/
-	// Check if every tile in the surround is itself surroundable
-	// in the same way.  First, build a shape representing the entire
-	// surround.
-	for( const auto& p : soln ) {
-		const xform_t& A = p.second;
-		for( const auto& q : soln ) {
-			const xform_t& B = q.second;
-			xform_t C = A * B;
-			// If you discover that C is equal to one of the transforms
-			// in the patch (up to symmetry), then C is fine.  If C 
-			// partially overlaps any transform in the patch, then the
-			// surround is illegal.
-
-			for( const auto& r : soln ) {
-				if( C == r.second ) {
-					break;
-				}
-				if( cloud_.isOverlap( C.invert() * r.second ) ) {
-					return false;
-				}
-			}
-		}
-	}
-
-	return true;
-}
-
-// This is an older isohedral checker that seems to work reliably and
-// includes extra checks.  Keep it around for a while to cross-check 
-// new implementations.
-template<typename grid>
-bool HeeschSolver<grid>::checkIsohedralTiling_deprecated( CMSat::SATSolver& solv ) 
-{
-	// std::cerr << "Checking isohedral..." << std::endl;
-
-	// The solver is assumed to contain the clauses for a hole-free
-	// 1-corona.  Augment it with new clauses that restrict solutions 
-	// to patches that witness isohedral tilings.
-
-	std::vector<CMSat::Lit> ucl { 1 };
-	std::vector<CMSat::Lit> bcl { 2 };
-	std::vector<CMSat::Lit> tcl { 3 };
-
-	// size_t joint_clauses = 0;
-
-	for( const auto& T : cloud_.adjacent_ ) {
-		xform_t Ti = T.invert();
-		var_id t_id;
-		getShapeVariable( T, 1, t_id );
-
-		// This should not be used for involutory transforms
-		if( T != Ti ) {
-			if( cloud_.isAdjacent( Ti ) ) {
-				// T and Ti are adjacent.  Add a clause that couples them
-				// in surrounds.  (T -> Ti)
-				var_id ti_id;
-				getShapeVariable( Ti, 1, ti_id );
-
-				bcl[0] = neg( t_id );
-				bcl[1] = pos( ti_id );
-				solv.add_clause( bcl );
-			} else {
-				// This shouldn't be possible.  If T is adajcent to the
-				// kernel, then T^-1 must be too.
-				std::cerr << "This shouldn't happen." << std::endl;
-				// T isn't involutory, but its inverse isn't an adjacent.
-				// Therefore, T can't be used!
-				ucl[0] = neg( t_id );
-				solv.add_clause( ucl );
-				continue;
-			}
-		}
-	}
-
-	allCoronas( solv, [this] ( const Solution<coord_t>& soln ) {
-		/*
-		for( const auto& p : shape_ ) {
-			std::cerr << p.x_ << ' ' << p.y_ << ' ';
-		}
-		std::cerr << std::endl;
-		std::cerr << "Hc = 1 Hh = 1" << std::endl;
-		std::cerr << soln.size() << std::endl;
-		for( auto& pr : soln ) {
-			std::cerr << pr.first << " ; " << pr.second << std::endl;
-		}
-		*/
-
-		if( isSurroundIsohedral( soln ) ) {
-			tiles_isohedrally_ = true;
-			return false;
-		} else {
-			// Need more data
-			return true;
-		}
-	} );
-
-	bool orig = tiles_isohedrally_;
-
-	CMSat::SATSolver osolv;
-	osolv.new_vars( next_var_ );
-	getClauses( osolv, false );
-	if( orig != checkIsohedralTilingV2( osolv ) ) {
-		std::cerr << "Computations don't match!" << std::endl;
-		tiles_isohedrally_ = orig;
-	}
-	return tiles_isohedrally_;
-}
-#endif
 
 template<typename grid>
 bool HeeschSolver<grid>::checkIsohedralTiling( CMSat::SATSolver& solv ) 
