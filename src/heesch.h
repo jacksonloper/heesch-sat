@@ -96,12 +96,18 @@ public:
 		return tiles_isohedrally_;
 	}
 
+	bool isSurroundable() const 
+	{
+		return cloud_.surroundable_;
+	}
+
 	bool hasCorona( 
 		bool get_solution, bool& has_holes, Solution<coord_t>& soln );
 	void allCoronas( std::vector<Solution<coord_t>>& solns );
 	void allCoronas( solution_cb<coord_t> cb ) const;
 
 	void debug( std::ostream& os ) const;
+	void debugCurrentPatch( Solution<coord_t>& soln ) const;
 
 private:
 	var_id declareVariable();
@@ -919,6 +925,8 @@ size_t HeeschSolver<grid>::allCoronas(
 		// Got a solution, but it may have large holes.  Need to find
 		// them and iterate until they're gone.
 
+		// std::cerr << "solution" << std::endl;
+
 		HoleFinder<grid> finder { shape_ };
 
 		std::vector<CMSat::Lit> cl;
@@ -937,6 +945,7 @@ size_t HeeschSolver<grid>::allCoronas(
 
 		std::vector<std::vector<tile_index>> holes;
 		if( !finder.getHoles( holes ) ) {
+			// std::cerr << "... no holes" << std::endl;
 			// No holes, so keep the solution
 			++solutions;
 			Solution<coord_t> soln;
@@ -946,6 +955,7 @@ size_t HeeschSolver<grid>::allCoronas(
 			}
 		}
 
+		// std::cerr << "... adding negation" << std::endl;
 		// Suppress this solution and keep going.
 		solv.add_clause( cl );
 	}
@@ -1004,5 +1014,17 @@ void HeeschSolver<grid>::debug( std::ostream& os ) const
 			os << " [" << i.first << "," << i.second << "]";
 		}
 		os << std::endl;
+	}
+}
+
+template<typename grid>
+void HeeschSolver<grid>::debugCurrentPatch( Solution<coord_t>& soln ) const
+{
+	soln.clear();
+	int lev = 0;
+
+	for( auto& ti : tiles_ ) {
+		soln.push_back( std::make_pair( lev, ti.T_ ) );
+		lev = std::min(lev + 1, 1);
 	}
 }

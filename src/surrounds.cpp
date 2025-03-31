@@ -83,7 +83,7 @@ static bool countSurrounds( const TileInfo<grid>& tile )
 			info.write( cout );
 		}
 		*/
-		if( num % 100000 == 0 ) {
+		if( num % 1000 == 0 ) {
 			cerr << ".";
 		}
 		return true; } );

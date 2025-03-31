@@ -19,6 +19,7 @@ static bool check_hh = false;
 static bool reduce = false;
 static bool check_isohedral = false;
 static bool update_only = false;
+static bool debug_levels = false;
 
 static const char *inname = nullptr;
 static const char *outname = nullptr;
@@ -56,38 +57,41 @@ static bool computeHeesch( TileInfo<grid>& tile )
 	solver.setCheckIsohedral( check_isohedral );
 	solver.setCheckHoleCoronas( check_hh );
 
-	// FIXME: Don't do this if the tile has already been found to be
-	// unsurroundable. Either check that here, or in increaseLevel().
-	solver.increaseLevel();
-
 	Solution<coord_t> cur;
 
-	while( true ) {
-		// std::cerr << "Now at level " << solver.getLevel() << std::endl;
-		// solver.debug( *out );
+	if (solver.isSurroundable()) {
+		solver.increaseLevel();
 
-		if( solver.getLevel() > max_level ) {
-			break;
-		}
-
-		if( solver.hasCorona( show_solution, has_holes, cur ) ) {
-			if( has_holes ) {
-				sh = cur;
-				hh = solver.getLevel();
-				break;
-			} else {
-				hc = solver.getLevel();
-				hh = hc;
-				sh = cur;
-				sc = sh;
-				solver.increaseLevel();
+		while( true ) {
+			if( debug_levels ) {
+				solver.debugCurrentPatch( cur );
+				tile.setInconclusive( &cur );
+				tile.write( *out );
 			}
-		} else if( solver.tilesIsohedrally() ) {
-			tile.setPeriodic( 1 );
-			tile.write( *out );
-			return true;
-		} else {
-			break;
+
+			if( solver.getLevel() > max_level ) {
+				break;
+			}
+
+			if( solver.hasCorona( show_solution, has_holes, cur ) ) {
+				if( has_holes ) {
+					sh = cur;
+					hh = solver.getLevel();
+					break;
+				} else {
+					hc = solver.getLevel();
+					hh = hc;
+					sh = cur;
+					sc = sh;
+					solver.increaseLevel();
+				}
+			} else if( solver.tilesIsohedrally() ) {
+				tile.setPeriodic( 1 );
+				tile.write( *out );
+				return true;
+			} else {
+				break;
+			}
 		}
 	}
 
@@ -138,6 +142,8 @@ int main( int argc, char **argv )
 			reduce = true;
 		} else if( !strcmp( argv[idx], "-noreduce" ) ) {
 			reduce = false;
+		} else if( !strcmp( argv[idx], "-debug" ) ) {
+			debug_levels = true;
 		} else {
 			// Maybe an input filename?
 			if( filesystem::exists( argv[idx] ) ) {

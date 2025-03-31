@@ -71,8 +71,10 @@ public:
 	}
 
 	void calcOrientations( Orientations ori );
-	bool checkSimplyConnected( bitgrid_t& bits, const xform_t& T );
-	bool checkSimplyConnectedOld( const xform_t& T );
+
+	bool checkSimplyConnectedV1( const xform_t& T ) const;
+	bool checkSimplyConnectedV2( bitgrid_t& bits, const xform_t& T ) const;
+	bool checkSimplyConnected( bitgrid_t bits, const xform_t& T ) const;
 	void reduceAdjacents();
 
 	void debug( std::ostream& os ) const;
@@ -123,6 +125,11 @@ Cloud<grid>::Cloud( const Shape<grid>& shape, Orientations ori, bool reduce )
 
 	bitgrid_t bits;
 
+	// Initialize the bitgrid to the halo of the base shape.
+	for( const auto& p : halo_ ) {
+		bits.set( p, 1 );
+	}
+
 	// Now try to construct all adjacencies by translating a border
 	// point of an oriented shape to a halo point of the main shape.
 	for( auto hp : halo_ ) {
@@ -152,7 +159,17 @@ Cloud<grid>::Cloud( const Shape<grid>& shape, Orientations ori, bool reduce )
 				// so we know this new tile is adjacent.  But the adjacency
 				// might not be simply connected.
 
-				if( checkSimplyConnected( bits, Tnew ) ) {
+				bool sc = checkSimplyConnected( bits, Tnew );
+
+/*
+				bool sc_validation = checkSimplyConnectedV1( Tnew );
+				if( sc != sc_validation ) {
+					std::cerr << "Simply connected check failed validation!"
+							  << std::endl;
+				}
+				*/
+
+				if( sc ) {
 					found = true;
 
 					adjacent_.insert( Tnew );
@@ -180,8 +197,12 @@ Cloud<grid>::Cloud( const Shape<grid>& shape, Orientations ori, bool reduce )
 	}
 }
 
+// Check naively whether the base tile and a copy transformed
+// by T form a simply connected patch.  This is an expensive 
+// operation, and should only be used as validation of the
+// correctness of faster algorithms.
 template<typename grid>
-bool Cloud<grid>::checkSimplyConnectedOld( const xform_t& T )
+bool Cloud<grid>::checkSimplyConnectedV1( const xform_t& T ) const
 {
 	Shape<grid> new_shape;
 
@@ -191,8 +212,14 @@ bool Cloud<grid>::checkSimplyConnectedOld( const xform_t& T )
 	return new_shape.simplyConnected();
 }
 
+// A faster connectedness check.  Record the union of the haloes
+// of the tile and its transformed copy, then subtract the tiles
+// themselves, then check whether the remaining halo is 
+// (edge-)connected.  This version is deprecated and can eventually
+// be deleted.
 template<typename grid>
-bool Cloud<grid>::checkSimplyConnected( bitgrid_t& bits, const xform_t& T )
+bool Cloud<grid>::checkSimplyConnectedV2( 
+	bitgrid_t& bits, const xform_t& T ) const
 {
 	bits.clear();
 
@@ -251,6 +278,62 @@ bool Cloud<grid>::checkSimplyConnected( bitgrid_t& bits, const xform_t& T )
 			++num_visited;
 			bits.set( p, 0 );
 
+			for( auto pn : edge_neighbours<grid> { p } ) {
+				if( bits.get( pn ) != 0 ) {
+					work[size] = pn;
+					++size;
+				}
+			}
+		}
+	}
+
+	return num_visited == halo_size;
+}
+
+// A refined version of checkSimplyConnectedV2().  Add only the 
+// halo of the base shape, and subtract only the transformed tile.
+// This improved routine has undergone a reasonable amount of testing
+// and agrees with the other algorithms above in all cases.
+template<typename grid>
+bool Cloud<grid>::checkSimplyConnected( bitgrid_t bits, const xform_t& T ) const
+{
+	// Use a copy constructor on bits, so it's already initialized with
+	// the halo.
+
+	size_t halo_size = halo_.size();
+
+	// Subtract shape
+	for( const auto& p : shape_ ) {
+		if( bits.getAndSet( T * p, 0 ) != 0 ) {
+			--halo_size;
+		}
+	}
+
+	point_t work[256];
+
+	// Initialize the stack with any halo cell
+	for( const auto& p : halo_ ) {
+		if( bits.get( p ) != 0 ) {
+			work[0] = p;
+			break;
+		}
+	}
+
+	size_t num_visited = 0;
+	size_t size = 1;
+
+	while( size > 0 ) {
+		auto p = work[size-1];
+		--size;
+
+		if( bits.get( p ) != 0 ) {
+			++num_visited;
+			bits.set( p, 0 );
+
+			// FIXME -- these neighbours could be precomputed
+			// as an adjacency list above, so that we don't have
+			// to spend time checking the bitmap in places
+			// that are known to be empty.
 			for( auto pn : edge_neighbours<grid> { p } ) {
 				if( bits.get( pn ) != 0 ) {
 					work[size] = pn;

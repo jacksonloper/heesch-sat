@@ -156,7 +156,7 @@ template<typename grid>
 void Visualizer<grid>::drawInconclusive() const
 {
 	if( tile_.numPatches() > 0 ) {
-		drawPatch( tile_.getPatch( 0 ), true );
+		drawPatch( tile_.getPatch( 0 ), colour_by_orientation_ );
 	} else {
 		drawShape( false );
 	}
