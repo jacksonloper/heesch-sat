@@ -27,6 +27,34 @@ static ofstream ofs;
 static ostream *out;
 
 template<typename grid>
+static bool computeHeeschNew(TileInfo<grid>& info)
+{
+	if( update_only ) {
+		// If we're updating, we only want to deal with unknown or 
+		// inconclusive records.
+		if( !((info.getRecordType() == TileInfo<grid>::UNKNOWN) 
+				|| (info.getRecordType() == TileInfo<grid>::INCONCLUSIVE)) ) {
+			info.write( *out );
+			return true;
+		}
+	}
+
+	if( info.getRecordType() == TileInfo<grid>::HOLE ) {
+		// Don't compute heesch number of something with a hole
+		info.write( *out );
+		return true;
+	}
+
+	HeeschSolver<grid> solver {info.getShape(), ori, reduce};
+	solver.setCheckIsohedral(check_isohedral);
+	solver.solve(show_solution, max_level, info);
+	info.write(*out);
+
+	return true;
+}
+GRID_WRAP( computeHeeschNew );
+
+template<typename grid>
 static bool computeHeesch( TileInfo<grid>& tile )
 {
 	using coord_t = typename grid::coord_t;
@@ -48,16 +76,16 @@ static bool computeHeesch( TileInfo<grid>& tile )
 	}
 
 	size_t hc = 0;
-	Solution<coord_t> sc;
+	LabelledPatch<coord_t> sc;
 	size_t hh = 0;
-	Solution<coord_t> sh;
+	LabelledPatch<coord_t> sh;
 	bool has_holes;
 
 	HeeschSolver<grid> solver { tile.getShape(), ori, reduce };
 	solver.setCheckIsohedral( check_isohedral );
 	solver.setCheckHoleCoronas( check_hh );
 
-	Solution<coord_t> cur;
+	LabelledPatch<coord_t> cur;
 
 	if (solver.isSurroundable()) {
 		solver.increaseLevel();
@@ -114,8 +142,7 @@ GRID_WRAP( computeHeesch );
 
 int main( int argc, char **argv )
 {
-	// bootstrap_grid( argc, argv, gridMain ) 
-	// GridType gt = getGridType( argc, argv );
+	bool do_new = false;
 
 	for( int idx = 1; idx < argc; ++idx ) {
 		if( !strcmp( argv[idx], "-show" ) ) {
@@ -144,6 +171,8 @@ int main( int argc, char **argv )
 			reduce = false;
 		} else if( !strcmp( argv[idx], "-debug" ) ) {
 			debug_levels = true;
+		} else if( !strcmp( argv[idx], "-new" ) ) {
+			do_new = true;
 		} else {
 			// Maybe an input filename?
 			if( filesystem::exists( argv[idx] ) ) {
@@ -166,9 +195,17 @@ int main( int argc, char **argv )
 
 	if( inname ) {
 		ifstream ifs( inname );
-		FOR_EACH_IN_STREAM( ifs, computeHeesch );
+		if (do_new) {
+			FOR_EACH_IN_STREAM( ifs, computeHeeschNew );
+		} else {
+			FOR_EACH_IN_STREAM( ifs, computeHeesch );
+		}
 	} else {
-		FOR_EACH_IN_STREAM( cin, computeHeesch );
+		if (do_new) {
+			FOR_EACH_IN_STREAM( cin, computeHeeschNew );
+		} else {
+			FOR_EACH_IN_STREAM( cin, computeHeesch );
+		}
 	}
 
 	if( ofs.is_open() ) {

@@ -293,3 +293,7 @@ template<typename coord>
 using xform_set = std::unordered_set<xform<coord>,method_hash<xform<coord>>>;
 template<typename coord, typename T> 
 using xform_map = std::unordered_map<xform<coord>,T,method_hash<xform<coord>>>;
+
+template<typename coord_t>
+using LabelledPatch = std::vector<std::pair<size_t,xform<coord_t>>>;
+

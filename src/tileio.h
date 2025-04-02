@@ -6,7 +6,6 @@
 #include "geom.h"
 #include "grid.h"
 #include "shape.h"
-#include "heesch.h"
 
 // Handle text-based input and output of information about polyforms.
 // It would be natural to use a standard format like JSON here, but 
@@ -71,7 +70,7 @@ class TileInfo
 {
 	using coord_t = typename grid::coord_t;
 	using xform_t = typename grid::xform_t;
-	using patch_t = Solution<coord_t>;
+	using patch_t = LabelledPatch<coord_t>;
 
 public:
 	enum RecordType

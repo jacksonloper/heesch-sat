@@ -74,7 +74,7 @@ static bool countSurrounds( const TileInfo<grid>& tile )
 		solver.increaseLevel();
 	}
 
-	solver.allCoronas( [&counts, &num]( const Solution<coord_t>& soln ) {
+	solver.allCoronas( [&counts, &num]( const LabelledPatch<coord_t>& soln ) {
 		counts[soln.size()-1]++; 
 		++num; 
 		/*
@@ -114,12 +114,12 @@ static bool computeSurrounds( const TileInfo<grid>& tile )
 		solver.increaseLevel();
 	}
 
-	std::vector<Solution<coord_t>> cur;
+	std::vector<LabelledPatch<coord_t>> cur;
 	solver.allCoronas( cur );
 
 	if( extremes ) {
-		Solution<coord_t> smallest = cur[0];
-		Solution<coord_t> largest = cur[0];
+		LabelledPatch<coord_t> smallest = cur[0];
+		LabelledPatch<coord_t> largest = cur[0];
 
 		for( const auto& soln : cur ) {
 			if( soln.size() < smallest.size() ) {

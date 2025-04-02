@@ -31,7 +31,7 @@ class Visualizer
 	using coord_t = typename grid::coord_t;
 	using point_t = typename grid::point_t;
 	using xform_t = typename grid::xform_t;
-	using patch_t = Solution<coord_t>;
+	using patch_t = LabelledPatch<coord_t>;
 	using edge_t = edge<coord_t>;
 	using edgeset_t = edgeset<coord_t>;
 	using info_t = TileInfo<grid>;

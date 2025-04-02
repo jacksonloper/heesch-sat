@@ -9,6 +9,7 @@
 
 #include "cloud.h"
 #include "holes.h"
+#include "tileio.h"
 
 // The core of the whole system: a class that understands how to compute
 // Heesch numbers of polyforms.  As of 2023, also includes the ability
@@ -16,13 +17,10 @@
 
 using var_id = uint32_t;
 
-template<typename coord_t>
-using Solution = std::vector<std::pair<size_t,xform<coord_t>>>;
-
 // The callback should return true if it wants more solutions, false
 // if it's seen enough.
 template<typename coord_t>
-using solution_cb = std::function<bool( const Solution<coord_t>& )>;
+using solution_cb = std::function<bool( const LabelledPatch<coord_t>& )>;
 
 template<typename grid>
 struct tile_info
@@ -74,6 +72,7 @@ public:
 	using coord_t = typename grid::coord_t;
 	using point_t = typename grid::point_t;
 	using xform_t = typename grid::xform_t;
+	using patch_t = LabelledPatch<coord_t>;
 
 	HeeschSolver( const Shape<grid>& shape, Orientations ori = ALL, bool reduce = true );
 
@@ -102,12 +101,14 @@ public:
 	}
 
 	bool hasCorona( 
-		bool get_solution, bool& has_holes, Solution<coord_t>& soln );
-	void allCoronas( std::vector<Solution<coord_t>>& solns );
+		bool get_solution, bool& has_holes, patch_t& soln );
+	void allCoronas( std::vector<patch_t>& solns );
 	void allCoronas( solution_cb<coord_t> cb ) const;
 
+	void solve( bool get_solution, size_t maxlevel, TileInfo<grid>& info );
+
 	void debug( std::ostream& os ) const;
-	void debugCurrentPatch( Solution<coord_t>& soln ) const;
+	void debugCurrentPatch( patch_t& soln ) const;
 
 private:
 	var_id declareVariable();
@@ -122,13 +123,15 @@ private:
 	var_id getCellVariable( const point_t& p ) const;
 
 	void getClauses( CMSat::SATSolver& solv, bool allow_holes ) const;
-	void getSolution(
-		const CMSat::SATSolver& solv, Solution<coord_t>& ret ) const;
+	void getSolution( const CMSat::SATSolver& solv,
+		patch_t& ret, size_t lev = 0xDEADBEEF ) const;
 	void addHolesToLevel();
 	void extendLevelWithTransforms( size_t lev, const xform_set<coord_t>& Ts );
 
 	size_t allCoronas( CMSat::SATSolver& solv, solution_cb<coord_t> cb ) const;
 	bool checkIsohedralTiling( CMSat::SATSolver& solv );
+
+	bool iterateUntilSimplyConnected(size_t lev, CMSat::SATSolver& solver);
 
 	Shape<grid> shape_;
 	Cloud<grid> cloud_;
@@ -147,8 +150,8 @@ private:
 };
 
 template<typename grid, typename coord>
-void debugSolution( 
-	std::ostream& os, const Shape<grid>& shape, const Solution<coord>& soln )
+void debugSolution( std::ostream& os, 
+	const Shape<grid>& shape, const LabelledPatch<coord>& soln )
 {
 	using point_t = typename grid::point_t;
 
@@ -565,14 +568,18 @@ void HeeschSolver<grid>::getClauses(
 
 template<typename grid>
 void HeeschSolver<grid>::getSolution( 
-	const CMSat::SATSolver& solv, Solution<coord_t>& ret ) const
+	const CMSat::SATSolver& solv, patch_t& ret, size_t lev ) const
 {
+	if (lev == 0xDEADBEEF ) {
+		lev = level_;
+	}
+
 	ret.clear();
 	const std::vector<CMSat::lbool>& model = solv.get_model();
 	for( auto& ti : tiles_ ) {
 		for( auto& i : ti.vars_ ) {
-			if( model[i.second] == CMSat::l_True ) {
-				ret.emplace_back( i.first, ti.T_ );
+			if ((i.first <= lev) && (model[i.second] == CMSat::l_True)) {
+				ret.emplace_back(i.first, ti.T_);
 				break;
 			}
 		}
@@ -581,7 +588,7 @@ void HeeschSolver<grid>::getSolution(
 
 template<typename grid>
 bool HeeschSolver<grid>::hasCorona( 
-	bool get_solution, bool& has_holes, Solution<coord_t>& soln ) 
+	bool get_solution, bool& has_holes, patch_t& soln ) 
 {
 	if( level_ == 0 ) {
 		// A hole-free 0-corona always exists.
@@ -673,7 +680,17 @@ bool HeeschSolver<grid>::hasCorona(
 		// No solution found yet.  If requested, try a larger solution by 
 		// allowing holes in the outer corona.
 		// std::cout << "Adding holes to level" << std::endl;
-		addHolesToLevel();
+
+		// FIXME -- Does the next line of code actually accomplish anything?
+		// This should only permit additional holes between haloes n-1 and n,
+		// but the solver shouldn't allow holes like that in the output in
+		// any case.
+
+		// A few tests suggests that this is unnecessary, and that the 
+		// only reason this section of the code does anything different
+		// from the code above is the "true" as the second argument to
+		// getClauses.
+		// addHolesToLevel();
 
 		CMSat::SATSolver solver;
 		solver.new_vars( next_var_ );
@@ -683,7 +700,7 @@ bool HeeschSolver<grid>::hasCorona(
 			if( get_solution ) {
 				getSolution( solver, soln );
 			}
-			// std::cout << "Found solution with holes" << std::endl;
+			// std::cerr << "Found solution with holes" << std::endl;
 			return true;
 		} else {
 			// std::cout << "No solution with holes" << std::endl;
@@ -695,11 +712,214 @@ bool HeeschSolver<grid>::hasCorona(
 }
 
 template<typename grid>
+bool HeeschSolver<grid>::iterateUntilSimplyConnected( 
+	size_t lev, CMSat::SATSolver& solver)
+{
+	// To begin, ban all pairwise holes in the outermost corona,
+	// using information from the cloud.  These are cheap to forbid
+	// outright, rather than discovering them after the fact.
+
+	std::vector<CMSat::Lit> cl;
+	cl.resize( 2 );
+
+	// std::cerr << "Forbidding pairwise holes" << std::endl;
+	for( auto& ti : tiles_ ) {
+		if (ti.hasLevel(lev)) {
+			for( auto& M : cloud_.adjacent_hole_ ) {
+				xform_t Tn = ti.T_ * M;
+				tile_index index = getTile( Tn );
+				if( index == -1 ) {
+					continue;
+				}
+				auto& tj = tiles_[index];
+				if( tj.hasLevel( lev ) ) {
+					cl[0] = neg(ti.vars_.at(lev));
+					cl[1] = neg(tj.vars_.at(lev));
+					solver.add_clause( cl );
+				}
+			}
+		}
+	}
+
+	// Now iterate, as long as solutions are found.
+	while (solver.solve() == CMSat::l_True) {
+		// This solution may or may not have holes.  If it has holes, 
+		// ban them and continue.  If it doesn't have holes, report
+		// success.
+
+		const std::vector<CMSat::lbool>& model = solver.get_model();
+		HoleFinder<grid> finder { shape_ };
+
+		for (auto& ti: tiles_) {
+			for (auto i: ti.vars_) {
+				// Need to make sure we don't accidentally ask about 
+				// variables in "future" coronas.
+				if ((i.first <= lev) && (model[i.second] == CMSat::l_True)) {
+					finder.addCopy(ti.index_, ti.T_);
+					break;
+				}
+			}
+		}
+
+		std::vector<std::vector<tile_index>> holes;
+		if (!finder.getHoles(holes)) {
+			// std::cerr << "Found a simply connected patch" << std::endl;
+			return true;
+		}
+
+		for (auto& hole: holes) {
+			// std::cerr << "Forbidding a larger hole" << std::endl;
+			cl.clear();
+			for (auto& index: hole) {
+				// We know that there's a variable at the top level,
+				// otherwise we wouldn't have found a hole in the
+				// first place.
+				/*
+				if (!tiles_[index].hasLevel(lev)) {
+					std::cerr << "Weirdness";
+					for (const auto v: tiles_[index].vars_) {
+						std::cerr << " " << v.first;
+					}
+					std::cerr << std::endl;
+				}
+				*/
+				cl.push_back(neg(tiles_[index].vars_.at(lev)));
+			}
+			solver.add_clause(cl);
+		}
+	}
+
+	// If you end up here, you weren't able to ban all holes.  Report
+	// failure.
+	// std::cerr << "Didn't find a simply connected patch" << std::endl;
+	return false;
+}
+
+template<typename grid>
+void HeeschSolver<grid>::solve(
+	bool get_solution, size_t maxlevel, TileInfo<grid>& info )
+{
+	if( level_ != 0 ) {
+		std::cerr << "Attempting to use solve() on non-zero level"
+			<< std::endl;
+		return;
+	}
+
+	if( !cloud_.surroundable_ ) {
+		// std::cout << "Not surroundable at all" << std::endl;
+		info.setNonTiler( 0, nullptr, 0, nullptr );
+		return;
+	}
+
+	// Keep around all past solvers for resolving holes later.
+	std::vector<std::unique_ptr<CMSat::SATSolver>> past_solvers;
+
+	while( level_ < maxlevel ) {
+		increaseLevel();
+		// std::cerr << "Now checking level " << level_ << std::endl;
+
+		std::unique_ptr<CMSat::SATSolver> cur_solver { new CMSat::SATSolver };
+		cur_solver->new_vars(next_var_);
+		getClauses(*cur_solver, true);
+
+		if (cur_solver->solve() != CMSat::l_True) {
+			// We've hit the limit, so hard stop here.
+			break;
+		}
+
+		if (check_isohedral_ && (level_ == 1)) {
+			// std::cerr << "Checking isohedral" << level_ << std::endl;
+			// Need special case here to check for isohedral tiling.
+			// FIXME -- But this is problematic, since it modifies the 
+			// solver, which we need to save.  Find a way to avoid this
+			// duplication.
+
+			CMSat::SATSolver iso_solver;
+			iso_solver.new_vars(next_var_);
+			getClauses(iso_solver, true);
+
+			if (checkIsohedralTiling(iso_solver)) {
+				info.setPeriodic();
+				return;
+			}
+		}
+
+		// There was a solution, so prepare for another round
+		past_solvers.push_back(std::move(cur_solver));
+	}
+
+	if (level_ == maxlevel) {
+		// We iterated above to failure.  First, we might have blown past
+		// maxlevel.  If so, the tile is inconclusive.
+		// std::cerr << "Arrived at maxlevel, inconclusive" << std::endl;
+		info.setInconclusive();
+	} else {
+		// Not inconclusive.  So we step back down to prev_solver, which 
+		// had previously found a solution with holes.  We try to eliminate
+		// those holes.  If we succeed, then Hh = Hc = (level_-1).  If we
+		// can't eliminate all holes, then Hh = (level_-1) and Hc < (level_-1).
+		// It's tempting to declare that Hc = (level_-2), but that's not 
+		// entirely clear.  How far back might we have to go in order to find
+		// a hole-free patch?
+
+		// First, save the current hole-having patch.
+		size_t hh = level_ - 1;
+		patch_t hh_solution;
+		size_t hc = 0;
+		patch_t hc_solution;
+
+		// std::cerr << "Hh = " << hh << std::endl;
+
+		if (get_solution && (hh > 0)) {
+			// std::cerr << "Retrieving Hh patch " << hh << std::endl;
+			getSolution(*past_solvers.back(), hh_solution, hh);
+		}
+
+		// std::cerr << "beginning walkback" << std::endl;
+
+		// Now find the best possible hole-free patch.  In full generality,
+		// this requires walking backwards through all computed levels,
+		// looking for the largest one that can be iterated down to not
+		// having any holes.  In practice we don't expect to need to do
+		// all that much work, but we should be prepared for it anyhow.
+
+		for (size_t lev = past_solvers.size(); lev > 0; --lev) {
+			// std::cerr << "  ... lev = " << lev << std::endl;
+
+			auto& solver = past_solvers[lev - 1];
+			if (iterateUntilSimplyConnected(lev, *solver)) {
+				hc = lev;
+				// std::cerr << "Hc = " << hc << std::endl;
+				if (get_solution && (hc > 0)) {
+					// std::cerr << "Retrieving solution" << std::endl;
+					getSolution(*solver, hc_solution, hc);
+				}
+				// std::cerr << "Done!" << std::endl;
+				break;
+			}
+		}
+
+		if (get_solution) {
+			info.setNonTiler( hc, (hc > 0) ? &hc_solution : nullptr,
+				hh, (hh > 0) ? &hh_solution : nullptr);
+		} else {
+			info.setNonTiler(hc, nullptr, hh, nullptr);
+		}
+	}
+}
+
+template<typename grid>
 bool HeeschSolver<grid>::checkIsohedralTiling( CMSat::SATSolver& solv ) 
 {
 	// The solver is assumed to contain the clauses for a hole-free
 	// 1-corona.  Augment it with new clauses that restrict solutions 
 	// to patches that witness isohedral tilings.
+
+	// FIXME -- actually, it's not clear that this algorithm cares 
+	// whether the clauses define a *hole-free* 1-corona, i.e., whether
+	// holes have explicitly been suppressed.  I believe that the 
+	// extra clauses added here to detect an isohedral witness patch
+	// will necessarily be hole-free.  Testing needed.
 
 	std::vector<CMSat::Lit> ucl { 1 };
 	std::vector<CMSat::Lit> bcl { 2 };
@@ -764,26 +984,35 @@ bool HeeschSolver<grid>::checkIsohedralTiling( CMSat::SATSolver& solv )
 		}
 	}
 
+	if (solv.solve() == CMSat::l_True) {
+		tiles_isohedrally_ = true;
+	}
+
+	return tiles_isohedrally_;
+
+/*
 	// FIXME -- is there a reason to use allCoronas here and not something
 	// simpler?
-	allCoronas( solv, [this] ( const Solution<coord_t>& soln ) {
+	allCoronas( solv, [this] ( const patch_t& soln ) {
 		tiles_isohedrally_ = true;
-		/*
-		for( const auto& s : soln ) {
-			std::cerr << s.second << std::endl;
-		}
-		*/
 		return false;
 	} );
 
 	return tiles_isohedrally_;
+	*/
 }
 
 // Note that this enumerates only hole-free coronas.
+// FIXME -- these functions should not be used, and should ultimately
+// be removed.  They're highly inefficient, particularly when there are 
+// many coronas.  Whatever you're trying to do, find a different way to
+// do it.
 template<typename grid>
 size_t HeeschSolver<grid>::allCoronas( 
 	CMSat::SATSolver& solv, solution_cb<coord_t> cb ) const
 {
+	std::cerr << "HeeschSolver::allCoronas() is deprecated" << std::endl;
+
 	size_t solutions = 0;
 
 	while( solv.solve() == CMSat::l_True ) {
@@ -813,7 +1042,7 @@ size_t HeeschSolver<grid>::allCoronas(
 			// std::cerr << "... no holes" << std::endl;
 			// No holes, so keep the solution
 			++solutions;
-			Solution<coord_t> soln;
+			patch_t soln;
 			getSolution( solv, soln );
 			if( !cb( soln ) ) {
 				return solutions;
@@ -842,10 +1071,10 @@ void HeeschSolver<grid>::allCoronas( solution_cb<coord_t> cb ) const
 }
 
 template<typename grid>
-void HeeschSolver<grid>::allCoronas( std::vector<Solution<coord_t>>& solns ) 
+void HeeschSolver<grid>::allCoronas( std::vector<patch_t>& solns ) 
 {
 	solns.clear();
-	allCoronas( [&solns]( const Solution<coord_t>& soln )
+	allCoronas( [&solns]( const patch_t& soln )
 		{ solns.push_back( soln ); return true; } );
 }
 
@@ -883,7 +1112,7 @@ void HeeschSolver<grid>::debug( std::ostream& os ) const
 }
 
 template<typename grid>
-void HeeschSolver<grid>::debugCurrentPatch( Solution<coord_t>& soln ) const
+void HeeschSolver<grid>::debugCurrentPatch( patch_t& soln ) const
 {
 	soln.clear();
 	int lev = 0;
