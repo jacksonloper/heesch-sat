@@ -93,6 +93,8 @@ public:
 	bool surroundable_;
 };
 
+size_t biggest_halo = 0;
+
 template<typename grid>
 Cloud<grid>::Cloud( const Shape<grid>& shape, Orientations ori, bool reduce )
 	: shape_ { shape }
@@ -102,8 +104,10 @@ Cloud<grid>::Cloud( const Shape<grid>& shape, Orientations ori, bool reduce )
 	, overlapping_ {}
 	, surroundable_ { true }
 {
-	shape.getHaloAndBorder( halo_, border_ );
-	calcOrientations( ori );
+	shape.getHaloAndBorder(halo_, border_);
+	calcOrientations(ori);
+
+	biggest_halo = std::max(biggest_halo, halo_.size());
 
 	// Overlaps are easy to detect -- there must be a cell that's covered
 	// by a border cell of both transformed copies of the shape.  This
@@ -346,111 +350,113 @@ bool Cloud<grid>::checkSimplyConnected( bitgrid_t bits, const xform_t& T ) const
 	return num_visited == halo_size;
 }
 
+size_t total_adj = 0;
+size_t rem_adj = 0;
+
 template<typename grid>
 void Cloud<grid>::reduceAdjacents()
 {
-	// Figure out a cheap test for (un)surroundability of vertices along the
-	// boundary of the shape.  Something like Step 3 ("Generate and reduce a list 
-	// of the possible neighbours of a tile") in Joseph's algorithm.
+	// Do things ultra agressively and slowly as a proof of concept.
 
-	// For every adjacent T, find the (small?) set of cells that are in the
-	// intersection of the main shape's halo and T's halo.  For each cell c in
-	// that list, there must exist an adjacent S that's also adjacent to T and
-	// occupies c.  If not, eliminate T.
+	if (halo_.size() > 64) {
+		std::cerr << "Cannot reduce adjacents when halo size is above 64"
+			<< std::endl;
+		return;
+	}
+	uint64_t full = (1 << halo_.size()) - 1;
 
-	xform_set<coord_t> cur_adj = adjacent_;
+	using xform_info = std::pair<xform_t, uint64_t>;
 
-	point_set<coord_t> halo_set;
-	point_map<coord_t, xform_set<coord_t>> halo_users;
+	size_t sz = adjacent_.size();
+	size_t cur_size = 0;
+	xform_info *cur = new xform_info[sz];
+	size_t next_size = 0;
+	xform_info *next = new xform_info[sz];
 
-	// Create a lookup set for the halo.
-	for( const auto& P : halo_ ) {
-		halo_set.insert( P );
+	// FIXME this is the last bit of STL junk in here. Can we get rid of it?
+	point_map<coord_t, size_t> halo;
+	size_t idx = 0;
+	for (const auto& p: halo_) {
+		halo[p] = (1 << idx);
+		++idx;
 	}
 
-	// Populate the halo_users map so that every cell in the main shape's
-	// halo records all the adjacents that have body cells that use it.
-	for( const auto& T : cur_adj ) {
-		for( const auto& P : shape_ ) {
-			point_t Pt = T * P;
-			if( halo_set.find( Pt ) != halo_set.end() ) {
-				halo_users[Pt].insert( T );
+	for (const auto& T: adjacent_) {
+		uint64_t occ = 0;
+		for (const auto& p: shape_) {
+			point_t tp = T * p;
+			auto i = halo.find(tp);
+			if (i != halo.end()) {
+				occ |= i->second;
 			}
 		}
+
+		cur[cur_size] = std::make_pair(T, occ);
+		++cur_size;
 	}
 
-	while( true ) {
-		size_t num_removed = 0;
-		xform_set<coord_t> next_adj;
+	while (true) {
+		for (size_t idx = 0; idx < cur_size; ++idx) {
+			const xform_t& T = cur[idx].first;
+			uint64_t occ = cur[idx].second;
 
-		for( const auto& T : cur_adj ) {
-			bool all_ok = true;
-			xform_t Ti = T.invert();
+			// Find all other transforms that don't overlap T,
+			// use them to mark the halo. 
+			for (size_t jdx = 0; jdx < cur_size; ++jdx) {
+				const xform_t& OT = cur[jdx].first;
 
-			for( const auto& P : halo_ ) {
-				point_t Pt = T * P;
-				if( halo_set.find( Pt ) == halo_set.end() ) {
+				if (jdx == idx) {
+					continue;
+				}
+				if (isOverlap(T.invert() * OT)) {
+					continue;
+				}
+				if (isHoleAdjacent(T.invert() * OT)) {
 					continue;
 				}
 
-				// OK, we have an adjacent T, which is next to a halo cell P of the 
-				// shape.  We need a user of that cell to *also* be adjacent to T.  
-				// That will make T OK on that cell.
-				bool cell_ok = false;
-
-				for( const auto& S : halo_users[Pt] ) {
-					if( isAdjacent( Ti * S ) ) {
-						cell_ok = true;
-						break;
-					}
-				}
-
-				if( !cell_ok ) {
-					all_ok = false;
-					break;
-				}
+				occ |= cur[jdx].second;
 			}
 
-			if( !all_ok ) {
-				++num_removed;
-
-				// Aha, this adjacent can't be used.  Remove it from all halo map lists
-				// in which it appears.
-
-				for( const auto& P : shape_ ) {
-					point_t Pt = T * P;
-					if( halo_set.find( Pt ) != halo_set.end() ) {
-						if( halo_users[Pt].find( T ) == halo_users[Pt].end() ) {
-							std::cerr << "wtf" << std::endl;
-						}
-						auto& uset = halo_users[Pt];
-						uset.erase( T );
-
-						if( uset.size() == 0 ) {
-							// This removal emptied the users of a halo cell, 
-							// rendering the whole shape unsurroundable. Stop now.
-							// std::cerr << "Unsurroundability win." << std::endl;
-							surroundable_ = false;
-							return;
-						}
-					}
-				}
-			} else {
-				next_adj.insert( T );
+			if (occ == full) {
+				// We managed to occupy the whole halo, so keep this
+				// neighbour around.
+				next[next_size] = cur[idx];
+				++next_size;
 			}
 		}
 
-		// std::cerr << "Removed " << num_removed << std::endl;
+		if (next_size < cur_size) {
+			xform_info *tmp = cur;
+			cur = next;
+			next = tmp;
+			cur_size = next_size;
+			next_size = 0;
 
-		if( num_removed == 0 ) {
-			// No more changes, stop the reduction process.
+			if (cur_size == 0) {
+				break;
+			}
+		} else {
 			break;
 		}
-
-		cur_adj = std::move( next_adj );
 	}
 
-	adjacent_ = std::move( cur_adj );
+	//std::cerr << adjacent_.size() << " -> " << cur.size() << std::endl;
+	total_adj += adjacent_.size();
+	rem_adj += cur_size;
+
+	adjacent_.clear();
+
+	if (cur_size == 0) {
+		surroundable_ = false;
+	} else {
+		for (size_t idx = 0; idx < cur_size; ++idx) {
+			adjacent_.insert(cur[idx].first);
+		}
+	}
+
+	delete [] cur;
+	delete [] next;
 }
 
 template<typename grid>
