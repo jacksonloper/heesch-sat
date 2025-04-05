@@ -22,30 +22,123 @@ using var_id = uint32_t;
 template<typename coord_t>
 using solution_cb = std::function<bool( const LabelledPatch<coord_t>& )>;
 
+struct var_iterator
+{
+	var_iterator(const var_id *arr, size_t a, size_t b)
+		: arr_ {arr}
+		, a_ {(uint16_t)a}
+		, b_ {(uint16_t)b}
+	{
+		while (a_ < b_ && arr_[a_] == -1) {
+			++a_;
+		}
+	}
+
+	std::pair<size_t, var_id> operator *() const
+	{
+		return std::make_pair(a_, arr_[a_]);
+	}
+
+	bool operator ==(const var_iterator& other) const
+	{
+		return a_ == other.a_;
+	}
+	bool operator !=(const var_iterator& other) const
+	{
+		return a_ != other.a_;
+	}
+
+	var_iterator& operator ++()
+	{
+		advance();
+		return *this;
+	}
+	var_iterator operator ++(int)
+	{
+		var_iterator ret {arr_, a_, b_};
+		advance();
+		return ret;
+	}
+
+	void advance()
+	{
+		if (a_ < b_) {
+			++a_;
+		}
+
+		while (a_ < b_ && arr_[a_] == -1) {
+			++a_;
+		}
+	}
+
+	const var_id *arr_;
+	uint16_t a_;
+	uint16_t b_;
+};
+
 template<typename grid>
 struct tile_info
 {
 	using xform_t = typename grid::xform_t;
 
+	struct subrange_view {
+		subrange_view (const var_id *arr, size_t a, size_t b)
+			: arr_ {arr}
+			, a_ {(uint16_t)a}
+			, b_ {(uint16_t)b}
+		{}
+
+		var_iterator begin() const {
+			return var_iterator {arr_, a_, b_};
+		}
+		var_iterator end() const {
+			return var_iterator {arr_, b_, b_};
+		}
+
+		const var_id *arr_;
+		const uint16_t a_;
+		const uint16_t b_;
+	};
+
 	tile_info( const xform_t& T, tile_index index )
-		: T_ { T }
-		, index_ { index }
-		, vars_ {}
-	// 	, cells_ {}
-	{}
+		: T_ {T}
+		, index_ {index}
+		, cur_max_ {0}
+	{
+		std::fill(vars_, vars_ + MAX_CORONA, -1);
+	}
 
 	bool hasLevel( size_t level ) const
 	{
-		return vars_.find( level ) != vars_.end();
+		return vars_[level] != -1;
+	}
+	var_id operator[](size_t idx) const
+	{
+		return vars_[idx];
+	}
+	void setVar(size_t idx, var_id id) 
+	{
+		vars_[idx] = id;
+		cur_max_ = std::max(cur_max_, idx + 1);
+	}
+
+	var_iterator begin() const {
+		return var_iterator {vars_, 0, cur_max_};
+	}
+	var_iterator end() const {
+		return var_iterator {vars_, cur_max_, cur_max_};
+	}
+	subrange_view levelRange(size_t i, size_t j = MAX_CORONA) const {
+		return subrange_view {vars_, i, std::min(j, cur_max_)};
 	}
 
 	xform_t T_;
 	tile_index index_;
 
-	// FIXME -- use fixed-size arrays, ugh.
 	// The SAT variable used at each corona level accessible at this location.
-	std::map<size_t,var_id> vars_;
-	// std::list<cell_index> cells_;
+	// std::map<size_t,var_id> vars_;
+	var_id vars_[MAX_CORONA];
+	size_t cur_max_;
 };
 
 template<typename grid>
@@ -284,14 +377,11 @@ tile_index HeeschSolver<grid>::createNewTile( const xform_t& T )
 	tile_index new_index = tiles_.size();
 	tiles_.emplace_back( T, new_index );
 	tile_map_[T] = new_index;
-	// tile_info<grid>& ti = tiles_.back();
 
 	for( auto& p : shape_ ) {
 		point_t tp = T * p;
 		cell_index cidx = getCell( tp, true );
-		// ti.cells_.push_back( cidx );
-
-		cells_[cidx].tiles_.push_back( new_index );
+		cells_[cidx].tiles_.push_back(new_index);
 	}
 
 	return new_index;
@@ -315,13 +405,12 @@ var_id HeeschSolver<grid>::getShapeVariable( const xform_t& T, size_t level )
 	// for this level.
 	tile_info<grid>& ti = tiles_[index];
 
-	auto j = ti.vars_.find( level );
-	if( j == ti.vars_.end() ) {
+	if (!ti.hasLevel(level)) {
 		var_id nv = declareVariable();
-		ti.vars_[level] = nv;
+		ti.setVar(level, nv);
 		return nv;
 	} else {
-		return j->second;
+		return ti[level];
 	}
 }
 
@@ -343,12 +432,11 @@ bool HeeschSolver<grid>::getShapeVariable(
 	// for this level.
 	const tile_info<grid>& ti = tiles_[ index ];
 
-	auto j = ti.vars_.find( level );
-	if( j == ti.vars_.end() ) {
+	if (!ti.hasLevel(level)) {
 		return false;
 	}
 
-	id = j->second;
+	id = ti[level];
 	return true;
 }
 
@@ -400,16 +488,16 @@ void HeeschSolver<grid>::increaseLevel()
 
 	// Don't bother doing any adjacency-related computations if the shape
 	// can't be surrounded. We know for a fact that we won't find anything.
-	if( !cloud_.surroundable_ ) {
+	if (!cloud_.surroundable_) {
 		return;
 	}
 
-	if( level_ == 1 ) {
-		for( auto& T : cloud_.adjacent_ ) {
-			getShapeVariable( T, 1 );
+	if (level_ == 1) {
+		for (auto& T : cloud_.adjacent_) {
+			getShapeVariable(T, 1);
 		}
 	} else {
-		extendLevelWithTransforms( level_ - 1, cloud_.adjacent_ );
+		extendLevelWithTransforms(level_ - 1, cloud_.adjacent_);
 	}
 }
 
@@ -429,72 +517,70 @@ void HeeschSolver<grid>::getClauses(
 {
 	std::vector<CMSat::Lit> cl;
 
-	cl.push_back( pos( tiles_[0].vars_.at( 0 ) ) );
+	cl.push_back(pos(tiles_[0][0]));
 	solv.add_clause( cl );
 
 	// If a copy of S is used, then its cells are used.
-	cl.resize( 2 );
-	for( auto& ti : tiles_ ) {
-		for( auto& p : shape_ ) {
+	cl.resize(2);
+	for (auto& ti : tiles_) {
+		for (auto& p : shape_) {
 			point_t tp = ti.T_ * p;
-			cl[1] = pos( getCellVariable( tp ) );
+			cl[1] = pos(getCellVariable(tp));
 
-			for( auto& i : ti.vars_ ) {
-				cl[0] = neg( i.second );
-				solv.add_clause( cl );
+			for (auto v: ti) {
+				cl[0] = neg(v.second);
+				solv.add_clause(cl);
 			}
 		}
 	}
 
 	// If a cell is used, then some copy of S must use it.
-	for( auto& ci : cells_ ) {
+	for (auto& ci : cells_) {
 		cl.clear();
-		cl.push_back( neg( ci.var_ ) );
-		for( auto& tindex : ci.tiles_ ) {
+		cl.push_back(neg(ci.var_));
+		for (auto& tindex: ci.tiles_) {
 			auto& ti = tiles_[tindex];
-			for( auto& i : ti.vars_ ) {
-				cl.push_back( pos( i.second ) );
+			for (auto v: ti) {
+				cl.push_back(pos(v.second));
 			}
 		}
-		solv.add_clause( cl );
+		solv.add_clause(cl);
 	}
 
 	// If a copy of S is used in an interior corona (a k-corona for k < n),
 	// then that copy’s halo cells must be used.
-	cl.resize( 2 );
-	for( auto& ti : tiles_ ) {
-		for( auto& i : ti.vars_ ) {
-			if( i.first < level_ ) {
-				// This is a tile variable at an inner corona.
-				cl[0] = neg( i.second );
-				for( auto& p : cloud_.halo_ ) {
-					point_t tp = ti.T_ * p;
-					cl[1] = pos( getCellVariable( tp ) );
-					solv.add_clause( cl );
-				}
+	cl.resize(2);
+	for (auto& ti: tiles_) {
+		for (auto v: ti.levelRange(0, level_)) {
+			// This is a tile variable at an inner corona.
+			cl[0] = neg(v.second);
+			for (const auto& p: cloud_.halo_) {
+				point_t tp = ti.T_ * p;
+				cl[1] = pos(getCellVariable(tp));
+				solv.add_clause(cl);
 			}
 		}
 	}
 
 	// Used copies of S cannot overlap.
-	cl.resize( 2 );
-	for( auto& ti : tiles_ ) {
-		for( auto& M : cloud_.overlapping_ ) {
+	cl.resize(2);
+	for (auto& ti: tiles_) {
+		for (auto& M : cloud_.overlapping_) {
 			xform_t Tn = ti.T_ * M;
 			// OK, so is there a tile located at Tn?
-			tile_index index = getTile( Tn );
-			if( index == -1 ) {
+			tile_index index = getTile(Tn);
+			if (index == -1) {
 				continue;
 			}
 			auto& tj = tiles_[index];
 
 			// There's a tile here. Prevent all pairwise overlaps
 			// at all levels.
-			for( auto& i : ti.vars_ ) {
-				for( auto& j : tj.vars_ ) {
-					cl[0] = neg( i.second );
-					cl[1] = neg( j.second );
-					solv.add_clause( cl );
+			for (auto vi: ti) {
+				for (auto vj: tj) {
+					cl[0] = neg(vi.second);
+					cl[1] = neg(vj.second);
+					solv.add_clause(cl);
 				}
 			}
 		}
@@ -505,81 +591,68 @@ void HeeschSolver<grid>::getClauses(
 	// in a (k−1)-corona
 	// If a copy of S is used in a k-corona, it cannot be adjacent to a
 	// copy in an m-corona for m < k − 1.
-	for( auto& ti : tiles_ ) {
-		for( auto& i : ti.vars_ ) {
-			size_t k = i.first;
-			if( k < 1 ) {
-				continue;
-			}
+	std::vector<CMSat::Lit> cl2;
+	cl2.resize(2);
+	for (auto& ti : tiles_) {
+		for (auto kv: ti.levelRange(1, level_ + 1)) {
 			cl.clear();
-			cl.push_back( neg( i.second ) );
+			cl.push_back(neg(kv.second));
 
-			// FIXME -- wouldn't it be faster to make this be the outer
-			// loop, so that you avoid too many getTile() lookups?
-			for( auto& M : cloud_.adjacent_ ) {
-				xform_t Tn = ti.T_ * M;
-				tile_index index = getTile( Tn );
-				if( index == -1 ) {
-					continue;
-				}
-				auto& tj = tiles_[index];
-				for( auto& j : tj.vars_ ) {
-					if( j.first == k - 1 ) {
-						cl.push_back( pos( j.second ) );
-					} else if( j.first < k - 1 ) {
-						std::vector<CMSat::Lit> cl2;
-						cl2.push_back( neg( i.second ) );
-						cl2.push_back( neg( j.second ) );
-						solv.add_clause( cl2 );
+			cl2[0] = neg(kv.second);
+
+			const auto *xforms = &cloud_.adjacent_;
+			// Stoopid hack to process two separate adjacency lists
+			for (size_t phase = 0; phase < 2; ++phase) {
+				// FIXME -- wouldn't it be faster to make this be the outer
+				// loop, so that you avoid too many getTile() lookups?
+				for( auto& M : *xforms ) {
+					xform_t Tn = ti.T_ * M;
+					tile_index index = getTile(Tn);
+					if (index == -1) {
+						continue;
+					}
+					auto& tj = tiles_[index];
+					for (auto jv: tj.levelRange(0, kv.first)) {
+						if (jv.first == kv.first - 1) {
+							cl.push_back(pos(jv.second));
+						} else {
+							cl2[1] = neg(jv.second);
+							solv.add_clause( cl2 );
+						}
 					}
 				}
-			}
 
-			// Also need to iterate over culled adjacencies here, since
-			// they can arise between neighbours in the same corona.
-			// FIXME -- can this be accelerated by adding these clauses
-			// only for variables corresponding to tiles at the same level?
-			// FIXME -- ugggh, so much code duplication.  Why isn't
-			// there a better way to do this?  
-			for( auto& M : cloud_.adjacent_culled_ ) {
-				xform_t Tn = ti.T_ * M;
-				tile_index index = getTile( Tn );
-				if( index == -1 ) {
-					continue;
+				if (!reduce_) {
+					break;
 				}
-				auto& tj = tiles_[index];
-				for( auto& j : tj.vars_ ) {
-					if( j.first == k - 1 ) {
-						cl.push_back( pos( j.second ) );
-					} else if( j.first < k - 1 ) {
-						std::vector<CMSat::Lit> cl2;
-						cl2.push_back( neg( i.second ) );
-						cl2.push_back( neg( j.second ) );
-						solv.add_clause( cl2 );
-					}
-				}
+
+				// Also need to iterate over culled adjacencies here, 
+				// since they can arise between neighbours in the same
+				// corona.  FIXME -- can this be accelerated by adding 
+				// these clauses only for variables corresponding to
+				// tiles at the same level?
+				xforms = &cloud_.adjacent_culled_;
 			}
 
 			if( cl.size() > 1 ) {
 				solv.add_clause( cl );
 			}
 
-			if( !allow_holes && (k == level_) ) {
+			if( !allow_holes && (kv.first == level_) ) {
 				// outermost corona, no holes allowed.  Walk over the
 				// hole_adjacencies and forbid them.
-				cl.resize( 2 );
 
-				for( auto& M : cloud_.adjacent_hole_ ) {
+				for (auto& M : cloud_.adjacent_hole_) {
 					xform_t Tn = ti.T_ * M;
 					tile_index index = getTile( Tn );
 					if( index == -1 ) {
 						continue;
 					}
 					auto& tj = tiles_[index];
-					if( tj.hasLevel( k ) ) {
-						cl[0] = neg( i.second );
-						cl[1] = neg( tj.vars_.at( k ) );
-						solv.add_clause( cl );
+					if (tj.hasLevel(level_)) {
+						cl2[0] = neg(ti[level_]);
+						cl2[1] = neg(tj[level_]);
+						solv.add_clause(cl2);
 					}
 				}
 			}
@@ -597,10 +670,10 @@ void HeeschSolver<grid>::getSolution(
 
 	ret.clear();
 	const std::vector<CMSat::lbool>& model = solv.get_model();
-	for( auto& ti : tiles_ ) {
-		for( auto& i : ti.vars_ ) {
-			if ((i.first <= lev) && (model[i.second] == CMSat::l_True)) {
-				ret.emplace_back(i.first, ti.T_);
+	for (const auto& ti : tiles_) {
+		for (auto v: ti.levelRange(0, lev + 1)) {
+			if (model[v.second] == CMSat::l_True) {
+				ret.emplace_back(v.first, ti.T_);
 				break;
 			}
 		}
@@ -611,27 +684,26 @@ template<typename grid>
 bool HeeschSolver<grid>::hasCorona( 
 	bool get_solution, bool& has_holes, patch_t& soln ) 
 {
-	if( level_ == 0 ) {
+	if (level_ == 0) {
 		// A hole-free 0-corona always exists.
 		has_holes = false;
-		if( get_solution ) {
-			soln.push_back( std::make_pair( 0, grid::orientations[0] ) );
+		if (get_solution) {
+			soln.push_back(std::make_pair(0, grid::orientations[0]));
 		}
-		// std::cout << "Asking for 0-corona" << std::endl;
 		return true;
 	}
 
-	if( !cloud_.surroundable_ ) {
+	if (!cloud_.surroundable_) {
 		// std::cout << "Not surroundable at all" << std::endl;
 		return false;
 	}
 
 	CMSat::SATSolver solver;
-	solver.new_vars( next_var_ );
+	solver.new_vars(next_var_);
 
-	getClauses( solver, false );
+	getClauses(solver, false);
 
-	if( solver.solve() == CMSat::l_True ) {
+	if (solver.solve() == CMSat::l_True) {
 		// Got a solution, but it may have large holes.  Need to find
 		// them and iterate until they're gone.
 
@@ -646,9 +718,9 @@ bool HeeschSolver<grid>::hasCorona(
 			HoleFinder<grid> finder { shape_ };
 
 			for( auto& ti : tiles_ ) {
-				for( auto i : ti.vars_ ) {
-					if( model[i.second] == CMSat::l_True ) {
-						finder.addCopy( ti.index_, ti.T_ );
+				for (auto v: ti) {
+					if (model[v.second] == CMSat::l_True) {
+						finder.addCopy(ti.index_, ti.T_);
 						break;
 					}
 				}
@@ -679,14 +751,12 @@ bool HeeschSolver<grid>::hasCorona(
 			for( auto& hole : holes ) {
 				cl.clear();
 				// std::cout << "Forbidding a hole:";
-				for( auto& index : hole ) {
+				for(auto& index : hole) {
 					// We know that there's a variable at the top level,
 					// otherwise we wouldn't have found a hole in the
 					// first place.
-					cl.push_back( neg( tiles_[index].vars_.at( level_ ) ) );
-					// std::cout << " " << index;
+					cl.push_back(neg(tiles_[index][level_]));
 				}
-				// std::cout << std::endl;
 				solver.add_clause( cl );
 			}
 
@@ -735,21 +805,22 @@ bool HeeschSolver<grid>::iterateUntilSimplyConnected(
 	// outright, rather than discovering them after the fact.
 
 	std::vector<CMSat::Lit> cl;
-	cl.resize( 2 );
+	cl.resize(2);
 
 	// std::cerr << "Forbidding pairwise holes" << std::endl;
-	for( auto& ti : tiles_ ) {
+	for (auto& ti: tiles_) {
 		if (ti.hasLevel(lev)) {
-			for( auto& M : cloud_.adjacent_hole_ ) {
+			cl[0] = neg(ti[lev]);
+
+			for (auto& M : cloud_.adjacent_hole_) {
 				xform_t Tn = ti.T_ * M;
-				tile_index index = getTile( Tn );
-				if( index == -1 ) {
+				tile_index index = getTile(Tn);
+				if (index == -1) {
 					continue;
 				}
 				auto& tj = tiles_[index];
-				if( tj.hasLevel( lev ) ) {
-					cl[0] = neg(ti.vars_.at(lev));
-					cl[1] = neg(tj.vars_.at(lev));
+				if (tj.hasLevel(lev)) {
+					cl[1] = neg(tj[lev]);
 					solver.add_clause( cl );
 				}
 			}
@@ -766,10 +837,10 @@ bool HeeschSolver<grid>::iterateUntilSimplyConnected(
 		HoleFinder<grid> finder { shape_ };
 
 		for (auto& ti: tiles_) {
-			for (auto i: ti.vars_) {
-				// Need to make sure we don't accidentally ask about 
-				// variables in "future" coronas.
-				if ((i.first <= lev) && (model[i.second] == CMSat::l_True)) {
+			// Need to make sure we don't accidentally ask about 
+			// variables in "future" coronas.
+			for (auto v: ti.levelRange(0, lev + 1)) {
+				if (model[v.second] == CMSat::l_True) {
 					finder.addCopy(ti.index_, ti.T_);
 					break;
 				}
@@ -798,7 +869,7 @@ bool HeeschSolver<grid>::iterateUntilSimplyConnected(
 					std::cerr << std::endl;
 				}
 				*/
-				cl.push_back(neg(tiles_[index].vars_.at(lev)));
+				cl.push_back(neg(tiles_[index][lev]));
 			}
 			solver.add_clause(cl);
 		}
@@ -806,7 +877,6 @@ bool HeeschSolver<grid>::iterateUntilSimplyConnected(
 
 	// If you end up here, you weren't able to ban all holes.  Report
 	// failure.
-	// std::cerr << "Didn't find a simply connected patch" << std::endl;
 	return false;
 }
 
@@ -814,7 +884,7 @@ template<typename grid>
 void HeeschSolver<grid>::solve(
 	bool get_solution, size_t maxlevel, TileInfo<grid>& info )
 {
-	if( level_ != 0 ) {
+	if (level_ != 0) {
 		std::cerr << "Attempting to use solve() on non-zero level"
 			<< std::endl;
 		return;
@@ -824,7 +894,7 @@ void HeeschSolver<grid>::solve(
 		// The shape is utterly unsurroundable, because there's a 
 		// halo cell that couldn't be filled by any neighbour.  You
 		// can definitely report Hc = 0, Hh = 0.
-		info.setNonTiler( 0, nullptr, 0, nullptr );
+		info.setNonTiler(0, nullptr, 0, nullptr);
 		return;
 	}
 
@@ -836,7 +906,7 @@ void HeeschSolver<grid>::solve(
 		// So run a quick check of that in the special case that we were
 		// asked to compute Hh.
 
-		info.setNonTiler( 0, nullptr, 0, nullptr );
+		info.setNonTiler(0, nullptr, 0, nullptr);
 
 		if (check_hh_) {
 			increaseLevel();
@@ -860,7 +930,7 @@ void HeeschSolver<grid>::solve(
 	// Keep around all past solvers for resolving holes later.
 	std::vector<std::unique_ptr<CMSat::SATSolver>> past_solvers;
 	// Avoid too much allocation
-	past_solvers.reserve(10);
+	past_solvers.reserve(MAX_CORONA);
 
 	bool got_hh = false;
 	size_t hh;
@@ -868,13 +938,15 @@ void HeeschSolver<grid>::solve(
 	size_t hc;
 	patch_t hc_solution;
 
-	while( level_ < maxlevel ) {
+	while (level_ < maxlevel) {
 		increaseLevel();
 		// std::cerr << "Now checking level " << level_ << std::endl;
 
-		std::unique_ptr<CMSat::SATSolver> cur_solver { new CMSat::SATSolver };
+		std::unique_ptr<CMSat::SATSolver> cur_solver {new CMSat::SATSolver};
 		cur_solver->new_vars(next_var_);
 		getClauses(*cur_solver, true);
+
+		// debug(std::cerr);
 
 		if (cur_solver->solve() != CMSat::l_True) {
 			// We've hit the limit, so hard stop here.
@@ -894,10 +966,12 @@ void HeeschSolver<grid>::solve(
 					if (get_solution) {
 						getSolution(final_solver, hh_solution, hh);
 					}
+					
 					/*
 					std::cerr << "Final solver got hh = " << hh << std::endl;
 				} else {
 					std::cerr << "Final solver failed" << std::endl;
+					
 					*/
 				}
 			}
@@ -930,7 +1004,13 @@ void HeeschSolver<grid>::solve(
 		// We iterated above to failure.  First, we might have blown past
 		// maxlevel.  If so, the tile is inconclusive.
 		// std::cerr << "Arrived at maxlevel, inconclusive" << std::endl;
-		info.setInconclusive();
+		if (get_solution) {
+			patch_t demo;
+			getSolution(*past_solvers.back(), demo, level_);
+			info.setInconclusive(&demo);
+		} else {
+			info.setInconclusive();
+		}
 	} else {
 		// Not inconclusive.  So we step back down to prev_solver, which 
 		// had previously found a solution with holes.  We try to eliminate
@@ -1115,11 +1195,11 @@ size_t HeeschSolver<grid>::allCoronas(
 
 		// Get tile info for hole detection, while simultaneously
 		// building clause for forbidding this solution.
-		for( auto& ti : tiles_ ) {
-			for( auto& i : ti.vars_ ) {
-				if( model[i.second] == CMSat::l_True ) {
-					finder.addCopy( ti.index_, ti.T_ );
-					cl.push_back( neg( i.second ) );
+		for (auto& ti : tiles_) {
+			for (auto v: ti) {
+				if (model[v.second] == CMSat::l_True) {
+					finder.addCopy(ti.index_, ti.T_);
+					cl.push_back(neg(v.second));
 				}
 			}
 		}
@@ -1179,21 +1259,16 @@ void HeeschSolver<grid>::debug( std::ostream& os ) const
 	}
 	for( auto& ti : tiles_ ) {
 		os << "  Tile #" << ti.index_ << " at " << ti.T_ << ":" << std::endl;
-		os << "    Cells:";
 		/*
-		for( auto& i : ti.cells_ ) {
-			os << " " << i << ":" << cells_[i].pos_;
-		}
-		*/
-		os << std::endl;
 		os << "    Halo:";
 		for( auto& p : cloud_.halo_ ) {
 			auto hp = ti.T_ * p;
 			os << " " << hp ;
 		}	
 		os << std::endl;
+		*/
 		os << "    Vars:";
-		for( auto i : ti.vars_ ) {
+		for(auto i : ti) {
 			os << " [" << i.first << "," << i.second << "]";
 		}
 		os << std::endl;

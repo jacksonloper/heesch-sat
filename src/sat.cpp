@@ -16,7 +16,8 @@ static bool show_solution = false;
 static size_t max_level = 7;
 static Orientations ori = ALL;
 static bool check_hh = false;
-static bool reduce = false;
+static bool reduce = true;
+static bool failsafe = false;
 static bool check_isohedral = false;
 static bool update_only = false;
 static bool debug_levels = false;
@@ -27,7 +28,7 @@ static ofstream ofs;
 static ostream *out;
 
 template<typename grid>
-static bool computeHeeschNew(TileInfo<grid>& info)
+static bool computeHeesch(TileInfo<grid>& info)
 {
 	if( update_only ) {
 		// If we're updating, we only want to deal with unknown or 
@@ -53,26 +54,28 @@ static bool computeHeeschNew(TileInfo<grid>& info)
 
 	return true;
 }
-GRID_WRAP( computeHeeschNew );
+GRID_WRAP(computeHeesch);
 
+// An older implementation that can be used as a reference for
+// testing optimizations, for example.
 template<typename grid>
-static bool computeHeesch( TileInfo<grid>& tile )
+static bool computeHeeschSafeMode( TileInfo<grid>& tile )
 {
 	using coord_t = typename grid::coord_t;
 
-	if( update_only ) {
+	if (update_only) {
 		// If we're updating, we only want to deal with unknown or 
 		// inconclusive records.
-		if( !((tile.getRecordType() == TileInfo<grid>::UNKNOWN) 
-				|| (tile.getRecordType() == TileInfo<grid>::INCONCLUSIVE)) ) {
-			tile.write( *out );
+		if (!((tile.getRecordType() == TileInfo<grid>::UNKNOWN) 
+				|| (tile.getRecordType() == TileInfo<grid>::INCONCLUSIVE))) {
+			tile.write(*out);
 			return true;
 		}
 	}
 
-	if( tile.getRecordType() == TileInfo<grid>::HOLE ) {
+	if (tile.getRecordType() == TileInfo<grid>::HOLE) {
 		// Don't compute heesch number of something with a hole
-		tile.write( *out );
+		tile.write(*out);
 		return true;
 	}
 
@@ -82,28 +85,28 @@ static bool computeHeesch( TileInfo<grid>& tile )
 	LabelledPatch<coord_t> sh;
 	bool has_holes;
 
-	HeeschSolver<grid> solver { tile.getShape(), ori, reduce };
-	solver.setCheckIsohedral( check_isohedral );
-	solver.setCheckHoleCoronas( check_hh );
+	HeeschSolver<grid> solver {tile.getShape(), ori, reduce};
+	solver.setCheckIsohedral(check_isohedral);
+	solver.setCheckHoleCoronas(check_hh);
 
 	LabelledPatch<coord_t> cur;
 
 	if (solver.isSurroundable()) {
 		solver.increaseLevel();
 
-		while( true ) {
-			if( debug_levels ) {
-				solver.debugCurrentPatch( cur );
-				tile.setInconclusive( &cur );
-				tile.write( *out );
+		while (true) {
+			if (debug_levels) {
+				solver.debugCurrentPatch(cur);
+				tile.setInconclusive(&cur);
+				tile.write(*out);
 			}
 
-			if( solver.getLevel() > max_level ) {
+			if (solver.getLevel() > max_level) {
 				break;
 			}
 
-			if( solver.hasCorona( show_solution, has_holes, cur ) ) {
-				if( has_holes ) {
+			if (solver.hasCorona(show_solution, has_holes, cur)) {
+				if (has_holes) {
 					sh = cur;
 					hh = solver.getLevel();
 					break;
@@ -114,9 +117,9 @@ static bool computeHeesch( TileInfo<grid>& tile )
 					sc = sh;
 					solver.increaseLevel();
 				}
-			} else if( solver.tilesIsohedrally() ) {
-				tile.setPeriodic( 1 );
-				tile.write( *out );
+			} else if (solver.tilesIsohedrally()) {
+				tile.setPeriodic(1);
+				tile.write(*out);
 				return true;
 			} else {
 				break;
@@ -124,95 +127,95 @@ static bool computeHeesch( TileInfo<grid>& tile )
 		}
 	}
 
-	if( solver.getLevel() > max_level ) {
+	if (solver.getLevel() > max_level) {
 		// Exceeded maximum level, label it inconclusive
-		if( show_solution ) {
-			tile.setInconclusive( &cur );
+		if (show_solution) {
+			tile.setInconclusive(&cur);
 		} else {
 			tile.setInconclusive();
 		}
-	} else if( show_solution ) {
-		tile.setNonTiler( hc, &sc, hh, &sh );
+	} else if (show_solution) {
+		tile.setNonTiler(hc, &sc, hh, &sh);
 	} else {
-		tile.setNonTiler( hc, nullptr, hh, nullptr );
+		tile.setNonTiler(hc, nullptr, hh, nullptr);
 	}
-	tile.write( *out );
+	tile.write(*out);
 	return true;
 }
-GRID_WRAP( computeHeesch );
+GRID_WRAP(computeHeeschSafeMode);
 
 int main( int argc, char **argv )
 {
-	ios_base::sync_with_stdio( false );
-	cin.tie( nullptr );
+	ios_base::sync_with_stdio(false);
+	cin.tie(nullptr);
 
-	bool do_new = false;
-
-	for( int idx = 1; idx < argc; ++idx ) {
-		if( !strcmp( argv[idx], "-show" ) ) {
+	for (int idx = 1; idx < argc; ++idx) {
+		if (!strcmp(argv[idx], "-show")) {
 			show_solution = true;
-		} else if( !strcmp( argv[idx], "-o" ) ) {
+		} else if (!strcmp(argv[idx], "-o")) {
 			++idx;
 			outname = argv[idx];
-		} else if( !strcmp( argv[idx], "-maxlevel" ) ) {
+		} else if (!strcmp(argv[idx], "-maxlevel")) {
 		    ++idx;
 		    max_level = atoi(argv[idx]);
-		} else if( !strcmp( argv[idx], "-translations" ) ) {
+		} else if (!strcmp(argv[idx], "-translations")) {
 			ori = TRANSLATIONS_ONLY;
-		} else if( !strcmp( argv[idx], "-rotations" ) ) {
+		} else if (!strcmp(argv[idx], "-rotations")) {
 			ori = TRANSLATIONS_ROTATIONS;
-		} else if( !strcmp( argv[idx], "-isohedral" ) ) {
+		} else if (!strcmp(argv[idx], "-isohedral")) {
 			check_isohedral = true;
-		} else if( !strcmp( argv[idx], "-noisohedral" ) ) {
+		} else if (!strcmp(argv[idx], "-noisohedral")) {
 			check_isohedral = false;
-		} else if( !strcmp( argv[idx], "-update" ) ) {
+		} else if (!strcmp(argv[idx], "-update")) {
 			update_only = true;
-		} else if( !strcmp( argv[idx], "-hh" ) ) {
+		} else if (!strcmp(argv[idx], "-hh")) {
 			check_hh = true;
-		} else if( !strcmp( argv[idx], "-reduce" ) ) {
+		} else if (!strcmp(argv[idx], "-reduce")) {
 			reduce = true;
-		} else if( !strcmp( argv[idx], "-noreduce" ) ) {
+		} else if (!strcmp(argv[idx], "-noreduce")) {
 			reduce = false;
-		} else if( !strcmp( argv[idx], "-debug" ) ) {
+		} else if (!strcmp(argv[idx], "-debug")) {
 			debug_levels = true;
-		} else if( !strcmp( argv[idx], "-new" ) ) {
-			do_new = true;
+		} else if (!strcmp(argv[idx], "-old")) {
+			failsafe = true;
+		} else if (!strcmp(argv[idx], "-new")) {
+			failsafe = false;
 		} else {
 			// Maybe an input filename?
-			if( filesystem::exists( argv[idx] ) ) {
+			if (filesystem::exists(argv[idx])) {
 				inname = argv[idx];
 			} else {
 				cerr << "Argument \"" << argv[idx] 
 					<< "\" is neither a file name nor a valid parameter"
 					<< endl;
-				exit( 0 );
+				exit(0);
 			}
 		}
 	}
 
-	if( outname ) {
-		ofs.open( outname );
+	if (outname) {
+		ofs.open(outname);
 		out = &ofs;
 	} else {
 		out = &cout;
 	}
 
-	if( inname ) {
-		ifstream ifs( inname );
-		if (do_new) {
-			FOR_EACH_IN_STREAM( ifs, computeHeeschNew );
+	if (inname) {
+		ifstream ifs(inname);
+		if (failsafe) {
+			FOR_EACH_IN_STREAM( ifs, computeHeeschSafeMode );
 		} else {
 			FOR_EACH_IN_STREAM( ifs, computeHeesch );
 		}
 	} else {
-		if (do_new) {
-			FOR_EACH_IN_STREAM( cin, computeHeeschNew );
+		if (failsafe) {
+			FOR_EACH_IN_STREAM( cin, computeHeeschSafeMode );
 		} else {
 			FOR_EACH_IN_STREAM( cin, computeHeesch );
 		}
 	}
 
-	if( ofs.is_open() ) {
+	if (ofs.is_open()) {
 		ofs.flush();
 		ofs.close();
 	}
