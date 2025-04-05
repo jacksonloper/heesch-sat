@@ -47,6 +47,7 @@ static bool computeHeeschNew(TileInfo<grid>& info)
 
 	HeeschSolver<grid> solver {info.getShape(), ori, reduce};
 	solver.setCheckIsohedral(check_isohedral);
+	solver.setCheckHoleCoronas(check_hh);
 	solver.solve(show_solution, max_level, info);
 	info.write(*out);
 
@@ -142,6 +143,9 @@ GRID_WRAP( computeHeesch );
 
 int main( int argc, char **argv )
 {
+	ios_base::sync_with_stdio( false );
+	cin.tie( nullptr );
+
 	bool do_new = false;
 
 	for( int idx = 1; idx < argc; ++idx ) {

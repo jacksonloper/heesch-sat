@@ -31,7 +31,7 @@ struct tile_info
 		: T_ { T }
 		, index_ { index }
 		, vars_ {}
-		, cells_ {}
+	// 	, cells_ {}
 	{}
 
 	bool hasLevel( size_t level ) const
@@ -42,9 +42,10 @@ struct tile_info
 	xform_t T_;
 	tile_index index_;
 
+	// FIXME -- use fixed-size arrays, ugh.
 	// The SAT variable used at each corona level accessible at this location.
 	std::map<size_t,var_id> vars_;
-	std::list<cell_index> cells_;
+	// std::list<cell_index> cells_;
 };
 
 template<typename grid>
@@ -125,7 +126,6 @@ private:
 	void getClauses( CMSat::SATSolver& solv, bool allow_holes ) const;
 	void getSolution( const CMSat::SATSolver& solv,
 		patch_t& ret, size_t lev = 0xDEADBEEF ) const;
-	void addHolesToLevel();
 	void extendLevelWithTransforms( size_t lev, const xform_set<coord_t>& Ts );
 
 	size_t allCoronas( CMSat::SATSolver& solv, solution_cb<coord_t> cb ) const;
@@ -146,7 +146,8 @@ private:
 	var_id next_var_;
 	bool check_isohedral_;
 	bool check_hh_;
-	bool tiles_isohedrally_;;
+	bool tiles_isohedrally_;
+	bool reduce_;
 };
 
 template<typename grid, typename coord>
@@ -206,6 +207,7 @@ HeeschSolver<grid>::HeeschSolver( const Shape<grid>& shape, Orientations ori, bo
 	, check_isohedral_ { false }
 	, check_hh_ { false }
 	, tiles_isohedrally_ { false }
+	, reduce_ {reduce}
 {
 	// Create the 0th corona.
 	getShapeVariable( grid::orientations[0], 0 );
@@ -282,12 +284,12 @@ tile_index HeeschSolver<grid>::createNewTile( const xform_t& T )
 	tile_index new_index = tiles_.size();
 	tiles_.emplace_back( T, new_index );
 	tile_map_[T] = new_index;
-	tile_info<grid>& ti = tiles_.back();
+	// tile_info<grid>& ti = tiles_.back();
 
 	for( auto& p : shape_ ) {
 		point_t tp = T * p;
 		cell_index cidx = getCell( tp, true );
-		ti.cells_.push_back( cidx );
+		// ti.cells_.push_back( cidx );
 
 		cells_[cidx].tiles_.push_back( new_index );
 	}
@@ -409,15 +411,6 @@ void HeeschSolver<grid>::increaseLevel()
 	} else {
 		extendLevelWithTransforms( level_ - 1, cloud_.adjacent_ );
 	}
-
-	// std::cerr << "New level: " << level_ << "; dealing with " << 
-	//	tiles_.size() << " tiles." << std::endl;
-}
-
-template<typename grid>
-void HeeschSolver<grid>::addHolesToLevel()
-{
-	extendLevelWithTransforms( level_ - 1, cloud_.adjacent_hole_ );
 }
 
 inline CMSat::Lit pos( var_id id )
@@ -520,7 +513,35 @@ void HeeschSolver<grid>::getClauses(
 			}
 			cl.clear();
 			cl.push_back( neg( i.second ) );
-			for( auto& M : cloud_.adjacent_unreduced_ ) {
+
+			// FIXME -- wouldn't it be faster to make this be the outer
+			// loop, so that you avoid too many getTile() lookups?
+			for( auto& M : cloud_.adjacent_ ) {
+				xform_t Tn = ti.T_ * M;
+				tile_index index = getTile( Tn );
+				if( index == -1 ) {
+					continue;
+				}
+				auto& tj = tiles_[index];
+				for( auto& j : tj.vars_ ) {
+					if( j.first == k - 1 ) {
+						cl.push_back( pos( j.second ) );
+					} else if( j.first < k - 1 ) {
+						std::vector<CMSat::Lit> cl2;
+						cl2.push_back( neg( i.second ) );
+						cl2.push_back( neg( j.second ) );
+						solv.add_clause( cl2 );
+					}
+				}
+			}
+
+			// Also need to iterate over culled adjacencies here, since
+			// they can arise between neighbours in the same corona.
+			// FIXME -- can this be accelerated by adding these clauses
+			// only for variables corresponding to tiles at the same level?
+			// FIXME -- ugggh, so much code duplication.  Why isn't
+			// there a better way to do this?  
+			for( auto& M : cloud_.adjacent_culled_ ) {
 				xform_t Tn = ti.T_ * M;
 				tile_index index = getTile( Tn );
 				if( index == -1 ) {
@@ -681,15 +702,9 @@ bool HeeschSolver<grid>::hasCorona(
 		// allowing holes in the outer corona.
 		// std::cout << "Adding holes to level" << std::endl;
 
-		// FIXME -- Does the next line of code actually accomplish anything?
-		// This should only permit additional holes between haloes n-1 and n,
-		// but the solver shouldn't allow holes like that in the output in
-		// any case.
-
-		// A few tests suggests that this is unnecessary, and that the 
-		// only reason this section of the code does anything different
-		// from the code above is the "true" as the second argument to
-		// getClauses.
+		// It turns out that this never did anything, and I'm kind of 
+		// embarrassed that it stuck around in the code as long as it did.
+		// The offending method has already been removed.
 		// addHolesToLevel();
 
 		CMSat::SATSolver solver;
@@ -805,14 +820,53 @@ void HeeschSolver<grid>::solve(
 		return;
 	}
 
-	if( !cloud_.surroundable_ ) {
-		// std::cout << "Not surroundable at all" << std::endl;
+	if (!cloud_.surroundable_) {
+		// The shape is utterly unsurroundable, because there's a 
+		// halo cell that couldn't be filled by any neighbour.  You
+		// can definitely report Hc = 0, Hh = 0.
 		info.setNonTiler( 0, nullptr, 0, nullptr );
+		return;
+	}
+
+	if (!cloud_.reduced_surroundable_) {
+		// The halo can be filled with neighbours, but we applied
+		// reduction and discovered that Hc is definitely zero.  The
+		// trouble is that Hh might still be 1 if we allow a more
+		// generous set of neighbours, now stored in cloud_.adjacent_culled_.
+		// So run a quick check of that in the special case that we were
+		// asked to compute Hh.
+
+		info.setNonTiler( 0, nullptr, 0, nullptr );
+
+		if (check_hh_) {
+			increaseLevel();
+			extendLevelWithTransforms(0, cloud_.adjacent_culled_);
+			CMSat::SATSolver final_solver;
+			final_solver.new_vars(next_var_);
+			getClauses(final_solver, true);
+			if (final_solver.solve() == CMSat::l_True) {
+				if (get_solution) {
+					patch_t hh_solution;
+					getSolution(final_solver, hh_solution, 1);
+					info.setNonTiler(0, nullptr, 1, &hh_solution);
+				} else {
+					info.setNonTiler(0, nullptr, 1, nullptr);
+				}
+			}
+		}
 		return;
 	}
 
 	// Keep around all past solvers for resolving holes later.
 	std::vector<std::unique_ptr<CMSat::SATSolver>> past_solvers;
+	// Avoid too much allocation
+	past_solvers.reserve(10);
+
+	bool got_hh = false;
+	size_t hh;
+	patch_t hh_solution;
+	size_t hc;
+	patch_t hc_solution;
 
 	while( level_ < maxlevel ) {
 		increaseLevel();
@@ -824,6 +878,30 @@ void HeeschSolver<grid>::solve(
 
 		if (cur_solver->solve() != CMSat::l_True) {
 			// We've hit the limit, so hard stop here.
+
+			if (check_hh_ && reduce_) {
+				// As a last-ditch test, if you want to calculate Hh
+				// and you're working with a reduced list of adjacencies,
+				// you should try adding in the culled adjacencies and
+				// testing for a holey patch.  One might exist.
+				extendLevelWithTransforms(level_ - 1, cloud_.adjacent_culled_);
+				CMSat::SATSolver final_solver;
+				final_solver.new_vars(next_var_);
+				getClauses(final_solver, true);
+				if (final_solver.solve() == CMSat::l_True) {
+					got_hh = true;
+					hh = level_;
+					if (get_solution) {
+						getSolution(final_solver, hh_solution, hh);
+					}
+					/*
+					std::cerr << "Final solver got hh = " << hh << std::endl;
+				} else {
+					std::cerr << "Final solver failed" << std::endl;
+					*/
+				}
+			}
+
 			break;
 		}
 
@@ -862,17 +940,14 @@ void HeeschSolver<grid>::solve(
 		// entirely clear.  How far back might we have to go in order to find
 		// a hole-free patch?
 
-		// First, save the current hole-having patch.
-		size_t hh = level_ - 1;
-		patch_t hh_solution;
-		size_t hc = 0;
-		patch_t hc_solution;
-
-		// std::cerr << "Hh = " << hh << std::endl;
-
-		if (get_solution && (hh > 0)) {
-			// std::cerr << "Retrieving Hh patch " << hh << std::endl;
-			getSolution(*past_solvers.back(), hh_solution, hh);
+		// Don't trust Hh results unless we're explicitly checking hh.
+		// Otherwise we'll just fake hh by setting it equal to hc.
+		if (check_hh_ && !got_hh) {
+			hh = level_ - 1;
+			if (get_solution && (hh > 0)) {
+				getSolution(*past_solvers.back(), hh_solution, hh);
+			}
+			got_hh = true;
 		}
 
 		// std::cerr << "beginning walkback" << std::endl;
@@ -883,6 +958,8 @@ void HeeschSolver<grid>::solve(
 		// having any holes.  In practice we don't expect to need to do
 		// all that much work, but we should be prepared for it anyhow.
 
+		hc = 0;
+
 		for (size_t lev = past_solvers.size(); lev > 0; --lev) {
 			// std::cerr << "  ... lev = " << lev << std::endl;
 
@@ -891,17 +968,27 @@ void HeeschSolver<grid>::solve(
 				hc = lev;
 				// std::cerr << "Hc = " << hc << std::endl;
 				if (get_solution && (hc > 0)) {
-					// std::cerr << "Retrieving solution" << std::endl;
 					getSolution(*solver, hc_solution, hc);
+
+					if (check_hh_ && (hc == hh)) {
+						// When Hc and Hh are equal, don't bother
+						// keeping a separate patch for Hh
+						hh_solution.clear();
+					}
 				}
-				// std::cerr << "Done!" << std::endl;
 				break;
 			}
 		}
 
+		if (!got_hh) {
+			hh = hc;
+			got_hh = true;
+		}
+
 		if (get_solution) {
-			info.setNonTiler( hc, (hc > 0) ? &hc_solution : nullptr,
-				hh, (hh > 0) ? &hh_solution : nullptr);
+			info.setNonTiler( 
+				hc, (hc > 0) ? &hc_solution : nullptr,
+				hh, (hh > hc) ? &hh_solution : nullptr);
 		} else {
 			info.setNonTiler(hc, nullptr, hh, nullptr);
 		}
@@ -1093,9 +1180,11 @@ void HeeschSolver<grid>::debug( std::ostream& os ) const
 	for( auto& ti : tiles_ ) {
 		os << "  Tile #" << ti.index_ << " at " << ti.T_ << ":" << std::endl;
 		os << "    Cells:";
+		/*
 		for( auto& i : ti.cells_ ) {
 			os << " " << i << ":" << cells_[i].pos_;
 		}
+		*/
 		os << std::endl;
 		os << "    Halo:";
 		for( auto& p : cloud_.halo_ ) {
@@ -1112,7 +1201,7 @@ void HeeschSolver<grid>::debug( std::ostream& os ) const
 }
 
 template<typename grid>
-void HeeschSolver<grid>::debugCurrentPatch( patch_t& soln ) const
+void HeeschSolver<grid>::debugCurrentPatch(patch_t& soln) const
 {
 	soln.clear();
 	int lev = 0;

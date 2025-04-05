@@ -57,6 +57,12 @@ public:
 	{
 		return adjacent_.find( T ) != adjacent_.end();
 	}
+	bool isHoleFreeAdjacent(const xform_t& T) const
+	{
+		return (adjacent_.find(T) != adjacent_.end()) ||
+			(adjacent_culled_.find(T) != adjacent_culled_.end());
+	}
+
 	bool isHoleAdjacent( const xform_t& T ) const
 	{
 		return adjacent_hole_.find( T ) != adjacent_hole_.end();
@@ -86,28 +92,31 @@ public:
 
 	std::vector<Orientation<grid>> orientations_;
 
+	// The main set of adjacents to use in surround computations,
+	// possibly reduced.
 	xform_set<coord_t> adjacent_;
-	xform_set<coord_t> adjacent_unreduced_;
+	// The set of adjacents that might have been pulled out of the set
+	// above by reduction.  Possibly empty.
+	xform_set<coord_t> adjacent_culled_;
+
 	xform_set<coord_t> adjacent_hole_;
 	xform_set<coord_t> overlapping_;
 	bool surroundable_;
+	bool reduced_surroundable_;
 };
-
-size_t biggest_halo = 0;
 
 template<typename grid>
 Cloud<grid>::Cloud( const Shape<grid>& shape, Orientations ori, bool reduce )
 	: shape_ { shape }
 	, adjacent_ {}
-	, adjacent_unreduced_ {}
+	, adjacent_culled_ {}
 	, adjacent_hole_ {}
 	, overlapping_ {}
 	, surroundable_ { true }
+	, reduced_surroundable_ { true }
 {
 	shape.getHaloAndBorder(halo_, border_);
 	calcOrientations(ori);
-
-	biggest_halo = std::max(biggest_halo, halo_.size());
 
 	// Overlaps are easy to detect -- there must be a cell that's covered
 	// by a border cell of both transformed copies of the shape.  This
@@ -193,8 +202,6 @@ Cloud<grid>::Cloud( const Shape<grid>& shape, Orientations ori, bool reduce )
 			return;
 		}
 	}
-
-	adjacent_unreduced_ = adjacent_;
 
 	if( reduce ) {
 		reduceAdjacents();
@@ -350,20 +357,17 @@ bool Cloud<grid>::checkSimplyConnected( bitgrid_t bits, const xform_t& T ) const
 	return num_visited == halo_size;
 }
 
-size_t total_adj = 0;
-size_t rem_adj = 0;
-
 template<typename grid>
 void Cloud<grid>::reduceAdjacents()
 {
-	// Do things ultra agressively and slowly as a proof of concept.
+	// Do things ultra agressively and slowly (but not that slowly)
 
 	if (halo_.size() > 64) {
 		std::cerr << "Cannot reduce adjacents when halo size is above 64"
 			<< std::endl;
 		return;
 	}
-	uint64_t full = (1 << halo_.size()) - 1;
+	uint64_t full = (1l << halo_.size()) - 1;
 
 	using xform_info = std::pair<xform_t, uint64_t>;
 
@@ -373,11 +377,14 @@ void Cloud<grid>::reduceAdjacents()
 	size_t next_size = 0;
 	xform_info *next = new xform_info[sz];
 
+	// std::cerr << "Starting with " << sz << " adjacents" << std::endl;
+	// std::cerr << halo_.size() << std::endl;
+
 	// FIXME this is the last bit of STL junk in here. Can we get rid of it?
-	point_map<coord_t, size_t> halo;
+	point_map<coord_t, uint64_t> halo;
 	size_t idx = 0;
 	for (const auto& p: halo_) {
-		halo[p] = (1 << idx);
+		halo[p] = (1l << idx);
 		++idx;
 	}
 
@@ -423,8 +430,15 @@ void Cloud<grid>::reduceAdjacents()
 				// neighbour around.
 				next[next_size] = cur[idx];
 				++next_size;
+			} else {
+				// Transfer this xform from the main adjacents list 
+				// into the culled list.
+				adjacent_.erase(cur[idx].first);
+				adjacent_culled_.insert(cur[idx].first);
 			}
 		}
+
+		// std::cerr << " ... got to " << next_size << std::endl;
 
 		if (next_size < cur_size) {
 			xform_info *tmp = cur;
@@ -441,18 +455,10 @@ void Cloud<grid>::reduceAdjacents()
 		}
 	}
 
-	//std::cerr << adjacent_.size() << " -> " << cur.size() << std::endl;
-	total_adj += adjacent_.size();
-	rem_adj += cur_size;
-
-	adjacent_.clear();
+	// std::cerr << "Ending with " << cur_size << " adjacents" << std::endl;
 
 	if (cur_size == 0) {
-		surroundable_ = false;
-	} else {
-		for (size_t idx = 0; idx < cur_size; ++idx) {
-			adjacent_.insert(cur[idx].first);
-		}
+		reduced_surroundable_ = false;
 	}
 
 	delete [] cur;

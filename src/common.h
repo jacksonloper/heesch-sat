@@ -1,5 +1,14 @@
 #pragma once
 
+// A few global types and compile-time limits
+
+// The largest number of coronas we can calculate.  Some data structures
+// use fixed-sized arrays of this length.
+const size_t MAX_CORONA = 10;
+
+using tile_index = int32_t;
+using cell_index = int32_t;
+
 template<typename T>
 struct method_hash
 {
@@ -10,8 +19,6 @@ public:
 	}
 };
 
-using tile_index = int32_t;
-using cell_index = int32_t;
 
 // Define grid types here so that individual grids can report their types
 // cleanly
