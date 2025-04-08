@@ -153,6 +153,9 @@ public:
     static point<double> gridToPage( const point<double>& pt) {
         return pt;
     }
+
+	static const point_t translationV1;
+	static const point_t translationV2;
 };
 
 template<typename coord>
@@ -216,3 +219,9 @@ const xform<int8_t> HalfCairoGrid<coord>::orientations[8] = {
 	{ -1, 0, 0, 0, -1, 0 }, { 0, 1, 0, -1, 0, 0 },
 	{ -1, 0, 0, 0, 1, 0 }, { 0, -1, 0, -1, 0, 0 },
 	{ 1, 0, 0, 0, -1, 0 }, { 0, 1, 0, 1, 0, 0 } };
+
+template<typename coord>
+const point<coord> HalfCairoGrid<coord>::translationV1 {3, 0};
+
+template<typename coord>
+const point<coord> HalfCairoGrid<coord>::translationV2 {0, 3};

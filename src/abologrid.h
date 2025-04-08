@@ -110,6 +110,9 @@ public:
 	{
         return pt;
     }
+
+	static const point_t translationV1;
+	static const point_t translationV2;
 };
 
 template<typename coord>
@@ -242,3 +245,9 @@ const std::vector<point<int8_t>> AboloGrid<coord>::vertices[4] = {
                 {1, -1}, {-3, -1}, {1, 3}
         }
 };
+
+template<typename coord>
+const point<coord> AboloGrid<coord>::translationV1 {4, 0};
+
+template<typename coord>
+const point<coord> AboloGrid<coord>::translationV2 {2, 2};

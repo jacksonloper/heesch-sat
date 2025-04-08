@@ -117,6 +117,9 @@ public:
 
 	static const size_t tile_orientations[36];
 	static const point<int8_t> tile_vertices[6][4];
+
+	static const point_t translationV1;
+	static const point_t translationV2;
 };
 
 template<typename coord>
@@ -308,3 +311,9 @@ const point<int8_t> KiteGrid<coord>::all_neighbours[6][9] = {
         { -2, 1 }
     }
 };
+
+template<typename coord>
+const point<coord> KiteGrid<coord>::translationV1 {4, -2};
+
+template<typename coord>
+const point<coord> KiteGrid<coord>::translationV2 {2, 2};

@@ -102,19 +102,24 @@ static bool drawPatch( const TileInfo<grid>& tile )
 		viz.drawNontiler();
 	} else if( tile.getRecordType() == TileInfo<grid>::INCONCLUSIVE ) {
 		viz.drawInconclusive();
+	} else if( tile.getRecordType() == TileInfo<grid>::ISOHEDRAL ) {
+		viz.drawInconclusive();
+	} else if( tile.getRecordType() == TileInfo<grid>::ANISOHEDRAL ) {
+		viz.drawInconclusive();
 	} else {
 		viz.drawShape( true );
 	}
 
 	cairo_restore( cr );
 
-	if( tile.getRecordType() == TileInfo<grid>::NONTILER ) {
+	// Why not always draw the small preview?
+	// if( tile.getRecordType() == TileInfo<grid>::NONTILER ) {
 		cairo_save( cr );
 		cairo_translate( cr, 6.5*72, 72 );
 		cairo_scale( cr, 72.0 / 500.0, 72.0 / 500.0 );
 		viz.drawShape( true );
 		cairo_restore( cr );
-	}
+	// }
 
 	viz.drawText( 72, 72 );
 

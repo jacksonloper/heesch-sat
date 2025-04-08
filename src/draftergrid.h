@@ -137,6 +137,9 @@ public:
         const double hr3 = 0.5 * 1.73205080756887729353;
 		return { pt.x_ + 0.5*pt.y_, hr3 * pt.y_ };
     }
+
+	static const point_t translationV1;
+	static const point_t translationV2;
 };
 
 template<typename coord>
@@ -497,3 +500,9 @@ const std::vector<point<int8_t>> DrafterGrid<coord>::vertices[12] = {
                 {0, 0}, {8, -4}, {6, 0}
         }
 };
+
+template<typename coord>
+const point<coord> DrafterGrid<coord>::translationV1 {7, 0};
+
+template<typename coord>
+const point<coord> DrafterGrid<coord>::translationV2 {0, 7};

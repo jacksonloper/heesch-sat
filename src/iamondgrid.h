@@ -118,6 +118,9 @@ public:
 	static const point<int8_t> all_neighbours_grey[12];
 	static const point<int8_t> edge_neighbours_black[3];
 	static const point<int8_t> edge_neighbours_grey[3];
+
+	static const point_t translationV1;
+	static const point_t translationV2;
 };
 
 template<typename coord>
@@ -159,3 +162,9 @@ const xform<int8_t> IamondGrid<coord>::orientations[12] = {
       { 1, 1, 1,    -1, 0, 1 },
       { -1, 0, 1,   0, -1, 1 },
       { 0, -1, 1,   1, 1, 1 } };
+
+template<typename coord>
+const point<coord> IamondGrid<coord>::translationV1 {3, 0};
+
+template<typename coord>
+const point<coord> IamondGrid<coord>::translationV2 {0, 3};

@@ -139,6 +139,9 @@ public:
         const double sqrt3 = 1.73205080756887729353;
 		return { pt.x_ + 0.5*pt.y_, 0.5 * sqrt3 * pt.y_ };
     }
+
+	static const point_t translationV1;
+	static const point_t translationV2;
 };
 
 template<typename coord>
@@ -212,3 +215,9 @@ const xform<int8_t> BevelHexGrid<coord>::orientations[12] = {
         { 0, -1, 0,    -1, 0, 0 },
         { 1, 0, 0,     -1, -1, 0 },
         { 1, 1, 0,     0, -1, 0 } };
+
+template<typename coord>
+const point<coord> BevelHexGrid<coord>::translationV1 {6, 0};
+
+template<typename coord>
+const point<coord> BevelHexGrid<coord>::translationV2 {0, 6};

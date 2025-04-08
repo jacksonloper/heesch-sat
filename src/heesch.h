@@ -5,17 +5,15 @@
 #include <map>
 #include <functional>
 
-#include <cryptominisat.h>
-
 #include "cloud.h"
 #include "holes.h"
 #include "tileio.h"
+#include "sat.h"
+#include "periodic.h"
 
 // The core of the whole system: a class that understands how to compute
 // Heesch numbers of polyforms.  As of 2023, also includes the ability
 // to check whether a polyform tiles isohedrally.
-
-using var_id = uint32_t;
 
 // The callback should return true if it wants more solutions, false
 // if it's seen enough.
@@ -179,6 +177,11 @@ public:
 		check_isohedral_ = b;
 	}
 
+	void setCheckPeriodic( bool b ) 
+	{ 
+		check_periodic_ = b;
+	}
+
 	void setCheckHoleCoronas( bool b )
 	{ 
 		check_hh_ = b;
@@ -238,6 +241,7 @@ private:
 	size_t level_;
 	var_id next_var_;
 	bool check_isohedral_;
+	bool check_periodic_;
 	bool check_hh_;
 	bool tiles_isohedrally_;
 	bool reduce_;
@@ -298,6 +302,7 @@ HeeschSolver<grid>::HeeschSolver( const Shape<grid>& shape, Orientations ori, bo
 	, level_ { 0 }
 	, next_var_ { 0 }
 	, check_isohedral_ { false }
+	, check_periodic_ { false }
 	, check_hh_ { false }
 	, tiles_isohedrally_ { false }
 	, reduce_ {reduce}
@@ -499,16 +504,6 @@ void HeeschSolver<grid>::increaseLevel()
 	} else {
 		extendLevelWithTransforms(level_ - 1, cloud_.adjacent_);
 	}
-}
-
-inline CMSat::Lit pos( var_id id )
-{
-    return CMSat::Lit( id, false );
-}
-
-inline CMSat::Lit neg( var_id id )
-{
-	return CMSat::Lit( id, true );
 }
 
 template<typename grid>
@@ -991,7 +986,13 @@ void HeeschSolver<grid>::solve(
 			getClauses(iso_solver, true);
 
 			if (checkIsohedralTiling(iso_solver)) {
-				info.setPeriodic();
+				if (get_solution) {
+					patch_t iso_solution;
+					getSolution(iso_solver, iso_solution, 1);
+					info.setPeriodic(1, &iso_solution);
+				} else {
+					info.setPeriodic();
+				}
 				return;
 			}
 		}
@@ -1003,7 +1004,30 @@ void HeeschSolver<grid>::solve(
 	if (level_ == maxlevel) {
 		// We iterated above to failure.  First, we might have blown past
 		// maxlevel.  If so, the tile is inconclusive.
-		// std::cerr << "Arrived at maxlevel, inconclusive" << std::endl;
+
+		// Last ditch check for anisohedral
+		if (check_periodic_) {
+			PeriodicSolver<grid> per {shape_, 16, 16};
+
+			if (get_solution) {
+				std::vector<xform_t> per_solution;
+				if (per.solve(&per_solution)) {
+					patch_t demo;
+					for (const auto& T: per_solution) {
+						demo.push_back(std::make_pair(0, T));
+					}
+					info.setPeriodic(2, &demo);
+					return;
+				}
+			} else {
+				if (per.solve()) {
+					// FIXME -- get the actual transitivity
+					info.setPeriodic(2);
+					return;
+				}
+			}
+		}
+
 		if (get_solution) {
 			patch_t demo;
 			getSolution(*past_solvers.back(), demo, level_);
@@ -1156,17 +1180,6 @@ bool HeeschSolver<grid>::checkIsohedralTiling( CMSat::SATSolver& solv )
 	}
 
 	return tiles_isohedrally_;
-
-/*
-	// FIXME -- is there a reason to use allCoronas here and not something
-	// simpler?
-	allCoronas( solv, [this] ( const patch_t& soln ) {
-		tiles_isohedrally_ = true;
-		return false;
-	} );
-
-	return tiles_isohedrally_;
-	*/
 }
 
 // Note that this enumerates only hole-free coronas.

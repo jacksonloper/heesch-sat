@@ -175,12 +175,15 @@ public:
 		}
 	}	
 
-	void setPeriodic( size_t transitivity = 1 ) 
+	void setPeriodic(size_t transitivity = 1, const patch_t *patch = nullptr) 
 	{
 		patches_.clear();
 		transitivity_ = transitivity;
-
 		record_type_ = (transitivity > 1) ? ANISOHEDRAL : ISOHEDRAL;
+
+		 if (patch) {
+		 	patches_.push_back(*patch);
+		 }
 	}
 
 	void write( std::ostream& os ) const;

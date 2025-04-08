@@ -108,6 +108,9 @@ public:
         const double sqrt3 = 1.73205080756887729353;
 		return { pt.x_ + 0.5*pt.y_, 0.5 * sqrt3 * pt.y_ };
     }
+
+	static const point_t translationV1;
+	static const point_t translationV2;
 };
 
 template<typename coord>
@@ -204,3 +207,9 @@ const std::vector<point<int8_t>> TriHexGrid<coord>::vertices[3] = {
         {-1, 0}, {0, 1}, {1, -1}
     }
 };
+
+template<typename coord>
+const point<coord> TriHexGrid<coord>::translationV1 {1, 1};
+
+template<typename coord>
+const point<coord> TriHexGrid<coord>::translationV2 {-1, 2};

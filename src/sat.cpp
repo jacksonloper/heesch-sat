@@ -19,6 +19,7 @@ static bool check_hh = false;
 static bool reduce = true;
 static bool failsafe = false;
 static bool check_isohedral = false;
+static bool check_periodic = false;
 static bool update_only = false;
 static bool debug_levels = false;
 
@@ -48,6 +49,7 @@ static bool computeHeesch(TileInfo<grid>& info)
 
 	HeeschSolver<grid> solver {info.getShape(), ori, reduce};
 	solver.setCheckIsohedral(check_isohedral);
+	solver.setCheckPeriodic(check_periodic);
 	solver.setCheckHoleCoronas(check_hh);
 	solver.solve(show_solution, max_level, info);
 	info.write(*out);
@@ -164,6 +166,8 @@ int main( int argc, char **argv )
 			ori = TRANSLATIONS_ROTATIONS;
 		} else if (!strcmp(argv[idx], "-isohedral")) {
 			check_isohedral = true;
+		} else if (!strcmp(argv[idx], "-periodic")) {
+			check_periodic = true;
 		} else if (!strcmp(argv[idx], "-noisohedral")) {
 			check_isohedral = false;
 		} else if (!strcmp(argv[idx], "-update")) {

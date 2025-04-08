@@ -101,6 +101,9 @@ public:
 	static const xform<int8_t> orientations[12];
 	
 	static const point<int8_t> all_neighbours[6];
+
+	static const point_t translationV1;
+	static const point_t translationV2;
 };
 
 template<typename coord>
@@ -136,3 +139,8 @@ const xform<int8_t> HexGrid<coord>::orientations[12] = {
       { 1, 0, 0,     -1, -1, 0 },
       { 1, 1, 0,     0, -1, 0 } };
 
+template<typename coord>
+const point<coord> HexGrid<coord>::translationV1 {1, 0};
+
+template<typename coord>
+const point<coord> HexGrid<coord>::translationV2 {0, 1};

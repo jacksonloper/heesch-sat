@@ -106,6 +106,9 @@ public:
     static point<double> gridToPage( const point<double>& pt) {
         return pt;
     }
+
+	static const point_t translationV1;
+	static const point_t translationV2;
 };
 
 template<typename coord>
@@ -149,3 +152,9 @@ const std::vector<point<int8_t>> OctaSquareGrid<coord>::squareVertices = {
 template<typename coord>
 const std::vector<point<int8_t>> OctaSquareGrid<coord>::octagonVertices = {
         {0, -1}, {-1, 0}, {-1, 1}, {0, 2}, {1, 2}, {2, 1}, {2, 0}, {1, -1}};
+
+template<typename coord>
+const point<coord> OctaSquareGrid<coord>::translationV1 {2, 0};
+
+template<typename coord>
+const point<coord> OctaSquareGrid<coord>::translationV2 {1, 1};

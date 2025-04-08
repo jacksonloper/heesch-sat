@@ -70,7 +70,7 @@ public:
 	{
 		return true;
 	}
-
+	
 	// Functions to assist with rendering
 
 	// Get points with integer coordinates corresponding to the *vertices*
@@ -109,6 +109,9 @@ public:
 	
 	static const point<int8_t> all_neighbours[8];
 	static const point<int8_t> edge_neighbours[4];
+
+	static const point_t translationV1;
+	static const point_t translationV2;
 };
 
 template<typename coord>
@@ -143,3 +146,9 @@ const xform<int8_t> OminoGrid<coord>::orientations[8] = {
 	{ -1, 0, 0, 0, -1, 0 }, { 0, 1, 0, -1, 0, 0 },
 	{ -1, 0, 0, 0, 1, 0 }, { 0, -1, 0, -1, 0, 0 },
 	{ 1, 0, 0, 0, -1, 0 }, { 0, 1, 0, 1, 0, 0 } };
+
+template<typename coord>
+const point<coord> OminoGrid<coord>::translationV1 {1, 0};
+
+template<typename coord>
+const point<coord> OminoGrid<coord>::translationV2 {0, 1};
