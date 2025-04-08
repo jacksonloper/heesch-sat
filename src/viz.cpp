@@ -29,6 +29,7 @@ static bool draw_holes = false;
 static bool draw_inconclusive = false;
 static bool draw_nontiler = false;
 static bool draw_isohedral = false;
+static bool draw_anisohedral = false;
 static bool draw_all_heesch = true;
 static std::unordered_set<size_t> hcs;
 static std::unordered_set<size_t> hhs;
@@ -63,6 +64,8 @@ static bool shouldDraw( const TileInfo<grid>& tile )
 			return false;
 		case info_t::ISOHEDRAL:
 			return draw_all || draw_isohedral;
+		case info_t::ANISOHEDRAL:
+			return draw_all || draw_anisohedral;
 		default:
 			return draw_all;
 		}
@@ -197,6 +200,8 @@ int main( int argc, char **argv )
 			draw_nontiler = true;
 		} else if( !strcmp( argv[idx], "-isohedral" ) ) {
 			draw_isohedral = true;
+		} else if( !strcmp( argv[idx], "-anisohedral" ) ) {
+			draw_anisohedral = true;
 		} else if( !strcmp( argv[idx], "-hcs" ) ) {
 			draw_all_heesch = false;
 			++idx;
@@ -229,7 +234,7 @@ int main( int argc, char **argv )
     }
 
 	if( draw_unknown || draw_holes || draw_inconclusive || draw_nontiler
-			|| draw_isohedral ) {
+			|| draw_isohedral || draw_anisohedral ) {
 		draw_all = false;
 	}
 
