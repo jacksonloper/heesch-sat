@@ -980,6 +980,9 @@ void HeeschSolver<grid>::solve(
 			// FIXME -- But this is problematic, since it modifies the 
 			// solver, which we need to save.  Find a way to avoid this
 			// duplication.
+			// FIXME -- checkIsohedralTiling doesn't seem to work with
+			// reduced lists of adjacents.  Not sure how to deal with that,
+			// unfortunately.
 
 			CMSat::SATSolver iso_solver;
 			iso_solver.new_vars(next_var_);
@@ -1001,6 +1004,10 @@ void HeeschSolver<grid>::solve(
 		past_solvers.push_back(std::move(cur_solver));
 	}
 
+	// FIXME: I believe there's a minor bug here in the case that
+	// you happen to set maxlevel to be exactly one more than a 
+	// shape's actual Heesch number.  In that case it'll iterate
+	// without failure and stop naturally above.
 	if (level_ == maxlevel) {
 		// We iterated above to failure.  First, we might have blown past
 		// maxlevel.  If so, the tile is inconclusive.
@@ -1112,9 +1119,9 @@ bool HeeschSolver<grid>::checkIsohedralTiling( CMSat::SATSolver& solv )
 	// extra clauses added here to detect an isohedral witness patch
 	// will necessarily be hole-free.  Testing needed.
 
-	std::vector<CMSat::Lit> ucl { 1 };
-	std::vector<CMSat::Lit> bcl { 2 };
-	std::vector<CMSat::Lit> tcl { 3 };
+	std::vector<CMSat::Lit> ucl(1);
+	std::vector<CMSat::Lit> bcl(2);
+	std::vector<CMSat::Lit> tcl(3);
 
 	for( const auto& T : cloud_.adjacent_ ) {
 		xform_t Ti = T.invert();
@@ -1131,12 +1138,11 @@ bool HeeschSolver<grid>::checkIsohedralTiling( CMSat::SATSolver& solv )
 			if( !getShapeVariable( Ti, 1, ti_id ) ) {
 				// If we've reduced the list of adjacents, it's possible
 				// for T to remain adjacent while Ti is discarded.
-				// So we can't count on.  So this could fail, in which
+				// So this could fail, in which
 				// case we should just ensure that T isn't used in 
 				// an isohedral surround.
-				bcl[0] = neg( t_id );
-				bcl[1] = neg( t_id );
-				solv.add_clause( bcl );
+				ucl[0] = neg( t_id );
+				solv.add_clause( ucl );
 			} else {
 				bcl[0] = neg( t_id );
 				bcl[1] = pos( ti_id );
@@ -1153,7 +1159,7 @@ bool HeeschSolver<grid>::checkIsohedralTiling( CMSat::SATSolver& solv )
 			}
 
 			// Check if neighbours S and T are also adjacent to each other
-			if( !cloud_.isAdjacent( T * S.invert() ) ) {
+			if (!(cloud_.isHoleFreeAdjacent(T * S.invert()))) {
 				continue;
 			}
 
@@ -1170,6 +1176,12 @@ bool HeeschSolver<grid>::checkIsohedralTiling( CMSat::SATSolver& solv )
 					tcl[1] = neg( t_id );
 					tcl[2] = pos( a_id );
 					solv.add_clause( tcl );
+				} else if (reduce_ && cloud_.isCulledAdjacent(A)) {
+					// If we can't find A because it's been culled, then
+					// we can't use this combination of S and T.
+					bcl[0] = neg(t_id);
+					bcl[1] = neg(s_id);
+					solv.add_clause(bcl);
 				}
 			}
 		}

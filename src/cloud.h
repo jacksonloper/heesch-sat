@@ -57,6 +57,10 @@ public:
 	{
 		return adjacent_.find( T ) != adjacent_.end();
 	}
+	bool isCulledAdjacent( const xform_t& T ) const
+	{
+		return adjacent_culled_.find( T ) != adjacent_culled_.end();
+	}
 	bool isHoleFreeAdjacent(const xform_t& T) const
 	{
 		return (adjacent_.find(T) != adjacent_.end()) ||
@@ -460,6 +464,12 @@ void Cloud<grid>::reduceAdjacents()
 	if (cur_size == 0) {
 		reduced_surroundable_ = false;
 	}
+
+/*
+	if (adjacent_.size() + adjacent_culled_.size() != sz) {
+		std::cerr << "WTF" << std::endl;
+	}
+	*/
 
 	delete [] cur;
 	delete [] next;
