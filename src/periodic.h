@@ -39,6 +39,11 @@ public:
 		, w_ {w}
 		, h_ {h}
 	{
+		// FIXME -- take advantage of grid::num_tile_shapes and 
+		// grid::getTileShape to filter out shapes that definitely
+		// can't tile the plane (because they don't have cells in 
+		// the correct proportion).
+
 		next_var_ = 0;
 		
 		unit_vars_ = new var_id[w_ * h_];
