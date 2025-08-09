@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <list>
+#include <bitset>
 
 #include "shape.h"
 #include "bitmap.h"
@@ -85,7 +86,9 @@ public:
 	bool checkSimplyConnectedV1( const xform_t& T ) const;
 	bool checkSimplyConnectedV2( bitgrid_t& bits, const xform_t& T ) const;
 	bool checkSimplyConnected( bitgrid_t bits, const xform_t& T ) const;
+
 	void reduceAdjacents();
+	template<typename bitset> void reduceAdjacentsImpl();
 
 	void debug( std::ostream& os ) const;
 	void debugTransform( std::ostream& os, const xform_t& T ) const;
@@ -126,6 +129,10 @@ Cloud<grid>::Cloud( const Shape<grid>& shape, Orientations ori, bool reduce )
 	// by a border cell of both transformed copies of the shape.  This
 	// incurs some significant redundancy, but makes subsequent adjacency
 	// checking faster by avoiding explicit intersection tests.
+
+	// NOTE -- is there an cheaper way to do this?  Is it possible that
+	// the space of overlaps for a fixed orientation can be generated 
+	// from some kind of DFS?
 	for( auto& bp : border_ ) {
 		for( auto& ori : orientations_ ) {
 			for( auto& obp : ori.border_ ) {
@@ -308,12 +315,12 @@ bool Cloud<grid>::checkSimplyConnectedV2(
 // A refined version of checkSimplyConnectedV2().  Add only the 
 // halo of the base shape, and subtract only the transformed tile.
 // This improved routine has undergone a reasonable amount of testing
-// and agrees with the other algorithms above in all cases.
+// and agrees with reference implementation in all cases.
 template<typename grid>
 bool Cloud<grid>::checkSimplyConnected( bitgrid_t bits, const xform_t& T ) const
 {
-	// Use a copy constructor on bits, so it's already initialized with
-	// the halo.
+	// Deliberately pass bits by value, so that we get a freshly
+	// initialized copy.
 
 	size_t halo_size = halo_.size();
 
@@ -345,7 +352,7 @@ bool Cloud<grid>::checkSimplyConnected( bitgrid_t bits, const xform_t& T ) const
 			++num_visited;
 			bits.set( p, 0 );
 
-			// FIXME -- these neighbours could be precomputed
+			// NOTE -- these neighbours could be precomputed
 			// as an adjacency list above, so that we don't have
 			// to spend time checking the bitmap in places
 			// that are known to be empty.
@@ -362,18 +369,10 @@ bool Cloud<grid>::checkSimplyConnected( bitgrid_t bits, const xform_t& T ) const
 }
 
 template<typename grid>
-void Cloud<grid>::reduceAdjacents()
+template<typename bitset>
+void Cloud<grid>::reduceAdjacentsImpl()
 {
-	// Do things ultra agressively and slowly (but not that slowly)
-
-	if (halo_.size() > 64) {
-		std::cerr << "Cannot reduce adjacents when halo size is above 64"
-			<< std::endl;
-		return;
-	}
-	uint64_t full = (1l << halo_.size()) - 1;
-
-	using xform_info = std::pair<xform_t, uint64_t>;
+	using xform_info = std::pair<xform_t, bitset>;
 
 	size_t sz = adjacent_.size();
 	size_t cur_size = 0;
@@ -381,19 +380,18 @@ void Cloud<grid>::reduceAdjacents()
 	size_t next_size = 0;
 	xform_info *next = new xform_info[sz];
 
-	// std::cerr << "Starting with " << sz << " adjacents" << std::endl;
-	// std::cerr << halo_.size() << std::endl;
-
-	// FIXME this is the last bit of STL junk in here. Can we get rid of it?
-	point_map<coord_t, uint64_t> halo;
+	// NOTE -- would be nice to get rid of this expensive point_map
+	// data structure.
+	point_map<coord_t, bitset> halo;
+	halo.reserve(halo_.size());
 	size_t idx = 0;
 	for (const auto& p: halo_) {
-		halo[p] = (1l << idx);
+		halo[p].set(idx);
 		++idx;
 	}
 
 	for (const auto& T: adjacent_) {
-		uint64_t occ = 0;
+		bitset occ;
 		for (const auto& p: shape_) {
 			point_t tp = T * p;
 			auto i = halo.find(tp);
@@ -409,7 +407,7 @@ void Cloud<grid>::reduceAdjacents()
 	while (true) {
 		for (size_t idx = 0; idx < cur_size; ++idx) {
 			const xform_t& T = cur[idx].first;
-			uint64_t occ = cur[idx].second;
+			bitset occ = cur[idx].second;
 
 			// Find all other transforms that don't overlap T,
 			// use them to mark the halo. 
@@ -429,7 +427,11 @@ void Cloud<grid>::reduceAdjacents()
 				occ |= cur[jdx].second;
 			}
 
-			if (occ == full) {
+			// You'd think that occ.count() is slow, but apparently
+			// it can be implemented with a single instructions on modern
+			// architectures.  Would be interesting to check whether
+			// that's happening.
+			if (occ.count() == halo_.size()) {
 				// We managed to occupy the whole halo, so keep this
 				// neighbour around.
 				next[next_size] = cur[idx];
@@ -439,10 +441,9 @@ void Cloud<grid>::reduceAdjacents()
 				// into the culled list.
 				adjacent_.erase(cur[idx].first);
 				adjacent_culled_.insert(cur[idx].first);
+				// std::cout << cur[idx].first << std::endl;
 			}
 		}
-
-		// std::cerr << " ... got to " << next_size << std::endl;
 
 		if (next_size < cur_size) {
 			xform_info *tmp = cur;
@@ -465,14 +466,29 @@ void Cloud<grid>::reduceAdjacents()
 		reduced_surroundable_ = false;
 	}
 
-/*
-	if (adjacent_.size() + adjacent_culled_.size() != sz) {
-		std::cerr << "WTF" << std::endl;
-	}
-	*/
-
 	delete [] cur;
 	delete [] next;
+}
+
+template<typename grid>
+void Cloud<grid>::reduceAdjacents()
+{
+	// Dispatch to a few compile-time set sizes or give up if the
+	// halo is too big.
+
+	if (halo_.size() <= 64) {
+		reduceAdjacentsImpl<std::bitset<64>>();
+	} else if (halo_.size() <= 256) {
+		reduceAdjacentsImpl<std::bitset<256>>();
+	} else if (halo_.size() <= 1024) {
+		reduceAdjacentsImpl<std::bitset<1024>>();
+	} else {
+		// NOTE -- could revert to a dynamic bitset here?  Note that in
+		// the worst case this is a graceful failure mode -- downstream
+		// code won't break, it'll just be slower.
+		std::cerr << "Cannot reduce adjacents when halo size is above 1024"
+			<< std::endl;
+	}
 }
 
 template<typename grid>
