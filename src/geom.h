@@ -68,6 +68,12 @@ public:
 	}
 
 	template<typename ocoord>
+	bool parallel(const point<ocoord>& other) const
+	{
+		return (int32_t)x_ * other.y_ == (int32_t)y_ * other.x_;
+	}
+
+	template<typename ocoord>
 	point<coord>& operator =( const point<ocoord>& other )
 	{
 		x_ = other.x_;
@@ -253,6 +259,34 @@ public:
 	coord d_;
 	coord e_;
 	coord f_;
+};
+
+template<typename coord>
+class basis
+{
+	basis(const point<coord>& u, const point<coord>& v) 
+		: u_ {u}
+		, v_ {v}
+	{
+		det_ = (int32_t)u.x_ * v.y_ - (int32_t)u.y_ * v.x_;
+	}
+
+	point<coord> operator *(const point& pt) const
+	{
+		int32_t x = v.y_ * pt.x_ - u.y_ * pt.y_;
+		int32_t y = u.x_ * pt.x_ - v.x_ * pt.y_;
+
+		if (((x % det_) != 0) || ((y % det_) != 0)) {
+			std::cerr << "Could not perform change of basis" << std::endl;
+			return point<coord> {0, 0};
+		}
+
+		return point<coord> {(coord)x, (coord)y};
+	}
+
+	point<coord> u_;
+	point<coord> v_;
+	int32_t det_;
 };
 
 template<typename coord>

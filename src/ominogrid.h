@@ -104,7 +104,7 @@ public:
 
 	static const point_t origins[1];
 
-	static const size_t num_orientations;
+	static const size_t num_orientations = 8;
 	static const xform<int8_t> orientations[8];
 	
 	static const point<int8_t> all_neighbours[8];
@@ -136,9 +136,6 @@ const point<int8_t> OminoGrid<coord>::edge_neighbours[4] = {
 		{ -1, 0 },
 		{ 1, 0 },
 		{ 0, 1 } };
-
-template<typename coord>
-const size_t OminoGrid<coord>::num_orientations = 8;
 
 template<typename coord>
 const xform<int8_t> OminoGrid<coord>::orientations[8] = {
