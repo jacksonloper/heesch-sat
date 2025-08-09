@@ -223,11 +223,11 @@ private:
 	void getSolution( const CMSat::SATSolver& solv,
 		patch_t& ret, size_t lev = 0xDEADBEEF ) const;
 	void extendLevelWithTransforms( size_t lev, const xform_set<coord_t>& Ts );
-
 	size_t allCoronas( CMSat::SATSolver& solv, solution_cb<coord_t> cb ) const;
 	bool checkIsohedralTiling( CMSat::SATSolver& solv );
-
 	bool iterateUntilSimplyConnected(size_t lev, CMSat::SATSolver& solver);
+
+	// bool checkForCentralPeriod(CMSat::SATSolver& solver) const;
 
 	Shape<grid> shape_;
 	Cloud<grid> cloud_;
@@ -1269,6 +1269,57 @@ void HeeschSolver<grid>::allCoronas( std::vector<patch_t>& solns )
 	allCoronas( [&solns]( const patch_t& soln )
 		{ solns.push_back( soln ); return true; } );
 }
+
+#if 0
+// Find up to sz short, nonparallel tile placements that have the
+// same orientation as the central tile (i.e., the identity orientation)
+template<typename grid>
+size_t HeeschSolver<grid>::getCentralTranslations(
+	size_t sz, const std::vector<CMSat::lbool>& model, point_t *ret) const
+{
+	size_t retsz = 0;
+
+	// The tiles in the array are basically ordered by (combinatorial)
+	// distance from the centre, so there's no real need to sort them
+	// by distance later.  Just find the first sz tiles that are pairwise
+	// linearly independent.  Start at idx=1 to skip the central tile.
+	for (size_t idx = 1; idx < tiles_.size(); ++idx) {
+		const tile_info<grid>& ti = tiles_[idx];
+		const xform_t& T = ti.T_;
+
+		if (T.isTranslation()) {
+			point_t w {T.c_, T.f_};
+			bool add = true;
+			for (size_t jdx = 0; jdx < retsz; ++jdx) {
+				if (ret[jdx].parallel(w)) {
+					add = false;
+					break;
+				}
+			}
+
+			if (add) {
+				ret[retsz] = w;
+				++retsz;
+				if (retsz == sz) {
+					return retsz;
+				}
+			}
+		}
+	}
+
+	return retsz;
+}
+
+// Look for a subpatch that includes the central tile in a solved patch 
+// and that tiles periodically.  If such a patch is found, the shape
+// definitely tiles periodically.  If not, results are inconclusive.
+template<typename grid>
+bool HeeschSolver<grid>::checkForCentralPeriod(
+	const std::vector<CMSat::lbool>& model) const
+{
+	return false;
+}
+#endif
 
 template<typename grid>
 void HeeschSolver<grid>::debug( std::ostream& os ) const

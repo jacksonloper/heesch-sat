@@ -261,6 +261,7 @@ public:
 	coord f_;
 };
 
+#if 0
 template<typename coord>
 class basis
 {
@@ -288,6 +289,7 @@ class basis
 	point<coord> v_;
 	int32_t det_;
 };
+#endif
 
 template<typename coord>
 inline size_t hash_value( const xform<coord>& T )
