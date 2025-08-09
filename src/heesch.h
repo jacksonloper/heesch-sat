@@ -980,9 +980,6 @@ void HeeschSolver<grid>::solve(
 			// FIXME -- But this is problematic, since it modifies the 
 			// solver, which we need to save.  Find a way to avoid this
 			// duplication.
-			// FIXME -- checkIsohedralTiling doesn't seem to work with
-			// reduced lists of adjacents.  Not sure how to deal with that,
-			// unfortunately.
 
 			CMSat::SATSolver iso_solver;
 			iso_solver.new_vars(next_var_);
@@ -1109,15 +1106,9 @@ void HeeschSolver<grid>::solve(
 template<typename grid>
 bool HeeschSolver<grid>::checkIsohedralTiling( CMSat::SATSolver& solv ) 
 {
-	// The solver is assumed to contain the clauses for a hole-free
-	// 1-corona.  Augment it with new clauses that restrict solutions 
-	// to patches that witness isohedral tilings.
-
-	// FIXME -- actually, it's not clear that this algorithm cares 
-	// whether the clauses define a *hole-free* 1-corona, i.e., whether
-	// holes have explicitly been suppressed.  I believe that the 
-	// extra clauses added here to detect an isohedral witness patch
-	// will necessarily be hole-free.  Testing needed.
+	// The solver is assumed to contain the clauses for a 1-corona. 
+	// Augment it with new clauses that restrict solutions to
+	// patches that witness isohedral tilings.
 
 	std::vector<CMSat::Lit> ucl(1);
 	std::vector<CMSat::Lit> bcl(2);
@@ -1158,13 +1149,24 @@ bool HeeschSolver<grid>::checkIsohedralTiling( CMSat::SATSolver& solv )
 				break;
 			}
 
-			// Check if neighbours S and T are also adjacent to each other
-			if (!(cloud_.isHoleFreeAdjacent(T * S.invert()))) {
-				continue;
-			}
-
 			var_id s_id;
 			getShapeVariable( S, 1, s_id );
+
+			// Check if neighbours S and T are also adjacent to each other
+			if (!(cloud_.isHoleFreeAdjacent(T * S.invert()))) {
+				// If S and T themselves enclose a hole in the first
+				// corona, we want to make sure they can't both be
+				// used in an isohedral witness patch (in 2025
+				// Jake Shin discovered two non-tiling 10-hexes
+				// that are mis-classified as isohedral if you don't
+				// check this.
+				if(cloud_.isHoleAdjacent(T * S.invert())) {
+					bcl[0] = neg(t_id);
+					bcl[1] = neg(s_id);
+					solv.add_clause(bcl);
+				}
+				continue;
+			}
 
 			// This will create redundant clauses when T and S swap places,
 			// no?
