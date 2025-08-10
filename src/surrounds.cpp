@@ -21,6 +21,7 @@ using namespace std;
 static Orientations ori = ALL;
 static bool show = false;
 static bool verbose = false;
+static bool reduce = false;
 
 template<typename grid>
 static bool describeNeighbours(TileInfo<grid>& tile)
@@ -28,7 +29,7 @@ static bool describeNeighbours(TileInfo<grid>& tile)
 	using coord_t = typename grid::coord_t;
 	using xform_t = typename grid::xform_t;
 
-	Cloud<grid> cloud {tile.getShape(), ori, true, false};
+	Cloud<grid> cloud {tile.getShape(), ori, true, reduce};
 	cerr << cloud.orientations_.size() << " orientations" << endl;
 
 	if (show) {
@@ -69,7 +70,7 @@ static bool computeSurrounds(TileInfo<grid> & tile)
 	using xform_t = typename grid::xform_t;
 	using bitgrid_t = bitgrid<128>;
 
-	Cloud<grid> cloud {tile.getShape(), ori, true, false};
+	Cloud<grid> cloud {tile.getShape(), ori, true, reduce};
 	// FIXME -- could abort early here if cloud reports that the
 	// shape isn't surroundable.
 	size_t sz = cloud.adjacent_.size();
@@ -282,6 +283,10 @@ int main( int argc, char **argv )
 		    neighs = true;
 		} else if( !strcmp( argv[idx], "-verbose" ) ) {
 		    verbose = true;
+		} else if( !strcmp( argv[idx], "-reduce" ) ) {
+		    reduce = true;
+		} else if( !strcmp( argv[idx], "-noreduce" ) ) {
+		    reduce = false;
 		} else {
 			cerr << "Unrecognized parameter \"" << argv[idx] << "\""
 				<< endl;
