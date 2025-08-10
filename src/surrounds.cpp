@@ -3,10 +3,16 @@
 #include <sstream>
 #include <map>
 
+#include <vector>
+#include <unordered_set>
+#include <unordered_map>
+
 #include "heesch.h"
 #include "grid.h"
 #include "tileio.h"
 #include "cloud.h"
+
+#include "dlx.h"
 
 // Enumerate all surrounds of a given polyform.
 
@@ -143,6 +149,201 @@ static bool computeSurrounds( const TileInfo<grid>& tile )
 }
 GRID_WRAP( computeSurrounds );
 
+template<typename grid>
+static bool computeSurroundsX( const TileInfo<grid> & tile )
+{
+	using coord_t = typename grid::coord_t;
+	using point_t = typename grid::point_t;
+	using xform_t = typename grid::xform_t;
+	using bitgrid_t = bitgrid<128>;
+
+	Cloud<grid> cloud { 
+		tile.getShape(), 
+		Orientations::ALL, true, false };
+	// FIXME -- could abort early here if cloud reports that the
+	// shape isn't surroundable.
+	size_t sz = cloud.adjacent_.size();
+
+	point_map<coord_t, std::size_t> cell_map;
+	uint32_t num_cols = 0;
+	std::vector<xform_t> shape_map;
+	shape_map.reserve(sz);
+
+	for (const auto & P : cloud.halo_) {
+		cell_map[P] = num_cols++;
+	}
+
+	// TODO: can we combine the below two for loops?
+	// need to know length of row beforehand...
+	// or, modify so that every row is not necessarily the same length
+	// but need to modify the constructor for DLX to accept numColumns
+	for( const auto& T : cloud.adjacent_ ) {
+		for( const auto& P : tile.getShape()) {
+			point_t tp = T * P;
+			
+			if (cell_map.find(tp) != cell_map.end()) {
+				continue;
+			}
+			cell_map[tp] = num_cols++;
+		}
+
+		shape_map.push_back(T);
+	}
+
+/*
+	size_t num_ha = 0;
+
+	for (size_t idx = 0; idx < shape_map.size(); ++idx) {
+		const auto& T = shape_map[idx];
+		for (size_t jdx = 0; jdx < idx; ++jdx) {
+			const auto& S = shape_map[jdx];
+			if (cloud.isHoleAdjacent(T * S.invert())) {
+				++num_ha;
+			}
+		}
+	}
+
+	std::cerr << "Found " << num_ha << " hole adjacents" << std::endl;
+	std::cerr << "Current matrix has " << num_cols << " columns"
+		<< std::endl;
+*/
+
+	std::vector<std::vector<bool>> dlx_matrix;
+	dlx_matrix.reserve(sz);
+
+	for (const auto & T : cloud.adjacent_) {
+		std::vector<bool> row (num_cols, false);
+
+		for (const auto & P : tile.getShape()) {
+			point_t tp = T * P;
+			std::size_t idx = cell_map[tp];
+			row[idx] = true;
+		}
+
+		dlx_matrix.push_back(std::move(row));
+	}
+
+	size_t required_cells = cloud.halo_.size();
+	DLXMatrix dlx(dlx_matrix, required_cells);
+
+	// Keep track of holes on-the-fly?
+	const size_t MAX_SURROUND = 17;
+	std::vector<std::size_t> counts(MAX_SURROUND);
+	std::vector<std::size_t> holes(MAX_SURROUND);
+
+	Shape<grid> halo;
+	Shape<grid> border;
+	Shape<grid> shape = tile.getShape();
+	shape.getHaloAndBorder( halo, border );	
+
+	bitgrid_t halo_bits;
+	size_t halo_size = 0;
+	for( auto p : halo ) {
+		halo_bits.set( p, 1 );
+		halo_size++;
+	}
+
+	bitgrid_t bits;
+	for( const auto& p : shape ) {
+		bits.set( p, 1 );
+	}
+
+	// Pass by value so that we don't have to redo the above computatons
+	auto process = [bits, halo_bits, halo_size, &shape, &shape_map, &counts, &holes]( const std::vector<size_t> & solution ) mutable
+	{
+		point_t start;
+		for (const auto & row : solution) {
+			const auto& T = shape_map[row];
+
+			for (const auto & p : shape) {
+				point_t tp = T * p;
+				bits.set(tp, 1);
+
+				// Use get and set?
+				if (halo_bits.get(tp)) {
+					halo_bits.set(tp, 0);
+					halo_size--;
+				}
+
+				for (const auto & pn : neighbours<grid> { tp }) {
+					if (bits.get(pn)) continue;
+					if (!halo_bits.get(pn)) {
+						halo_bits.set(pn, 1);
+						halo_size++;
+
+						// this start cell might get deleted above
+						start = pn;
+					}
+				}
+			}
+		}
+
+		// somewhat hacky way to get start point because of above
+		// assuming that the next cell we encounter after going all the way right
+		// is a halo cell (which makes sense, IMO)
+		while (bits.get(start)) {
+			start.x_ += 1;
+		}
+
+		point_t stack[128];
+		size_t size = 1;
+		size_t num_visited = 0;
+		stack[0] = start;
+		halo_bits.set(start, 0);
+
+		while( size > 0 ) {
+			auto p = stack[--size];
+			++num_visited;
+
+			for( auto pn : edge_neighbours<grid> { p } ) {
+				if (halo_bits.get(pn) == 0) continue;
+				halo_bits.set(pn, 0);
+				stack[size++] = pn;
+			}
+		}
+
+		if (num_visited != halo_size) {
+			holes[solution.size()]++;
+		}
+
+#if 0
+		bool found = false;
+
+		for (size_t idx = 0; idx < solution.size(); ++idx) {
+			const xform_t& T = shape_map[solution[idx]];
+
+			for (size_t jdx = 0; jdx < solution.size(); ++jdx) {
+				const xform_t& S = shape_map[solution[jdx]];
+
+				if (cloud.isHoleAdjacent(T * S.invert())) {
+					holes[solution.size()]++;
+					found = true;
+					break;
+				}
+			}
+
+			if (found) {
+				break;
+			}
+		}
+
+#endif
+		counts[solution.size()]++;
+		return true;
+	};
+
+	dlx.countSolutions(nullptr, process);
+
+	for (size_t i = 0; i < counts.size(); ++i) {
+		if (counts[i] == 0) continue;
+		std::cout << counts[i] << " surrounds of size " << i << ": ";
+		std::cout << holes[i] << " with holes." << std::endl;
+	}
+
+	return true;
+}
+GRID_WRAP( computeSurroundsX );
+
 int main( int argc, char **argv )
 {
 	bool count = false;
@@ -172,7 +373,7 @@ int main( int argc, char **argv )
 	} else if( count ) {
 		FOR_EACH_IN_STREAM( cin, countSurrounds );
 	} else {
-		FOR_EACH_IN_STREAM( cin, computeSurrounds );
+		FOR_EACH_IN_STREAM( cin, computeSurroundsX );
 	}
 	return 0;
 }

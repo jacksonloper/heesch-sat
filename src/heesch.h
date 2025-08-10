@@ -294,7 +294,7 @@ void debugSolution( std::ostream& os,
 template<typename grid>
 HeeschSolver<grid>::HeeschSolver( const Shape<grid>& shape, Orientations ori, bool reduce )
 	: shape_ { shape }
-	, cloud_ { shape, ori, reduce }
+	, cloud_ { shape, ori, false, reduce }
 	, tiles_ {}
 	, cells_ {}
 	, tile_map_ {}

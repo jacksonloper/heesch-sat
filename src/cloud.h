@@ -48,7 +48,7 @@ public:
 	using point_t = typename grid::point_t;
 	using bitgrid_t = bitgrid<128>;
 
-	Cloud( const Shape<grid>& shape, Orientations ori = ALL, bool reduce = false );
+	Cloud( const Shape<grid>& shape, Orientations ori = ALL, bool filterSymmetries = false, bool reduce = false );
 
 	bool isOverlap( const xform_t& T ) const
 	{
@@ -82,6 +82,7 @@ public:
 	}
 
 	void calcOrientations( Orientations ori );
+	void calcUniqueOrientations( Orientations ori );
 
 	bool checkSimplyConnectedV1( const xform_t& T ) const;
 	bool checkSimplyConnectedV2( bitgrid_t& bits, const xform_t& T ) const;
@@ -113,7 +114,8 @@ public:
 };
 
 template<typename grid>
-Cloud<grid>::Cloud( const Shape<grid>& shape, Orientations ori, bool reduce )
+Cloud<grid>::Cloud( const Shape<grid>& shape, Orientations ori, 
+	bool filterSymmetries, bool reduce )
 	: shape_ { shape }
 	, adjacent_ {}
 	, adjacent_culled_ {}
@@ -123,7 +125,12 @@ Cloud<grid>::Cloud( const Shape<grid>& shape, Orientations ori, bool reduce )
 	, reduced_surroundable_ { true }
 {
 	shape.getHaloAndBorder(halo_, border_);
-	calcOrientations(ori);
+
+	if (!filterSymmetries) {
+		calcOrientations(ori);
+	} else {
+		calcUniqueOrientations(ori);
+	}
 
 	// Overlaps are easy to detect -- there must be a cell that's covered
 	// by a border cell of both transformed copies of the shape.  This
@@ -566,6 +573,57 @@ void Cloud<grid>::calcOrientations( Orientations ori )
 
 	// std::cout << orientations_.size() << " Orientations." << std::endl;
 	*/
+}
+
+template<typename grid>
+void Cloud<grid>::calcUniqueOrientations( Orientations ori )
+{
+	std::vector<Shape<grid>> uniqueOri;
+	Shape<grid> ts;
+
+	// Construct oriented copies, factoring out symmetries.
+	for( size_t idx = 0; idx < grid::num_orientations; ++idx )
+	{
+		xform_t T { grid::orientations[idx] };
+
+		if( ori == TRANSLATIONS_ONLY )
+		{
+			if( !T.isTranslation() )
+				continue;
+		}
+		else if( ori == TRANSLATIONS_ROTATIONS )
+		{
+			if( T.det() < 0 )
+				continue;
+		}
+
+		Shape<grid> oshape;
+		Shape<grid> ohalo;
+		Shape<grid> oborder;
+		oshape.reset( shape_, T );
+		ohalo.reset( halo_, T );
+		oborder.reset( border_, T );
+
+		// Filter out symmetries
+		bool isUnique = true;
+		ts.reset( shape_, T );
+		ts.untranslate();
+
+		for (const auto & unique : uniqueOri)
+		{
+			if ( unique == ts )
+			{
+				isUnique = false;
+				break;
+			}
+		}
+
+		if (isUnique)
+		{
+			uniqueOri.emplace_back(ts);
+			orientations_.emplace_back( T, oshape, ohalo, oborder );
+		}
+	}
 }
 
 template<typename grid>
