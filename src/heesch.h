@@ -1035,7 +1035,7 @@ void HeeschSolver<grid>::solve(
 		if (get_solution) {
 			patch_t demo;
 			getSolution(*past_solvers.back(), demo, level_);
-			info.setInconclusive(&demo);
+			info.setInconclusive(demo);
 		} else {
 			info.setInconclusive();
 		}

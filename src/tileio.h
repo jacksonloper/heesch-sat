@@ -147,14 +147,17 @@ public:
 		return transitivity_;
 	}
 
-	void setInconclusive( const patch_t* patch = nullptr )
+	void setInconclusive()
 	{
 		record_type_ = INCONCLUSIVE;
 		patches_.clear();
+	}
 
-		if( patch ) {
-			patches_.push_back( *patch );
-		}
+	void setInconclusive(const patch_t& patch)
+	{
+		record_type_ = INCONCLUSIVE;
+		patches_.clear();
+		patches_.push_back(patch);
 	}
 
 	void setNonTiler( 

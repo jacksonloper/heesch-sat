@@ -99,7 +99,7 @@ static bool computeHeeschSafeMode( TileInfo<grid>& tile )
 		while (true) {
 			if (debug_levels) {
 				solver.debugCurrentPatch(cur);
-				tile.setInconclusive(&cur);
+				tile.setInconclusive(cur);
 				tile.write(*out);
 			}
 
@@ -132,7 +132,7 @@ static bool computeHeeschSafeMode( TileInfo<grid>& tile )
 	if (solver.getLevel() > max_level) {
 		// Exceeded maximum level, label it inconclusive
 		if (show_solution) {
-			tile.setInconclusive(&cur);
+			tile.setInconclusive(cur);
 		} else {
 			tile.setInconclusive();
 		}

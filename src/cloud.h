@@ -204,10 +204,22 @@ Cloud<grid>::Cloud( const Shape<grid>& shape, Orientations ori,
 					found = true;
 
 					adjacent_.insert( Tnew );
-					adjacent_.insert( Tnew.invert() );
+					// It's convenient to throw T inverse into the
+					// list of adjacents as well, so that we don't
+					// waste computation on it later when it comes 
+					// up during iteration.  But that doesn't work
+					// when you're using unique orientations (i.e.,
+					// factoring out symmetry), because T inverse
+					// might be one of the orientations you previously
+					// factored out.  So just skip it in that case.
+					if (!filterSymmetries) {
+						adjacent_.insert( Tnew.invert() );
+					}
 				} else {
 					adjacent_hole_.insert( Tnew );
-					adjacent_hole_.insert( Tnew.invert() );
+					if (!filterSymmetries) {
+						adjacent_hole_.insert( Tnew.invert() );
+					}
 				}
 			}
 		}
@@ -586,15 +598,14 @@ void Cloud<grid>::calcUniqueOrientations( Orientations ori )
 	{
 		xform_t T { grid::orientations[idx] };
 
-		if( ori == TRANSLATIONS_ONLY )
-		{
-			if( !T.isTranslation() )
+		if( ori == TRANSLATIONS_ONLY ) {
+			if( !T.isTranslation() ) {
 				continue;
-		}
-		else if( ori == TRANSLATIONS_ROTATIONS )
-		{
-			if( T.det() < 0 )
+			}
+		} else if( ori == TRANSLATIONS_ROTATIONS ) {
+			if( T.det() < 0 ) {
 				continue;
+			}
 		}
 
 		Shape<grid> oshape;
