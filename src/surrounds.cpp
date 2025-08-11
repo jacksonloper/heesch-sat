@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <sstream>
 #include <map>
+#include <bitset>
 
 #include <vector>
 #include <unordered_set>
@@ -268,9 +269,84 @@ static bool computeSurrounds(TileInfo<grid> & tile)
 }
 GRID_WRAP( computeSurrounds );
 
+// A cheap single-purpose algorithm that checks if a tile has a 3-surround.
+// This could probably be sped up further, and doesn't guarantee that the
+// surround is hole-free.  But these are already so rare that it's probably
+// not really worth optimizing more.
+template<typename grid>
+static bool filter3Surround(TileInfo<grid> & tile)
+{
+	using coord_t = typename grid::coord_t;
+	using point_t = typename grid::point_t;
+	using xform_t = typename grid::xform_t;
+	using bits_t = bitset<256>;
+
+	// Don't filter symmetries here,
+	// so that we can invert matrices below.
+	Cloud<grid> cloud {tile.getShape(), ori, true, true};
+	vector<pair<xform_t, bits_t>> adjs;
+
+	// Assign an index to each halo cell
+	point_map<coord_t, size_t> cell_map;
+	uint32_t num_cols = 0;
+	for (const auto & P : cloud.halo_) {
+		cell_map[P] = num_cols++;
+	}
+
+	// For each adjacent, figure out which halo cells it
+	// occupies.
+	for (const auto& T: cloud.adjacent_) {
+		bits_t bits;
+
+		for (const auto& p: tile.getShape()) {
+			point_t tp = T * p;
+			if (cell_map.find(tp) != cell_map.end()) {
+				bits[cell_map[tp]] = true;	
+			}
+		}
+	
+		// cout << T << " -> " << bits << endl;
+		adjs.emplace_back(T, std::move(bits));
+	}
+
+	for (size_t idx = 0; idx < adjs.size(); ++idx) {
+		const auto& TA = adjs[idx].first;
+		const auto& ba = adjs[idx].second;
+
+		for (size_t jdx = 0; jdx < idx; ++jdx) {
+			const auto& TB = adjs[jdx].first;
+			const auto& bb = adjs[jdx].second;
+
+			if ((ba & bb).any()) {
+				// A and B overlap, no point in checking further.
+				continue;
+			}
+
+			for (size_t kdx = 0; kdx < jdx; ++kdx) { 
+				const auto& TC = adjs[kdx].first;
+				const auto& bc = adjs[kdx].second;
+				
+				if ((ba | bb | bc).count() == cloud.halo_.size()) {
+					LabelledPatch<coord_t> patch;
+					patch.emplace_back(0l, xform_t {});
+					patch.emplace_back(1l, TA);
+					patch.emplace_back(1l, TB);
+					patch.emplace_back(1l, TC);
+					tile.setInconclusive(patch);
+					tile.write(cout);
+				}
+			}
+		}
+	}
+
+	return true;
+}
+GRID_WRAP(filter3Surround);
+
 int main( int argc, char **argv )
 {
 	bool neighs = false;
+	bool three = false;
 
 	for( int idx = 1; idx < argc; ++idx ) {
 		if (!strcmp(argv[idx], "-show")) {
@@ -287,6 +363,8 @@ int main( int argc, char **argv )
 		    reduce = true;
 		} else if( !strcmp( argv[idx], "-noreduce" ) ) {
 		    reduce = false;
+		} else if( !strcmp( argv[idx], "-three" ) ) {
+		    three = true;
 		} else {
 			cerr << "Unrecognized parameter \"" << argv[idx] << "\""
 				<< endl;
@@ -294,7 +372,9 @@ int main( int argc, char **argv )
 		}
 	}
 
-	if( neighs ) {
+	if (three) { 
+		FOR_EACH_IN_STREAM(cin, filter3Surround);
+	} else if (neighs) {
 		FOR_EACH_IN_STREAM(cin, describeNeighbours);
 	} else {
 		FOR_EACH_IN_STREAM( cin, computeSurrounds );
