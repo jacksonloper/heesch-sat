@@ -322,6 +322,18 @@ static bool filter3Surround(TileInfo<grid> & tile)
 				continue;
 			}
 
+			// May as well check for 2-surrounds, since it's basically
+			// free...
+			if ((ba | bb).count() == cloud.halo_.size()) {
+				LabelledPatch<coord_t> patch;
+				patch.emplace_back(0l, xform_t {});
+				patch.emplace_back(1l, TA);
+				patch.emplace_back(1l, TB);
+				tile.setInconclusive(patch);
+				tile.write(cout);
+				continue;
+			}
+
 			for (size_t kdx = 0; kdx < jdx; ++kdx) { 
 				const auto& TC = adjs[kdx].first;
 				const auto& bc = adjs[kdx].second;
