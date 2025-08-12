@@ -103,23 +103,21 @@ static bool computeSurrounds(TileInfo<grid> & tile)
 		shape_map.push_back(T);
 	}
 
-	vector<vector<bool>> dlx_matrix;
-	dlx_matrix.reserve(sz);
-
-	for (const auto & T : cloud.adjacent_) {
-		vector<bool> row (num_cols, false);
-
-		for (const auto & P : tile.getShape()) {
+	vector<bool> dlx_matrix(sz * num_cols);
+	for (size_t idx = 0; idx < sz; ++idx) {
+		const xform_t& T = shape_map[idx];
+		for (const auto& P: tile.getShape()) {
 			point_t tp = T * P;
-			size_t idx = cell_map[tp];
-			row[idx] = true;
+			size_t vidx = cell_map[tp];
+			dlx_matrix[idx * num_cols + vidx] = true;
 		}
-
-		dlx_matrix.push_back(std::move(row));
 	}
-
-	size_t required_cells = cloud.halo_.size();
-	DLXMatrix dlx(dlx_matrix, required_cells);
+			
+	// TODO -- accelerate this further by making the lookup completely implicit, so
+	// that you don't ever need to construct a matrix of booleans.  Turns out that
+	// doing so is a little annoying, and may not actually save memory.  Investigate.
+	DLXMatrix dlx(sz, num_cols, cloud.halo_.size(),
+		[&dlx_matrix, num_cols](size_t r, size_t c) {return dlx_matrix[r*num_cols + c];});
 
 	Shape<grid> halo;
 	Shape<grid> border;
@@ -337,6 +335,10 @@ static bool filter3Surround(TileInfo<grid> & tile)
 			for (size_t kdx = 0; kdx < jdx; ++kdx) { 
 				const auto& TC = adjs[kdx].first;
 				const auto& bc = adjs[kdx].second;
+
+				if ((ba & bc).any() || (bb & bc).any()) {
+					continue;
+				}
 				
 				if ((ba | bb | bc).count() == cloud.halo_.size()) {
 					LabelledPatch<coord_t> patch;

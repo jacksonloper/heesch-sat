@@ -7,8 +7,9 @@
 #include <iomanip>
 #include <functional>
 
-using process_cb = std::function<bool( const std::vector<size_t>& )>;
-using update_cb = std::function<void( const size_t &, const bool & )>;
+using matrix_cb = std::function<bool(std::size_t, std::size_t)>;
+using process_cb = std::function<bool(const std::vector<std::size_t>&)>;
+using update_cb = std::function<void(std::size_t, bool)>;
 
 struct DLXNode
 {
@@ -22,42 +23,44 @@ struct DLXNode
     std::size_t col{ SIZE_MAX };
 
     // TODO: is this necessary? currently not used
-    std::size_t id{ SIZE_MAX };
+    // std::size_t id{ SIZE_MAX };
 
     // Used for column headers
     std::size_t count{ 0 };
 
     DLXNode() = default;
     DLXNode(std::size_t row, std::size_t col, std::size_t id)
-    : row { row }, col { col }, id{ id } {}
+		: row { row }, col { col } {}
 };
 
 class DLXMatrix
 {
 public:
-    DLXMatrix(std::vector<std::vector<bool>> matrix_, std::size_t requiredCols_)
-    : matrix{ matrix_ }, requiredCols{ requiredCols_ }
-    {
-        std::size_t numCols = matrix[0].size();
-        headers.resize(numCols);
-
-        for (size_t c = 0; c < numCols; ++c)
+	DLXMatrix(std::size_t nr, std::size_t nc, std::size_t rc, const matrix_cb& mcb)
+		: numRows {nr}
+		, numCols {nc}
+		, requiredCols {rc}
+		, headers {nc}
+	{
+        for (std::size_t c = 0; c < numCols; ++c)
         {
             headers[c].col = c;
         }
 
         linkRow(headers);
-        createNodes();
+        createNodes(mcb);
 
-        for (auto & row : nodes)
-        {
-            linkRowToHeaders(row);
-        }
+		for (auto& row: nodes) {
+			linkRowToHeaders(row);
+		}
 
         setupRoot();
-    }
+	}
 
-    ~DLXMatrix() { delete root; }
+    DLXMatrix(std::vector<std::vector<bool>> matrix_, std::size_t rc)
+		: DLXMatrix {matrix_.size(), matrix_[0].size(), rc, 
+			[&matrix_](std::size_t r, std::size_t c) {return matrix_[r][c];}}
+    {}
 
     std::vector<std::vector<std::size_t>> findSolutions(update_cb update = nullptr, process_cb process = nullptr)
     {
@@ -83,9 +86,9 @@ public:
     std::size_t numSolutions = 0;
 
 private:
-    void createNodes();
-    inline void linkRow(std::vector<DLXNode> & row);
-    inline void linkRowToHeaders(std::vector<DLXNode> & row);
+    void createNodes(const matrix_cb& mcb);
+    inline void linkRow(std::vector<DLXNode>& row);
+    inline void linkRowToHeaders(std::vector<DLXNode>& row);
     inline void setupRoot();
 
     std::size_t smallestColumn();
@@ -93,16 +96,16 @@ private:
     void uncoverColumn(std::size_t col);
 
     // All required columns are covered
-    bool isCovered() { return root->right->col >= requiredCols; }
+    bool isCovered() { return root.right->col >= requiredCols; }
 
-    void search(std::vector<std::size_t> & cur, update_cb update, process_cb process, const bool & displaySolutions = true, int depth = 0);
+    void search(std::vector<std::size_t> & cur, update_cb update, process_cb process, bool  displaySolutions = true, int depth = 0);
 
-    std::vector<std::vector<bool>> matrix;
+	std::size_t numRows;
+	std::size_t numCols;
     std::size_t requiredCols;
+	std::size_t numNodes;
 
-    int numNodes = 0;
-
-    DLXNode * root;
+    DLXNode root;
     std::vector<DLXNode> headers;
     std::vector<std::vector<DLXNode>> nodes;
 
@@ -110,7 +113,7 @@ private:
     std::vector<std::vector<std::size_t>> solutions;
 };
 
-void DLXMatrix::search(std::vector<std::size_t> & cur, update_cb update, process_cb process, const bool & displaySolutions, int depth)
+void DLXMatrix::search(std::vector<std::size_t> & cur, update_cb update, process_cb process, bool displaySolutions, int depth)
 {
     // Found a solution
     if (isCovered())
@@ -170,30 +173,14 @@ void DLXMatrix::search(std::vector<std::size_t> & cur, update_cb update, process
     uncoverColumn(c);
 }
 
-void DLXMatrix::createNodes()
-{
-    for (std::size_t r = 0; r < matrix.size(); ++r)
-    {   
-        std::vector<DLXNode> row;
-
-        for (std::size_t c = 0; c < matrix[r].size(); ++c)
-        {
-            if (matrix[r][c]) row.emplace_back(r, c, numNodes++);
-        }
-
-        linkRow(row);
-        nodes.emplace_back(std::move(row));
-    }
-}
-
 inline void DLXMatrix::linkRow(std::vector<DLXNode> & row)
-{
+{   
     // Link each pair of nodes in the row
     for (std::size_t i = 0; i < row.size() - 1; ++i)
     {
         DLXNode & u = row[i];
         DLXNode & v = row[i + 1];
-
+    
         u.right = &v;
         v.left = &u;
     }
@@ -221,16 +208,31 @@ inline void DLXMatrix::linkRowToHeaders(std::vector<DLXNode> & row)
     }
 }
 
+void DLXMatrix::createNodes(const matrix_cb& mcb_)
+{
+	for (std::size_t r = 0; r < numRows; ++r) {
+		std::vector<DLXNode> row;
+
+		for (std::size_t c = 0; c < numCols; ++c) {
+			if (mcb_(r, c)) {
+				row.emplace_back(r, c, numNodes++);
+			}
+		}
+
+		linkRow(row);
+		nodes.emplace_back(std::move(row));
+	}
+}
+
 inline void DLXMatrix::setupRoot()
 {
-    root = new DLXNode();
     DLXNode & first = headers.front();
     DLXNode & last = headers.back();
 
-    root->right = &first;
-    root->left = &last;
-    first.left = root;
-    last.right = root;
+    root.right = &first;
+    root.left = &last;
+    first.left = &root;
+    last.right = &root;
 }
 
 // TODO: make this more efficient by using some data structure?
@@ -239,7 +241,7 @@ std::size_t DLXMatrix::smallestColumn()
     std::size_t res = 0;
     std::size_t minCount = SIZE_MAX;
 
-    for (DLXNode * col = root->right; col != root; col = col->right)
+    for (DLXNode * col = root.right; col != &root; col = col->right)
     {
         // Only cover required columns
         if (col->col >= requiredCols) break;
