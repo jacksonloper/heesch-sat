@@ -98,7 +98,7 @@ private:
     // All required columns are covered
     bool isCovered() { return root.right->col >= requiredCols; }
 
-    void search(std::vector<std::size_t> & cur, update_cb update, process_cb process, bool  displaySolutions = true, int depth = 0);
+    bool search(std::vector<std::size_t> & cur, update_cb update, process_cb process, bool  displaySolutions = true, int depth = 0);
 
 	std::size_t numRows;
 	std::size_t numCols;
@@ -113,8 +113,10 @@ private:
     std::vector<std::vector<std::size_t>> solutions;
 };
 
-void DLXMatrix::search(std::vector<std::size_t> & cur, update_cb update, process_cb process, bool displaySolutions, int depth)
+bool DLXMatrix::search(std::vector<std::size_t> & cur, update_cb update, process_cb process, bool displaySolutions, int depth)
 {
+	// std::cerr << depth << std::endl;
+
     // Found a solution
     if (isCovered())
     {
@@ -122,7 +124,7 @@ void DLXMatrix::search(std::vector<std::size_t> & cur, update_cb update, process
         if (process)
         {
             bool valid = process(cur);
-            if (!valid) return;
+            if (!valid) return false;
         }
 
         numSolutions++;
@@ -131,7 +133,7 @@ void DLXMatrix::search(std::vector<std::size_t> & cur, update_cb update, process
             solutions.emplace_back(cur);
         }
 
-        return;
+        return true;
     }
 
     // Heuristic to choose column with smallest number of constraints
@@ -155,7 +157,9 @@ void DLXMatrix::search(std::vector<std::size_t> & cur, update_cb update, process
         }
 
         //  Recurse
-        search(cur, update, process, displaySolutions, depth + 1);
+        if (!search(cur, update, process, displaySolutions, depth + 1)) {
+			return false;
+		}
 
         // Backtrack
         cur.pop_back();
@@ -171,6 +175,7 @@ void DLXMatrix::search(std::vector<std::size_t> & cur, update_cb update, process
     }
 
     uncoverColumn(c);
+	return true;
 }
 
 inline void DLXMatrix::linkRow(std::vector<DLXNode> & row)
