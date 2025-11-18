@@ -106,13 +106,24 @@ public:
 		return getTileType(p) == getTileType(q);
 	}
 
-	static const point_t origins[6];
+	static size_t numVertices(const point_t& p)
+	{
+		switch(getTileShape(p)) {
+		case SQUARE_SHAPE: return 4;
+		case HEXAGON_SHAPE: return 6;
+		default: return 12;
+		};
+	}
 
-	static const size_t num_orientations = 12;
-	static const xform<int8_t> orientations[12];
-	
-	static const point<int8_t> neighbours[6][12];
-	static const point_t cell_vertices[6][12];
+	static point_t getVertexCentre(const point_t& p)
+	{
+		return p - getOrigin(p);
+	}
+
+	static const point<int8_t> *getVertexVectors(const point_t& p)
+	{
+		return cell_vertices[getTileType(p)];
+	}
 
     static std::vector<point_t> getCellVertices( const point_t& p )
     {
@@ -139,6 +150,14 @@ public:
         const double sqrt3 = 1.73205080756887729353;
 		return { pt.x_ + 0.5*pt.y_, 0.5 * sqrt3 * pt.y_ };
     }
+
+	static const point_t origins[6];
+
+	static const size_t num_orientations = 12;
+	static const xform<int8_t> orientations[12];
+	
+	static const point<int8_t> neighbours[6][12];
+	static const point_t cell_vertices[6][12];
 
 	static const point_t translationV1;
 	static const point_t translationV2;

@@ -49,7 +49,7 @@ public:
 			INVALID, TRIANGLE_E, TRIANGLE_W, TRIANGLE_N,
 			KITE_NE, KITE_NW, TRIANGLE_S, KITE_SE, KITE_SW };
 
-		return types[ (ym*3) + xm ];
+		return types[(ym*3) + xm];
 	}
 	inline static TileShape getTileShape( const point_t& p )
 	{
@@ -102,19 +102,21 @@ public:
 		return getTileType(p) == getTileType(q);
 	}
 
-	static const point_t origins[8];
+	static size_t numVertices(const point_t& p)
+	{
+		return (getTileShape(p) == KITE_SHAPE) ? 4 : 3;
+	}
 
-	inline static size_t num_orientations = 8;
-	static const xform<int8_t> orientations[8];
-	
-	static const point<int8_t> neighbour_vectors[8][12];
-	static const point<int8_t> edge_neighbour_vectors[8][4];
-
-	static point_t getCellHub( const point_t& p )
+	static point_t getVertexCentre(const point_t& p)
 	{
 		int xc = (p.x_>=0) ? ((p.x_+1)/3*4) : ((p.x_-1)/3*4);
 		int yc = (p.y_>=0) ? ((p.y_+1)/3*4) : ((p.y_-1)/3*4);
-		return point_t( xc, yc );
+		return point_t(xc, yc);
+	}
+
+	static const point<int8_t> *getVertexVectors(const point_t& p)
+	{
+		return vertices[getTileType(p)];
 	}
 
     static std::vector<point_t> getCellVertices( const point_t& p )
@@ -126,8 +128,8 @@ public:
 			{ 2, 2 }, { -2, 2 }, { -2, -2 }, { 2, -2 } };
 
 		int ttype = (int)getTileType( p );
-		point_t pc = getCellHub( p );
-		std::vector<point_t> ret = { pc, pc + offs[ttype] };;
+		point_t pc = getVertexCentre( p );
+		std::vector<point_t> ret = { pc, pc + offs[ttype] };
 		if( (ttype%2) == 1 ) {
 			ret.push_back( pc + corners[ttype/2] );
 		}
@@ -153,6 +155,15 @@ public:
     static point<double> gridToPage( const point<double>& pt) {
         return pt;
     }
+
+	static const point_t origins[8];
+
+	inline static size_t num_orientations = 8;
+	static const xform<int8_t> orientations[8];
+	
+	static const point<int8_t> neighbour_vectors[8][12];
+	static const point<int8_t> edge_neighbour_vectors[8][4];
+	static const point<int8_t> vertices[8][4];
 
 	static const point_t translationV1;
 	static const point_t translationV2;
@@ -211,6 +222,18 @@ const point<int8_t> HalfCairoGrid<coord>::edge_neighbour_vectors[8][4] = {
 	{ { 1, 0 }, { 0, 1 }, { -1, 0 }, { 0, -1 } },
 	{ { 1, 0 }, { -1, 0 }, { 0, -1 } }, 
 	{ { 1, 0 }, { 0, 1 }, { -1, 0 }, { 0, -1 } }
+};
+
+template<typename coord>
+const point<int8_t> HalfCairoGrid<coord>::vertices[8][4] = {
+	{{0, 0}, {2, -1}, {2, 1}},
+	{{0, 0}, {2, 1}, {2, 2}, {1, 2}},
+	{{0, 0}, {1, 2}, {-1, 2}},
+	{{0, 0}, {-1, 2}, {-2, 2}, {-2, 1}},
+	{{0, 0}, {-2, 1}, {-2, -1}},
+	{{0, 0}, {-2, -1}, {-2, -2}, {-1, -2}},
+	{{0, 0}, {-1, -2}, {1, -2}},
+	{{0, 0}, {1, -2}, {2, -2}, {2, -1}}
 };
 
 template<typename coord>

@@ -71,12 +71,40 @@ public:
 		return true;
 	}
 	
+	// Functions that give useful (but geometrically inaccurate) coordinates
+	// for the vertices of cells.  These "points" need only be in one-to-one
+	// correspondence to the actual vertices, and are always represented in
+	// integer coordinates.
+
+	// How many vertices does the cell at position p have?
+	static size_t numVertices(const point_t& p)
+	{
+		return 4;
+	}
+
+	// In some grids, you'll want to compute the coordinates for vertices
+	// relative to some transformed version of p.  This function can provide
+	// that if necessary.  (It's not necessary for ominos.)
+	static point_t getVertexCentre(const point_t& p)
+	{
+		return p;
+	}
+
+	// For the same point p as above, retrieve a const array of vectors
+	// that take you from getVertexCentre(p) to each of the vertices associated
+	// with this cell.
+	static const point<int8_t> *getVertexVectors(const point_t& p)
+	{
+		return vertex_neighbours;
+	}
+	
 	// Functions to assist with rendering
 
 	// Get points with integer coordinates corresponding to the *vertices*
 	// of the cell indexed by p.  These can really be in any coordinate
 	// system whatsoever -- they just need to be in one-to-one correspondence
 	// with the actual vertices, so that they can be compared exactly.
+	// DEPRECATED
 	static std::vector<point_t> getCellVertices( const point_t& p )
 	{
 		return {
@@ -109,6 +137,7 @@ public:
 	
 	static const point<int8_t> all_neighbours[8];
 	static const point<int8_t> edge_neighbours[4];
+	static const point<int8_t> vertex_neighbours[4];
 
 	static const point_t translationV1;
 	static const point_t translationV2;
@@ -136,6 +165,13 @@ const point<int8_t> OminoGrid<coord>::edge_neighbours[4] = {
 		{ -1, 0 },
 		{ 1, 0 },
 		{ 0, 1 } };
+
+template<typename coord>
+const point<int8_t> OminoGrid<coord>::vertex_neighbours[4] = {
+		{0, 0},
+		{1, 0},
+		{1, 1},
+		{0, 1}};
 
 template<typename coord>
 const xform<int8_t> OminoGrid<coord>::orientations[8] = {

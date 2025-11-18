@@ -67,6 +67,24 @@ public:
 		return true;
 	}
 
+	static size_t numVertices(const point_t& p)
+	{
+		return 6;
+	}
+
+	static point_t getVertexCentre(const point_t& p)
+	{
+		return point_t {
+			static_cast<coord_t>(3 * p.getX()), 
+			static_cast<coord_t>(3 * p.getY())};
+	}
+
+	static const point<int8_t> *getVertexVectors(const point_t& p)
+	{
+		return vertex_neighbours;
+	}
+
+	// DEPRECATE
 	static std::vector<point_t> getCellVertices( const point_t& p )
 	{
 		point_t two_p { 
@@ -101,6 +119,7 @@ public:
 	static const xform<int8_t> orientations[12];
 	
 	static const point<int8_t> all_neighbours[6];
+	static const point<int8_t> vertex_neighbours[6];
 
 	static const point_t translationV1;
 	static const point_t translationV2;
@@ -119,6 +138,15 @@ const point<int8_t> HexGrid<coord>::all_neighbours[6] = {
 		{ -1, 0 },
 		{ 1, -1 },
 		{ -1, 1 } };
+
+template<typename coord>
+const point<int8_t> HexGrid<coord>::vertex_neighbours[6] = {
+		{1, 1},
+		{-1, 2},
+		{-2, 1},
+		{-1, -1},
+		{1, -2},
+		{2, -1}};
 
 template<typename coord>
 const xform<int8_t> HexGrid<coord>::orientations[12] = {

@@ -70,23 +70,29 @@ public:
 		return getTileType(p) == getTileType(q);
 	}
 
-	static const point_t origins[2];
+	static size_t numVertices(const point_t& p)
+	{
+		return getTileType(p) == SQUARE ? 4 : 8;
+	}
 
-	static const size_t num_orientations;
-	static const xform<int8_t> orientations[8];
-	
-	static const point<int8_t> all_neighbours[8];
-	static const point<int8_t> edge_neighbours[4];
+	static point_t getVertexCentre(const point_t& p)
+	{
+		return p + p;
+	}
 
-	static const std::vector<point<int8_t>> squareVertices;
-    static const std::vector<point<int8_t>> octagonVertices;
+	static const point<int8_t> *getVertexVectors(const point_t& p)
+	{
+		return getTileType(p) == SQUARE ? square_vertices : octagon_vertices;
+	}
 
     static std::vector<point_t> getCellVertices( const point_t& p )
     {
-        const auto &vertexVecs = (getTileType(p) == SQUARE ? squareVertices : octagonVertices);
+		bool is_sq = getTileType(p) == SQUARE;
+        const auto *vertexVecs = is_sq ? square_vertices : octagon_vertices;
+		size_t sz = is_sq ? 4 : 8;
 
-        std::vector<point_t> ans { vertexVecs.size() };
-        for (size_t i = 0; i < vertexVecs.size(); ++i) {
+        std::vector<point_t> ans {sz};
+        for (size_t i = 0; i < sz; ++i) {
             ans[i] = p + p + vertexVecs[i];
 		}
         return ans;
@@ -106,6 +112,17 @@ public:
     static point<double> gridToPage( const point<double>& pt) {
         return pt;
     }
+
+	static const point_t origins[2];
+
+	static const size_t num_orientations;
+	static const xform<int8_t> orientations[8];
+	
+	static const point<int8_t> all_neighbours[8];
+	static const point<int8_t> edge_neighbours[4];
+
+	static const point<int8_t> square_vertices[4];
+    static const point<int8_t> octagon_vertices[8];
 
 	static const point_t translationV1;
 	static const point_t translationV2;
@@ -146,11 +163,11 @@ const xform<int8_t> OctaSquareGrid<coord>::orientations[8] = {
 	{ 1, 0, 0, 0, -1, 0 }, { 0, 1, 0, 1, 0, 0 } };
 
 template<typename coord>
-const std::vector<point<int8_t>> OctaSquareGrid<coord>::squareVertices = {
+const point<int8_t> OctaSquareGrid<coord>::square_vertices[4] = {
         {0, 0}, {0, 1}, {1, 1}, {1, 0}};
 
 template<typename coord>
-const std::vector<point<int8_t>> OctaSquareGrid<coord>::octagonVertices = {
+const point<int8_t> OctaSquareGrid<coord>::octagon_vertices[8] = {
         {0, -1}, {-1, 0}, {-1, 1}, {0, 2}, {1, 2}, {2, 1}, {2, 0}, {1, -1}};
 
 template<typename coord>

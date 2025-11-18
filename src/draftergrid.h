@@ -102,8 +102,35 @@ public:
     static const point<int8_t> edge_neighbours[12][3];
     static const point<int8_t> origins[12];
 
-    static const std::vector<point<int8_t>> vertices[12];
-    static const std::vector<point<int8_t>> boundaryWordDirections;
+    static const point<int8_t> vertices[12][3];
+    // static const std::vector<point<int8_t>> boundaryWordDirections;
+
+	static size_t numVertices(const point_t& p)
+	{
+		return 3;
+	}
+
+	static point_t getVertexCentre(const point_t& p)
+	{
+		static const point_t los[12] = {
+			{ -2, -1 }, { -1, -2 },
+			{ 1, -3 }, { 2, -3 },
+			{ 3, -2 }, { 3, -1 },
+			{ 2, 1 }, { 1, 2 },
+			{ -1, 3 }, { -2, 3 },
+			{ -3, 2 }, { -3, 1 } };
+
+		auto ttype = getTileType(p);
+        point_t pTrans = p + los[ttype];
+		pTrans = point_t { 
+			(coord_t)(pTrans.x_ * 12 / 7), (coord_t)(pTrans.y_ * 12 / 7)};
+		return pTrans;
+	}
+
+	static const point<int8_t> *getVertexVectors(const point_t& p)
+	{
+		return vertices[getTileType(p)];
+	}
 
     static std::vector<point_t> getCellVertices( const point_t& p )
     {
@@ -462,7 +489,7 @@ const xform<int8_t> DrafterGrid<coord>::orientations[12] = {
         { 1, 1, 0,     0, -1, 0 } };
 
 template<typename coord>
-const std::vector<point<int8_t>> DrafterGrid<coord>::vertices[12] = {
+const point<int8_t> DrafterGrid<coord>::vertices[12][3] = {
         { // {2,1}
                 {0, 0}, {6, 0}, {4, 4}
         },

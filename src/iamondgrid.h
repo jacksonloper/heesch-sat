@@ -81,6 +81,21 @@ public:
 		return ((p.x_-q.x_) % 3) == 0;
 	}
 
+	static size_t numVertices(const point_t& p)
+	{
+		return 3;
+	}
+
+	static point_t getVertexCentre(const point_t& p)
+	{
+		return p;
+	}
+
+	static const point<int8_t> *getVertexVectors(const point_t& p)
+	{
+		return isBlack(p) ? vertex_neighbours_black : vertex_neighbours_grey;
+	}
+
 	static std::vector<point_t> getCellVertices( const point_t& p )
 	{
 		if( isBlack( p ) ) {
@@ -118,6 +133,8 @@ public:
 	static const point<int8_t> all_neighbours_grey[12];
 	static const point<int8_t> edge_neighbours_black[3];
 	static const point<int8_t> edge_neighbours_grey[3];
+	static const point<int8_t> vertex_neighbours_black[3];
+	static const point<int8_t> vertex_neighbours_grey[3];
 
 	static const point_t translationV1;
 	static const point_t translationV2;
@@ -144,6 +161,14 @@ const point<int8_t> IamondGrid<coord>::edge_neighbours_black[3] =
 template<typename coord>
 const point<int8_t> IamondGrid<coord>::edge_neighbours_grey[3] =
     { { -1, -1 }, { 2, -1 }, { -1, 2 } };
+
+template<typename coord>
+const point<int8_t> IamondGrid<coord>::vertex_neighbours_black[3] = 
+	{{-1, 2}, {-1, -1}, {2, -1}};
+
+template<typename coord>
+const point<int8_t> IamondGrid<coord>::vertex_neighbours_grey[3] = 
+	{{1, 1}, {-2, 1}, {1, -2}};
 
 template<typename coord>
 const size_t IamondGrid<coord>::num_orientations = 12;

@@ -171,24 +171,21 @@ struct neighbours
 	using point_t = typename grid::point_t;
 	using iter = typename neighbour_maker<grid>::neighbour_iter;
 
-	neighbours( const point_t& p )
-		: neighbour_maker<grid> { p }
+	neighbours(const point_t& p)
+		: neighbour_maker<grid> {p}
+		, vecs_ {grid::getNeighbourVectors(p)}
 	{}
 
 	iter begin()
 	{
-		return iter { 
-			this->pt_, 
-			0, 
-			grid::getNeighbourVectors( this->pt_ ) };
+		return iter {this->pt_, 0, vecs_};
 	}
 	iter end()
 	{
-		return iter {
-			this->pt_, 
-			grid::numNeighbours( this->pt_ ), 
-			grid::getNeighbourVectors( this->pt_ ) };
+		return iter {this->pt_, grid::numNeighbours(this->pt_), vecs_};
 	}
+
+	const point<int8_t> *vecs_;
 };
 
 template<typename grid>
@@ -198,22 +195,47 @@ struct edge_neighbours
 	using point_t = typename grid::point_t;
 	using iter = typename neighbour_maker<grid>::neighbour_iter;
 
-	edge_neighbours( const point_t& p )
-		: neighbour_maker<grid> { p }
+	edge_neighbours(const point_t& p)
+		: neighbour_maker<grid> {p}
+		, vecs_ {grid::getEdgeNeighbourVectors(p)}
 	{}
 
 	iter begin()
 	{
-		return iter {
-			this->pt_,
-			0, 
-			grid::getEdgeNeighbourVectors( this->pt_ ) };
+		return iter {this->pt_, 0, vecs_};
 	}
 	iter end()
 	{
-		return iter {
-			this->pt_, 
-			grid::numEdgeNeighbours( this->pt_ ), 
-			grid::getEdgeNeighbourVectors( this->pt_ ) };
+		return iter {this->pt_, grid::numEdgeNeighbours(this->pt_), vecs_};
 	}
+
+	const point<int8_t> *vecs_;
 };
+
+/*
+template<typename grid>
+struct vertices
+	: public neighbour_maker<grid>
+{
+	using point_t = typename grid::point_t;
+	using iter = typename neighbour_maker<grid>::neighbour_iter;
+
+	vertices(const point_t& p)
+		: neighbour_maker<grid> {grid::getVertexCentre(p)}
+		, nvecs_ {grid::numVertices(p)}
+		, vecs_ {grid::getVertexVectors(p)}
+	{}
+
+	iter begin()
+	{
+		return iter {this->pt_, 0, vecs_};
+	}
+	iter end()
+	{
+		return iter {this->pt_, nvecs_, vecs_};
+	}
+
+	size_t nvecs_;
+	const point<int8_t> *vecs_;
+};
+*/

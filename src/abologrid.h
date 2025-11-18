@@ -82,21 +82,27 @@ public:
         return getTileType( p ) == getTileType( q );
     }
 
-    static const size_t num_orientations;
-    static const xform<int8_t> orientations[8];
+	static size_t numVertices(const point_t& p)
+	{
+		return 3;
+	}
 
-    static const point<int8_t> all_neighbours[4][14];
-    static const point<int8_t> edge_neighbours[4][3];
-    static const point<int8_t> origins[4];
+	static point_t getVertexCentre(const point_t& p)
+	{
+		return p + p;
+	}
 
-    static const std::vector<point<int8_t>> vertices[4];
+	static const point<int8_t> *getVertexVectors(const point_t& p)
+	{
+		return vertices[getTileType(p)];
+	}
 
     static std::vector<point_t> getCellVertices( const point_t& p )
     {
-        const auto &vertexVecs = vertices[getTileType(p)];
-        std::vector<point_t> ans(vertexVecs.size());
+        const auto *vertexVecs = vertices[getTileType(p)];
+        std::vector<point_t> ans(3);
         point_t pTrans = p + p;
-        for (size_t i = 0; i < vertexVecs.size(); ++i)
+        for (size_t i = 0; i < 3; ++i)
             ans[i] = pTrans + vertexVecs[i];
         return ans;
     }
@@ -110,6 +116,15 @@ public:
 	{
         return pt;
     }
+
+    static const size_t num_orientations;
+    static const xform<int8_t> orientations[8];
+
+    static const point<int8_t> all_neighbours[4][14];
+    static const point<int8_t> edge_neighbours[4][3];
+    static const point<int8_t> origins[4];
+
+    static const point<int8_t> vertices[4][3];
 
 	static const point_t translationV1;
 	static const point_t translationV2;
@@ -231,7 +246,7 @@ const xform<int8_t> AboloGrid<coord>::orientations[8] = {
         { 0, 1, 0, 1, 0, 0 } };
 
 template<typename coord>
-const std::vector<point<int8_t>> AboloGrid<coord>::vertices[4] = {
+const point<int8_t> AboloGrid<coord>::vertices[4][3] = {
         {
                 {1, 1}, {1, -3}, {-3, 1}
         },

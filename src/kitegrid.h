@@ -83,6 +83,21 @@ public:
 		return ((d%2)==0) && (((c-d)%6)==0);
 	}
 
+	static size_t numVertices(const point_t& p)
+	{
+		return 4;
+	}
+
+	static point_t getVertexCentre(const point_t& p)
+	{
+		return p - getOrigin(p);
+	}
+
+	static const point<int8_t> *getVertexVectors(const point_t& p)
+	{
+		return tile_vertices[getTileOrientation(p)];
+	}
+
 	static std::vector<point_t> getCellVertices( const point_t& p )
     {
 		size_t ori = getTileOrientation( p );

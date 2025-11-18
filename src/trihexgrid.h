@@ -80,14 +80,20 @@ public:
 		return getTileType(p) == getTileType(q);
 	}
 
-	static const size_t num_orientations;
-	static const xform<int8_t> orientations[12];
-	
-	static const point<int8_t> all_neighbours[3][12];
-	static const point<int8_t> edge_neighbours[3][6];
-    static const point<int8_t> origins[3];
+	static size_t numVertices(const point_t& p)
+	{
+		return (getTileType(p) == HEXAGON) ? 6 : 3;
+	}
 
-	static const std::vector<point<int8_t>> vertices[3];
+	static point_t getVertexCentre(const point_t& p)
+	{
+		return p + p;
+	}
+
+	static const point<int8_t> *getVertexVectors(const point_t& p)
+	{
+		return vertices[getTileType(p)];
+	}
 
     static std::vector<point_t> getCellVertices( const point_t& p )
     {
@@ -97,9 +103,10 @@ public:
 		// subset.  That's probably not the case right now.  That
 		// might make it easier to support future code for, e.g., 
 		// isohedral checking based on boundary words.
-        const auto &vertexVecs = vertices[getTileType(p)];
-        std::vector<point_t> ans(vertexVecs.size());
-        for (size_t i = 0; i < vertexVecs.size(); ++i) {
+        const auto *vertexVecs = vertices[getTileType(p)];
+		size_t sz = numVertices(p);
+        std::vector<point_t> ans(sz);
+        for (size_t i = 0; i < sz; ++i) {
             ans[i] = p + p + vertexVecs[i];
 		}
         return ans;
@@ -115,6 +122,15 @@ public:
         const double sqrt3 = 1.73205080756887729353;
 		return { pt.x_ + 0.5*pt.y_, 0.5 * sqrt3 * pt.y_ };
     }
+
+	static const size_t num_orientations;
+	static const xform<int8_t> orientations[12];
+	
+	static const point<int8_t> all_neighbours[3][12];
+	static const point<int8_t> edge_neighbours[3][6];
+    static const point<int8_t> origins[3];
+
+	static const point<int8_t> vertices[3][6];
 
 	static const point_t translationV1;
 	static const point_t translationV2;
@@ -203,7 +219,7 @@ const xform<int8_t> TriHexGrid<coord>::orientations[12] = {
         { 1, 1, 0,     0, -1, 0 } };
 
 template<typename coord>
-const std::vector<point<int8_t>> TriHexGrid<coord>::vertices[3] = {
+const point<int8_t> TriHexGrid<coord>::vertices[3][6] = {
     {
         {-1, -1}, {-2, 1}, {-1, 2}, {1, 1}, {2, -1}, {1, -2}
     },
