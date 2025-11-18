@@ -41,6 +41,7 @@ public:
 		, numCols {nc}
 		, requiredCols {rc}
 		, headers {nc}
+		, max_depth {0}
 	{
         for (std::size_t c = 0; c < numCols; ++c)
         {
@@ -111,11 +112,15 @@ private:
 
     // TODO: change to iterator-like access pattern?
     std::vector<std::vector<std::size_t>> solutions;
+	size_t max_depth;
 };
 
 bool DLXMatrix::search(std::vector<std::size_t> & cur, update_cb update, process_cb process, bool displaySolutions, int depth)
 {
-	// std::cerr << depth << std::endl;
+	if (depth > max_depth) {
+		max_depth = depth;
+		// std::cerr << depth << std::endl;
+	}
 
     // Found a solution
     if (isCovered())
