@@ -95,23 +95,6 @@ public:
 		return vertices[getTileType(p)];
 	}
 
-    static std::vector<point_t> getCellVertices( const point_t& p )
-    {
-		// NOTE -- it would be really nice to reconcile these vertex
-		// coordinates so that they're compatible with the vertex 
-		// coordinates of the iamond grid of which this grid is a 
-		// subset.  That's probably not the case right now.  That
-		// might make it easier to support future code for, e.g., 
-		// isohedral checking based on boundary words.
-        const auto *vertexVecs = vertices[getTileType(p)];
-		size_t sz = numVertices(p);
-        std::vector<point_t> ans(sz);
-        for (size_t i = 0; i < sz; ++i) {
-            ans[i] = p + p + vertexVecs[i];
-		}
-        return ans;
-    }
-
     static point<double> vertexToGrid( const point_t& pt )
 	{
         return {pt.x_ / 2.0, pt.y_ / 2.0};

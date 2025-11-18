@@ -6,6 +6,9 @@
 // use fixed-sized arrays of this length.
 const size_t MAX_CORONA = 10;
 
+// The most vertices in any cell in any grid.
+const size_t MAX_CELL_SIZE = 12;
+
 using tile_index = int32_t;
 using cell_index = int32_t;
 

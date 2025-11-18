@@ -98,18 +98,6 @@ public:
 		return tile_vertices[getTileOrientation(p)];
 	}
 
-	static std::vector<point_t> getCellVertices( const point_t& p )
-    {
-		size_t ori = getTileOrientation( p );
-		point_t cen = p - getOrigin( p );
-		std::vector<point_t> ans( 4 );
-		for( size_t idx = 0; idx < 4; ++idx ) {
-			ans[idx] = cen + tile_vertices[ori][idx];
-		}
-			
-        return ans;
-    }
-
     static point<double> vertexToGrid( const point_t& pt )
 	{
         // return {pt.x_ / 2.0, pt.y_ / 2.0};

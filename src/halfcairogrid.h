@@ -71,7 +71,6 @@ public:
 
     inline static point_t getOrigin( const point_t& p ) 
     {
-		// return p - getCellHub( p );
 		return point_t { 
 			(coord_t)((((p.x_+1)%3)+3) % 3 - 1), 
 			(coord_t)((((p.y_+1)%3)+3) % 3 - 1) };
@@ -118,24 +117,6 @@ public:
 	{
 		return vertices[getTileType(p)];
 	}
-
-    static std::vector<point_t> getCellVertices( const point_t& p )
-    {
-		static const point<int8_t> offs[8] = { 
-			{ 2, -1 }, { 2, 1 }, { 1, 2 }, { -1, 2 }, 
-			{ -2, 1 }, { -2, -1 }, { -1, -2 }, { 1, -2 } };
-		static const point<int8_t> corners[4] = { 
-			{ 2, 2 }, { -2, 2 }, { -2, -2 }, { 2, -2 } };
-
-		int ttype = (int)getTileType( p );
-		point_t pc = getVertexCentre( p );
-		std::vector<point_t> ret = { pc, pc + offs[ttype] };
-		if( (ttype%2) == 1 ) {
-			ret.push_back( pc + corners[ttype/2] );
-		}
-		ret.push_back( pc + offs[(ttype+1)%8] );
-		return ret;
-    }
 
     static point<double> vertexToGrid( const point_t& pt )
 	{

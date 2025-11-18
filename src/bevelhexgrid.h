@@ -125,22 +125,6 @@ public:
 		return cell_vertices[getTileType(p)];
 	}
 
-    static std::vector<point_t> getCellVertices( const point_t& p )
-    {
-		point_t o = getOrigin( p );
-		size_t nn = numNeighbours( p );
-		const auto *cvs = cell_vertices[(size_t)getTileType( p )];
-
-		std::vector<point_t> ret;
-		ret.reserve( nn );
-
-		for( size_t idx = 0; idx < nn; ++idx ) {
-			ret.emplace_back(
-				p.x_ - o.x_ + cvs[idx].x_, p.y_ - o.y_ + cvs[idx].y_ );
-		}
-		return ret;
-    }
-
     static point<double> vertexToGrid( const point_t& pt ) 
 	{
 		return { (double)pt.x_, (double)pt.y_ };
@@ -157,7 +141,7 @@ public:
 	static const xform<int8_t> orientations[12];
 	
 	static const point<int8_t> neighbours[6][12];
-	static const point_t cell_vertices[6][12];
+	static const point<int8_t> cell_vertices[6][12];
 
 	static const point_t translationV1;
 	static const point_t translationV2;
@@ -197,7 +181,7 @@ const point<int8_t> BevelHexGrid<coord>::neighbours[6][12] = {
 };
 
 template<typename coord>
-const point<coord> BevelHexGrid<coord>::cell_vertices[6][12] = {
+const point<int8_t> BevelHexGrid<coord>::cell_vertices[6][12] = {
 	{ // SQUARE_E
 		{ 3, -1 }, { 4, -1 }, { 3, 1 }, { 2, 1 }
 	},

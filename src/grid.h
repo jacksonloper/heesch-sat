@@ -212,7 +212,6 @@ struct edge_neighbours
 	const point<int8_t> *vecs_;
 };
 
-/*
 template<typename grid>
 struct vertices
 	: public neighbour_maker<grid>
@@ -238,4 +237,3 @@ struct vertices
 	size_t nvecs_;
 	const point<int8_t> *vecs_;
 };
-*/

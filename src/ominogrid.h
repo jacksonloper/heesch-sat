@@ -100,20 +100,6 @@ public:
 	
 	// Functions to assist with rendering
 
-	// Get points with integer coordinates corresponding to the *vertices*
-	// of the cell indexed by p.  These can really be in any coordinate
-	// system whatsoever -- they just need to be in one-to-one correspondence
-	// with the actual vertices, so that they can be compared exactly.
-	// DEPRECATED
-	static std::vector<point_t> getCellVertices( const point_t& p )
-	{
-		return {
-			p, 
-			p + point_t { 1, 0 },
-			p + point_t { 1, 1 },
-			p + point_t { 0, 1 } };
-	}
-
 	// Convert a vertex as given by the previous function into a 2D
 	// point that's compatible with the matrices giving the symmetries
 	// of the grid.

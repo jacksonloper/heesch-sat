@@ -85,19 +85,6 @@ public:
 		return getTileType(p) == SQUARE ? square_vertices : octagon_vertices;
 	}
 
-    static std::vector<point_t> getCellVertices( const point_t& p )
-    {
-		bool is_sq = getTileType(p) == SQUARE;
-        const auto *vertexVecs = is_sq ? square_vertices : octagon_vertices;
-		size_t sz = is_sq ? 4 : 8;
-
-        std::vector<point_t> ans {sz};
-        for (size_t i = 0; i < sz; ++i) {
-            ans[i] = p + p + vertexVecs[i];
-		}
-        return ans;
-    }
-
     static point<double> vertexToGrid( const point_t& pt ) {
 		// (sqrt(2) − 1) / (2 + 2*sqrt(2))
         const double shift = 0.0857864376269049512; 

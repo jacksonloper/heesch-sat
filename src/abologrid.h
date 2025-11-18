@@ -97,16 +97,6 @@ public:
 		return vertices[getTileType(p)];
 	}
 
-    static std::vector<point_t> getCellVertices( const point_t& p )
-    {
-        const auto *vertexVecs = vertices[getTileType(p)];
-        std::vector<point_t> ans(3);
-        point_t pTrans = p + p;
-        for (size_t i = 0; i < 3; ++i)
-            ans[i] = pTrans + vertexVecs[i];
-        return ans;
-    }
-
     static point<double> vertexToGrid( const point_t& pt )
 	{
         return {pt.x_ / 2.0, pt.y_ / 2.0};

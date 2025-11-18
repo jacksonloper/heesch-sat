@@ -84,22 +84,6 @@ public:
 		return vertex_neighbours;
 	}
 
-	// DEPRECATE
-	static std::vector<point_t> getCellVertices( const point_t& p )
-	{
-		point_t two_p { 
-			static_cast<coord_t>( 3 * p.getX() ), 
-			static_cast<coord_t>( 3 * p.getY() ) };
-
-		return {
-			two_p + point_t { 1, 1 },
-			two_p + point_t { -1, 2 },
-			two_p + point_t { -2, 1 },
-			two_p + point_t { -1, -1 },
-			two_p + point_t { 1, -2 },
-			two_p + point_t { 2, -1 } };
-	}
-
 	static point<double> vertexToGrid( const point_t& pt ) 
 	{
 		return point<double>( 

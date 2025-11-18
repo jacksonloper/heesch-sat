@@ -96,21 +96,6 @@ public:
 		return isBlack(p) ? vertex_neighbours_black : vertex_neighbours_grey;
 	}
 
-	static std::vector<point_t> getCellVertices( const point_t& p )
-	{
-		if( isBlack( p ) ) {
-			return { 
-				p + point_t { -1, 2 },
-				p + point_t { -1, -1 },
-				p + point_t { 2, -1 } };
-		} else {
-			return { 
-				p + point_t { 1, 1 },
-				p + point_t { -2, 1 },
-				p + point_t { 1, -2 } };
-		}
-	}
-
 	static point<double> vertexToGrid( const point_t& pt ) 
 	{
 		return point<double>( 

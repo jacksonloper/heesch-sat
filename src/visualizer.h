@@ -13,16 +13,13 @@
 #include "geom.h"
 #include "heesch.h"
 #include "tileio.h"
+#include "boundary.h"
 
 // Draw information about polyforms and their patches.  I would often
 // just write out Postscript directly and then convert to PDF, but that's
 // starting to get old.  Use Cairo instead, and generate clean PDF output
 // directly.
 
-template<typename coord>
-using edge = std::pair<point<coord>,point<coord>>;
-template<typename coord>
-using edgeset = std::unordered_set<edge<coord>, boost::hash<edge<coord>>>;
 using colour = std::array<double,3>;
 
 template<typename grid>
@@ -32,8 +29,6 @@ class Visualizer
 	using point_t = typename grid::point_t;
 	using xform_t = typename grid::xform_t;
 	using patch_t = LabelledPatch<coord_t>;
-	using edge_t = edge<coord_t>;
-	using edgeset_t = edgeset<coord_t>;
 	using info_t = TileInfo<grid>;
 
 public:
@@ -92,7 +87,6 @@ private:
 	void drawPolygon( const std::vector<point<double>>& pts,
 		double r, double g, double b, bool stroke = true ) const;
 
-	edgeset_t getUniqueTileEdges() const;
 	void initGridOutline();
 
 	cairo_t *cr_;
@@ -104,52 +98,12 @@ private:
 };
 
 template<typename grid>
-edgeset<typename grid::coord_t> Visualizer<grid>::getUniqueTileEdges() const
-{
-	edgeset_t ret {};
-
-	for (const point_t& pt : tile_.getShape() ) {
-		std::vector<point_t> verts = grid::getCellVertices( pt );
-		point_t last = verts.back();
-		for( const point_t& cur : verts ) {
-			// edges.emplace_back( last, cur );
-			edge_t e { last, cur };
-			edge_t opp { cur, last };
-			if( ret.find( opp ) == ret.end() ) {
-				ret.insert( e );
-			} else {
-				ret.erase( opp );
-			}
-			last = cur;
-        }
-    }
-
-	// Automatic temp move semantics, right?
-	return ret;
-}
-
-template<typename grid>
 void Visualizer<grid>::initGridOutline() 
 {
-	if( tile_.getRecordType() == info_t::HOLE ) {
-		// Don't try this if the shape has a hole.
-		return;
+	std::vector<point_t> vs = getTileBoundary(tile_.getShape());
+	for (const auto& v: vs) {
+		grid_outline_.push_back(grid::vertexToGrid(v));
 	}
-
-	edgeset_t eset = getUniqueTileEdges();
-	point_map<coord_t,point_t> mp {};
-
-	for( const auto& e : eset ) {
-		mp[e.first] = e.second;
-	}
-
-	point_t start = mp.begin()->first;
-	point_t v = start;
-
-	do {
-		grid_outline_.push_back( grid::vertexToGrid( v ) );
-		v = mp[v];
-	} while (v != start);
 }
 
 template<typename grid>
@@ -348,15 +302,15 @@ void Visualizer<grid>::drawShapeCells( bool dashes ) const
 {
 	// A more lenient routine that can handle any old crappy shape, even
 	// one with holes.
-	edgeset_t boundary = getUniqueTileEdges();
+	const Shape<grid>& shape = tile_.getShape();
+	auto boundary = getTileEdgeMap(shape);
 	std::vector<std::vector<point<double>>> outlines {};
 	std::vector<point<double>> ol {};
 
-	for( const auto& p: tile_.getShape() ) {
+	for(const auto& p: shape) {
 		ol.clear();
-		std::vector<point_t> verts = grid::getCellVertices( p );
-		for( const point_t& v : verts ) {
-			ol.push_back( grid::gridToPage( grid::vertexToGrid( v ) ) );
+		for(const point_t& v : vertices<grid> {p}) {
+			ol.push_back(grid::gridToPage(grid::vertexToGrid(v)));
         }
 		outlines.push_back( std::move( ol ) );
 	}
@@ -382,8 +336,8 @@ void Visualizer<grid>::drawShapeCells( bool dashes ) const
 	cairo_set_dash( cr_, nullptr, 0, 0.0 );
 	cairo_set_source_rgb( cr_, 0.0, 0.0, 0.0 );
 	for( const auto& e : boundary ) {
-		point<double> P = grid::gridToPage( grid::vertexToGrid( e.first ) );
-		point<double> Q = grid::gridToPage( grid::vertexToGrid( e.second ) );
+		point<double> P = grid::gridToPage( grid::vertexToGrid( e.second.first ) );
+		point<double> Q = grid::gridToPage( grid::vertexToGrid( e.second.second ) );
 		cairo_new_path( cr_ );
 		cairo_move_to( cr_, P.x_, P.y_ );
 		cairo_line_to( cr_, Q.x_, Q.y_ );

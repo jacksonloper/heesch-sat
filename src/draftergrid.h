@@ -132,28 +132,6 @@ public:
 		return vertices[getTileType(p)];
 	}
 
-    static std::vector<point_t> getCellVertices( const point_t& p )
-    {
-		static const point_t los[12] = {
-			{ -2, -1 }, { -1, -2 },
-			{ 1, -3 }, { 2, -3 },
-			{ 3, -2 }, { 3, -1 },
-			{ 2, 1 }, { 1, 2 },
-			{ -1, 3 }, { -2, 3 },
-			{ -3, 2 }, { -3, 1 } };
-
-		auto ttype = getTileType( p );
-        const auto &vertexVecs = vertices[ttype];
-        std::vector<point_t> ans(vertexVecs.size());
-        point_t pTrans = p + los[ttype];
-		pTrans = point_t { 
-			(coord_t)(pTrans.x_ * 12 / 7), (coord_t)(pTrans.y_ * 12 / 7) };
-
-        for (size_t i = 0; i < vertexVecs.size(); ++i)
-            ans[i] = pTrans + vertexVecs[i];
-        return ans;
-    }
-
     static point<double> vertexToGrid( const point_t& pt )
 	{
         return {pt.x_ / 6.0 * 3.5, (double)pt.y_ / 6.0 * 3.5};
