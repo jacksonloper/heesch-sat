@@ -23,6 +23,7 @@ static Orientations ori = ALL;
 static bool show = false;
 static bool verbose = false;
 static bool reduce = false;
+static bool show_holes = true;
 
 template<typename grid>
 static bool describeNeighbours(TileInfo<grid>& tile)
@@ -230,11 +231,14 @@ static bool computeSurrounds(TileInfo<grid> & tile)
 
 			if (si) {
 				if (si.no_hole_patch.empty()) {
-					tile.setInconclusive(si.hole_patch);
+					if (show_holes) {
+						tile.setInconclusive(si.hole_patch);
+						tile.write(cout);
+					}
 				} else {
 					tile.setInconclusive(si.no_hole_patch);
+					tile.write(cout);
 				}
-				tile.write(cout);
 			}
 		}
 	} else {
@@ -379,6 +383,8 @@ int main( int argc, char **argv )
 		    reduce = false;
 		} else if( !strcmp( argv[idx], "-three" ) ) {
 		    three = true;
+		} else if( !strcmp( argv[idx], "-noholes" ) ) {
+		    show_holes = false;
 		} else {
 			cerr << "Unrecognized parameter \"" << argv[idx] << "\""
 				<< endl;
