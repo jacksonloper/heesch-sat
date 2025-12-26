@@ -190,7 +190,7 @@ def generate_svg():
             svg_lines.append(f'    <line x1="0" y1="0.15" x2="0.3" y2="0.15" stroke="black" stroke-width="0.02"/>')
         elif hatch == 'x':
             svg_lines.append(f'    <line x1="0" y1="0" x2="0.3" y2="0.3" stroke="black" stroke-width="0.02"/>')
-            svg_lines.append(f'    <line x1="0" y1="0.3" x2="0.3" y2="0" stroke="black" stroke="0.02"/>')
+            svg_lines.append(f'    <line x1="0" y1="0.3" x2="0.3" y2="0" stroke="black" stroke-width="0.02"/>')
         elif hatch == '+':
             svg_lines.append(f'    <line x1="0.15" y1="0" x2="0.15" y2="0.3" stroke="black" stroke-width="0.02"/>')
             svg_lines.append(f'    <line x1="0" y1="0.15" x2="0.3" y2="0.15" stroke="black" stroke-width="0.02"/>')
