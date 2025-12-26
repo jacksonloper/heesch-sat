@@ -154,17 +154,66 @@ def generate_svg():
         f'<g transform="translate({margin - min_x * scale}, {margin - min_y * scale}) scale({scale}, {scale})">'
     ]
     
-    # Color palette - distinct colors for corona 0 and 1
-    colors = ['#FF6B6B', '#4ECDC4']  # Red for center, Teal for first corona
+    # Distinct color for EACH iamond (9 different colors)
+    colors = [
+        '#FF6B6B',  # Red - iamond 0
+        '#4ECDC4',  # Teal - iamond 1
+        '#45B7D1',  # Blue - iamond 2
+        '#FFA07A',  # Light Salmon - iamond 3
+        '#98D8C8',  # Mint - iamond 4
+        '#F7DC6F',  # Yellow - iamond 5
+        '#E8B4F9',  # Lavender - iamond 6
+        '#A8E6CF',  # Light Green - iamond 7
+        '#FFB6B9',  # Pink - iamond 8
+    ]
     
-    # Draw triangles with thin borders
-    for corona, coord in all_triangles:
-        points = get_triangle_points(coord[0], coord[1])
-        color = colors[min(corona, len(colors)-1)]
-        points_str = ' '.join(f"{p[0]},{p[1]}" for p in points)
-        svg_lines.append(
-            f'<polygon points="{points_str}" fill="{color}" stroke="black" stroke-width="0.015" opacity="0.85"/>'
-        )
+    # Hatch patterns for each iamond
+    hatch_patterns = ['/', '\\', '|', '-', 'x', '+', '.', 'o', '*']
+    
+    # Define SVG patterns for hatching
+    for i in range(len(iamond_copies)):
+        pattern_id = f"hatch{i}"
+        hatch = hatch_patterns[i % len(hatch_patterns)]
+        
+        # Create pattern definition
+        svg_lines.append(f'<defs>')
+        svg_lines.append(f'  <pattern id="{pattern_id}" patternUnits="userSpaceOnUse" width="0.3" height="0.3">')
+        svg_lines.append(f'    <rect width="0.3" height="0.3" fill="{colors[i % len(colors)]}"/>')
+        
+        if hatch == '/':
+            svg_lines.append(f'    <line x1="0" y1="0.3" x2="0.3" y2="0" stroke="black" stroke-width="0.02"/>')
+        elif hatch == '\\':
+            svg_lines.append(f'    <line x1="0" y1="0" x2="0.3" y2="0.3" stroke="black" stroke-width="0.02"/>')
+        elif hatch == '|':
+            svg_lines.append(f'    <line x1="0.15" y1="0" x2="0.15" y2="0.3" stroke="black" stroke-width="0.02"/>')
+        elif hatch == '-':
+            svg_lines.append(f'    <line x1="0" y1="0.15" x2="0.3" y2="0.15" stroke="black" stroke-width="0.02"/>')
+        elif hatch == 'x':
+            svg_lines.append(f'    <line x1="0" y1="0" x2="0.3" y2="0.3" stroke="black" stroke-width="0.02"/>')
+            svg_lines.append(f'    <line x1="0" y1="0.3" x2="0.3" y2="0" stroke="black" stroke="0.02"/>')
+        elif hatch == '+':
+            svg_lines.append(f'    <line x1="0.15" y1="0" x2="0.15" y2="0.3" stroke="black" stroke-width="0.02"/>')
+            svg_lines.append(f'    <line x1="0" y1="0.15" x2="0.3" y2="0.15" stroke="black" stroke-width="0.02"/>')
+        elif hatch == '.':
+            svg_lines.append(f'    <circle cx="0.15" cy="0.15" r="0.03" fill="black"/>')
+        elif hatch == 'o':
+            svg_lines.append(f'    <circle cx="0.15" cy="0.15" r="0.05" stroke="black" stroke-width="0.02" fill="none"/>')
+        elif hatch == '*':
+            for angle in [0, 45, 90, 135]:
+                svg_lines.append(f'    <line x1="0.15" y1="0.15" x2="{0.15 + 0.1*math.cos(math.radians(angle))}" y2="{0.15 + 0.1*math.sin(math.radians(angle))}" stroke="black" stroke-width="0.02"/>')
+        
+        svg_lines.append(f'  </pattern>')
+        svg_lines.append(f'</defs>')
+    
+    # Draw triangles with different colors and hatches for each iamond, alpha 0.5
+    for iamond_idx, (corona, transform, triangles) in enumerate(iamond_copies):
+        for triangle_corona, coord in triangles:
+            points = get_triangle_points(coord[0], coord[1])
+            pattern_id = f"hatch{iamond_idx}"
+            points_str = ' '.join(f"{p[0]},{p[1]}" for p in points)
+            svg_lines.append(
+                f'<polygon points="{points_str}" fill="url(#{pattern_id})" stroke="black" stroke-width="0.015" opacity="0.5"/>'
+            )
     
     # Draw THICK red outlines around each complete iamond
     for corona, transform, triangles in iamond_copies:
