@@ -11,44 +11,21 @@ from collections import defaultdict
 # I 0 -3 1 -2 0 0 -2 1 1 1
 iamond_coords = [(0,-3), (1,-2), (0,0), (-2,1), (1,1)]
 
-# Read the witness patch data for this 5iamond
-patch_file = "/tmp/5iamonds_classified.txt"
-patches = []
+# Manual patch data for first corona (identity + 8 transforms)
+# These are the transforms for a simple 5iamond's first corona
+patches = [
+    (0, (1,0,0,0,1,0)),      # Central (identity)
+    (1, (-1,-1,-9,1,0,6)),   # Corona 1, transform 1
+    (1, (0,1,-2,1,0,4)),     # Corona 1, transform 2  
+    (1, (0,-1,-3,-1,-1,-3)), # Corona 1, transform 3
+    (1, (1,1,3,-1,0,-3)),    # Corona 1, transform 4
+    (1, (0,-1,4,-1,-1,-11)), # Corona 1, transform 5
+    (1, (-1,0,-2,-1,1,-2)),  # Corona 1, transform 6
+    (1, (1,0,6,1,-1,-6)),    # Corona 1, transform 7
+    (1, (1,0,1,0,1,3)),      # Corona 1, transform 8
+]
 
-try:
-    with open(patch_file, 'r') as f:
-        lines = [l.strip() for l in f.readlines()]
-        
-    # Find the FIRST shape's patch data  
-    idx = 0
-    for i, line in enumerate(lines):
-        if line.startswith("! 1"):
-            idx = i + 1
-            break
-    
-    if idx > 0 and idx < len(lines):
-        num_patches = int(lines[idx])
-        idx += 1
-        
-        # Load only corona 0 and 1 for clarity
-        for _ in range(min(num_patches, 200)):
-            if idx >= len(lines):
-                break
-            corona = int(lines[idx].split()[0])
-            if corona > 1:  # Skip corona 2 and higher
-                idx += 1
-                continue
-            # Parse transform: <a,b,c,d,e,f>
-            transform_str = lines[idx].split()[1]
-            transform_parts = transform_str.strip('<>').split(',')
-            transform = tuple(int(x) for x in transform_parts)
-            patches.append((corona, transform))
-            idx += 1
-        print(f"Loaded {len(patches)} patches (corona 0-1 only)")
-except Exception as e:
-    print(f"Note: Could not parse full patch data: {e}")
-    print("Will render just the base shape")
-    patches = [(0, (1,0,0,0,1,0))]
+print(f"Using manual patch data with {len(patches)} copies (1 central + 8 in first corona)")
 
 # Helper functions
 def iamond_to_cartesian(x, y):
@@ -144,18 +121,21 @@ def find_perimeter_edges(triangle_coords):
     for corona, coord in triangle_coords:
         edges = get_triangle_edges_grid(coord[0], coord[1])
         for edge in edges:
-            # An edge is internal only if BOTH triangles are in our set
-            tri1, tri2 = edge
-            if tri1 in coord_set and tri2 in coord_set:
-                # Both triangles exist, so this is an internal edge
-                edge_count[edge] += 1
-            elif tri1 == coord:
-                # Only tri1 (our current triangle) is in the set, so edge is on perimeter
-                # Store which side of the edge to draw
-                edge_count[edge] = 1
+            # Simply count each edge
+            edge_count[edge] += 1
     
     # Perimeter edges are those that appear exactly once
-    perimeter = [(edge, coord_set) for edge, count in edge_count.items() if count == 1]
+    # (only one of the two adjacent triangles exists)
+    perimeter = []
+    for edge, count in edge_count.items():
+        if count == 1:
+            # This edge is on the perimeter - figure out which triangle is ours
+            tri1, tri2 = edge
+            if tri1 in coord_set:
+                perimeter.append((edge, tri1))
+            elif tri2 in coord_set:
+                perimeter.append((edge, tri2))
+    
     return perimeter
 
 # Generate SVG
@@ -261,22 +241,21 @@ def generate_svg():
     # Draw THICK red outlines around each complete iamond perimeter
     for iamond_idx, (corona, transform, triangles) in enumerate(iamond_copies):
         perimeter_edges = find_perimeter_edges(triangles)
+        print(f"  Iamond {iamond_idx}: Found {len(perimeter_edges)} perimeter edges")
         
         # Convert grid edges to cartesian line segments
-        for edge_data in perimeter_edges:
-            edge, coord_set = edge_data
+        for edge, our_tri_coord in perimeter_edges:
             tri1, tri2 = edge
             
-            # Determine which triangle is in our set and which is outside
-            if tri1 in coord_set:
-                our_tri = tri1
+            # our_tri_coord tells us which triangle is in our set
+            # the other one is the neighbor (may not exist)
+            if tri1 == our_tri_coord:
                 other_tri = tri2
             else:
-                our_tri = tri2
                 other_tri = tri1
             
             # Get the triangle vertices for our triangle
-            our_points = get_triangle_points(our_tri[0], our_tri[1])
+            our_points = get_triangle_points(our_tri_coord[0], our_tri_coord[1])
             
             # Get the triangle vertices for the other triangle (even if it doesn't exist)
             other_points = get_triangle_points(other_tri[0], other_tri[1])
