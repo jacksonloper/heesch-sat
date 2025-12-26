@@ -52,11 +52,15 @@ def iamond_to_cartesian(x, y):
     return cart_x, cart_y
 
 def apply_transform(coord, transform):
-    """Apply affine transformation to a coordinate."""
+    """Apply affine transformation to a coordinate.
+    Transform format: (a, b, c, d, e, f)
+    new_x = a * x + b * y + c
+    new_y = d * x + e * y + f
+    """
     x, y = coord
-    a, b, tx, c, d, ty = transform
-    new_x = a * x + b * y + tx
-    new_y = c * x + d * y + ty
+    a, b, c, d, e, f = transform
+    new_x = a * x + b * y + c
+    new_y = d * x + e * y + f
     return new_x, new_y
 
 def get_triangle_points(x, y):
