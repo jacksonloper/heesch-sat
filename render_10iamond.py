@@ -137,37 +137,25 @@ def generate_svg():
     # Color palette for coronas
     colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F']
     
-    # Draw triangles with prominent borders
+    # Draw triangles with thin borders
     for corona, coord in all_triangles:
         points = get_triangle_points(coord[0], coord[1])
         color = colors[min(corona, len(colors)-1)]
         points_str = ' '.join(f"{p[0]},{p[1]}" for p in points)
         svg_lines.append(
-            f'<polygon points="{points_str}" fill="{color}" stroke="black" stroke-width="0.05" opacity="0.9"/>'
+            f'<polygon points="{points_str}" fill="{color}" stroke="black" stroke-width="0.02" opacity="0.9"/>'
         )
     
-    # Draw thick outlines around each complete 10iamond copy
+    # Draw VERY thick outlines around each complete 10iamond copy
     for corona, transform, triangles in iamond_copies:
-        # Collect all points from this 10iamond copy to create an outline
-        all_points = []
+        # Draw thick strokes on each triangle in this 10iamond to create a visible boundary
         for _, coord in triangles:
-            tri_points = get_triangle_points(coord[0], coord[1])
-            all_points.extend(tri_points)
-        
-        # Create a convex hull or outline path
-        # For simplicity, we'll draw a polyline connecting the outer edge points
-        if len(all_points) > 0:
-            # Find the convex hull of points to draw boundary
-            from functools import reduce
-            
-            # Simple approach: draw very thick strokes on the triangles at the perimeter
-            # We'll redraw the triangles with thick transparent strokes
-            for _, coord in triangles:
-                points = get_triangle_points(coord[0], coord[1])
-                points_str = ' '.join(f"{p[0]},{p[1]}" for p in points)
-                svg_lines.append(
-                    f'<polygon points="{points_str}" fill="none" stroke="darkblue" stroke-width="0.15" opacity="0.6"/>'
-                )
+            points = get_triangle_points(coord[0], coord[1])
+            points_str = ' '.join(f"{p[0]},{p[1]}" for p in points)
+            # Use a very thick, bright stroke that stands out
+            svg_lines.append(
+                f'<polygon points="{points_str}" fill="none" stroke="red" stroke-width="0.4" opacity="0.8"/>'
+            )
     
     svg_lines.append('</g>')
     svg_lines.append('</svg>')
@@ -236,9 +224,9 @@ def generate_png():
             for p in points
         ]
         color = colors[min(corona, len(colors)-1)]
-        draw.polygon(pixel_points, fill=color, outline=(0, 0, 0, 255), width=2)
+        draw.polygon(pixel_points, fill=color, outline=(0, 0, 0, 255), width=1)
     
-    # Draw thick outlines around each complete 10iamond copy
+    # Draw VERY thick outlines around each complete 10iamond copy
     for corona, transform, triangles in iamond_copies:
         for _, coord in triangles:
             points = get_triangle_points(coord[0], coord[1])
@@ -247,8 +235,8 @@ def generate_png():
                  int((p[1] - min_y) * scale + margin))
                 for p in points
             ]
-            # Draw thick blue outline
-            draw.polygon(pixel_points, fill=None, outline=(0, 0, 139, 150), width=6)
+            # Draw very thick red outline (20x thicker than gridlines)
+            draw.polygon(pixel_points, fill=None, outline=(255, 0, 0, 200), width=16)
     
     return img
 
