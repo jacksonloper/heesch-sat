@@ -5,6 +5,7 @@ Render a 10iamond with Heesch number 3, showing all coronas.
 
 import math
 import sys
+from collections import defaultdict
 
 # Coordinates of the 10iamond with Heesch number 3
 # From: I 3 -6 1 -5 0 -3 3 -3 1 -2 4 -2 0 0 -2 1 1 1 0 3
@@ -94,6 +95,35 @@ def get_triangle_points(x, y):
         ]
     return points
 
+def get_triangle_edges(x, y):
+    """Get the three edges of a triangle as tuples of (point1, point2)."""
+    points = get_triangle_points(x, y)
+    # Return edges as sorted tuples so we can detect shared edges
+    edges = []
+    for i in range(3):
+        p1 = points[i]
+        p2 = points[(i + 1) % 3]
+        # Sort points to create a canonical edge representation
+        edge = tuple(sorted([p1, p2]))
+        edges.append(edge)
+    return edges
+
+def find_perimeter_edges(triangle_coords):
+    """Find the perimeter edges of a set of triangles.
+    Perimeter edges are those that appear in only one triangle.
+    triangle_coords is a list of (corona, coord) tuples."""
+    edge_count = defaultdict(int)
+    
+    # Count how many times each edge appears
+    for corona, coord in triangle_coords:
+        edges = get_triangle_edges(coord[0], coord[1])
+        for edge in edges:
+            edge_count[edge] += 1
+    
+    # Perimeter edges appear exactly once
+    perimeter = [edge for edge, count in edge_count.items() if count == 1]
+    return perimeter
+
 # Generate SVG
 def generate_svg():
     scale = 20
@@ -146,15 +176,17 @@ def generate_svg():
             f'<polygon points="{points_str}" fill="{color}" stroke="black" stroke-width="0.02" opacity="0.9"/>'
         )
     
-    # Draw VERY thick outlines around each complete 10iamond copy
+    # Draw VERY thick outlines around the PERIMETER of each complete 10iamond copy
     for corona, transform, triangles in iamond_copies:
-        # Draw thick strokes on each triangle in this 10iamond to create a visible boundary
-        for _, coord in triangles:
-            points = get_triangle_points(coord[0], coord[1])
-            points_str = ' '.join(f"{p[0]},{p[1]}" for p in points)
-            # Use a very thick, bright stroke that stands out
+        # Find perimeter edges (edges that don't touch another triangle in this 10iamond)
+        perimeter_edges = find_perimeter_edges(triangles)
+        
+        # Draw each perimeter edge as a thick red line
+        for edge in perimeter_edges:
+            p1, p2 = edge
             svg_lines.append(
-                f'<polygon points="{points_str}" fill="none" stroke="red" stroke-width="0.4" opacity="0.8"/>'
+                f'<line x1="{p1[0]}" y1="{p1[1]}" x2="{p2[0]}" y2="{p2[1]}" '
+                f'stroke="red" stroke-width="0.4" opacity="0.9" stroke-linecap="round"/>'
             )
     
     svg_lines.append('</g>')
@@ -214,7 +246,7 @@ def generate_png():
         (247, 220, 111, 200),  # Yellow
     ]
     
-    # Draw triangles with more visible borders
+    # Draw triangles with thin borders
     for corona, coord in all_triangles:
         points = get_triangle_points(coord[0], coord[1])
         # Convert to pixel coordinates
@@ -226,17 +258,22 @@ def generate_png():
         color = colors[min(corona, len(colors)-1)]
         draw.polygon(pixel_points, fill=color, outline=(0, 0, 0, 255), width=1)
     
-    # Draw VERY thick outlines around each complete 10iamond copy
+    # Draw VERY thick outlines around the PERIMETER of each complete 10iamond copy
     for corona, transform, triangles in iamond_copies:
-        for _, coord in triangles:
-            points = get_triangle_points(coord[0], coord[1])
-            pixel_points = [
-                (int((p[0] - min_x) * scale + margin), 
-                 int((p[1] - min_y) * scale + margin))
-                for p in points
-            ]
-            # Draw very thick red outline (20x thicker than gridlines)
-            draw.polygon(pixel_points, fill=None, outline=(255, 0, 0, 200), width=16)
+        # Find perimeter edges
+        perimeter_edges = find_perimeter_edges(triangles)
+        
+        # Draw each perimeter edge as a thick red line
+        for edge in perimeter_edges:
+            p1, p2 = edge
+            # Convert to pixel coordinates
+            px1 = int((p1[0] - min_x) * scale + margin)
+            py1 = int((p1[1] - min_y) * scale + margin)
+            px2 = int((p2[0] - min_x) * scale + margin)
+            py2 = int((p2[1] - min_y) * scale + margin)
+            
+            # Draw thick red line
+            draw.line([(px1, py1), (px2, py2)], fill=(255, 0, 0, 230), width=16)
     
     return img
 
