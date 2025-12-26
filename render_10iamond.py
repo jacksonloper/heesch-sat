@@ -59,22 +59,34 @@ def apply_transform(coord, transform):
     return new_x, new_y
 
 def get_triangle_points(x, y):
-    """Get the three vertices of a triangle at iamond coordinate (x, y)."""
+    """Get the three vertices of a triangle at iamond coordinate (x, y).
+    
+    In the iamond grid, triangles are unit equilateral triangles.
+    The grid uses the same coordinate system as hex grid (60-degree axes).
+    Valid coordinates: both x,y are multiples of 3, or both are 1 mod 3.
+    Triangle orientation alternates based on which type.
+    """
     cx, cy = iamond_to_cartesian(x, y)
-    # Determine triangle orientation based on parity
-    if (x % 3 == 0 and y % 3 == 0) or ((x-1) % 3 == 0 and (y-1) % 3 == 0):
-        # Upward triangle
+    
+    # Side length of equilateral triangle
+    side = 1.0
+    height = side * math.sqrt(3) / 2
+    
+    # Determine orientation: coordinates divisible by 3 point up, 
+    # coordinates ≡ 1 (mod 3) point down
+    if x % 3 == 0 and y % 3 == 0:
+        # Upward pointing triangle
         points = [
-            (cx - 0.5, cy - math.sqrt(3)/6),
-            (cx + 0.5, cy - math.sqrt(3)/6),
-            (cx, cy + math.sqrt(3)/3)
+            (cx - side/2, cy - height/3),
+            (cx + side/2, cy - height/3),
+            (cx, cy + 2*height/3)
         ]
-    else:
-        # Downward triangle
+    else:  # (x-1) % 3 == 0 and (y-1) % 3 == 0
+        # Downward pointing triangle
         points = [
-            (cx - 0.5, cy + math.sqrt(3)/6),
-            (cx + 0.5, cy + math.sqrt(3)/6),
-            (cx, cy - math.sqrt(3)/3)
+            (cx - side/2, cy + height/3),
+            (cx + side/2, cy + height/3),
+            (cx, cy - 2*height/3)
         ]
     return points
 
@@ -113,13 +125,13 @@ def generate_svg():
     # Color palette for coronas
     colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F']
     
-    # Draw triangles
+    # Draw triangles with prominent borders
     for corona, coord in all_triangles:
         points = get_triangle_points(coord[0], coord[1])
         color = colors[min(corona, len(colors)-1)]
         points_str = ' '.join(f"{p[0]},{p[1]}" for p in points)
         svg_lines.append(
-            f'<polygon points="{points_str}" fill="{color}" stroke="black" stroke-width="0.05" opacity="0.8"/>'
+            f'<polygon points="{points_str}" fill="{color}" stroke="black" stroke-width="0.03" opacity="0.9"/>'
         )
     
     svg_lines.append('</g>')
@@ -172,7 +184,7 @@ def generate_png():
         (247, 220, 111, 200),  # Yellow
     ]
     
-    # Draw triangles
+    # Draw triangles with more visible borders
     for corona, coord in all_triangles:
         points = get_triangle_points(coord[0], coord[1])
         # Convert to pixel coordinates
@@ -182,7 +194,7 @@ def generate_png():
             for p in points
         ]
         color = colors[min(corona, len(colors)-1)]
-        draw.polygon(pixel_points, fill=color, outline=(0, 0, 0, 255))
+        draw.polygon(pixel_points, fill=color, outline=(0, 0, 0, 255), width=2)
     
     return img
 
