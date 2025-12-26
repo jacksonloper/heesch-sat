@@ -65,11 +65,15 @@ def get_triangle_points(x, y):
     The grid uses the same coordinate system as hex grid (60-degree axes).
     Valid coordinates: both x,y are multiples of 3, or both are 1 mod 3.
     Triangle orientation alternates based on which type.
+    
+    The spacing between adjacent iamond centers is 3 units in the coordinate system,
+    so triangles should have side length ~3 to properly fill the space.
     """
     cx, cy = iamond_to_cartesian(x, y)
     
-    # Side length of equilateral triangle
-    side = 1.0
+    # Side length of equilateral triangle - scaled to match iamond grid spacing
+    # Adjacent valid coordinates differ by 3, so triangles should be ~3 units wide
+    side = 3.0
     height = side * math.sqrt(3) / 2
     
     # Determine orientation: coordinates divisible by 3 point up, 
@@ -95,12 +99,20 @@ def generate_svg():
     scale = 20
     margin = 50
     
-    # Collect all transformed triangles
-    all_triangles = []
+    # Collect all transformed triangles, grouped by 10iamond copy
+    # Structure: list of (corona, transform, triangles_in_this_copy)
+    iamond_copies = []
     for corona, transform in patches:
+        triangles = []
         for coord in iamond_coords:
             transformed = apply_transform(coord, transform)
-            all_triangles.append((corona, transformed))
+            triangles.append((corona, transformed))
+        iamond_copies.append((corona, transform, triangles))
+    
+    # Also collect all triangles for bounding box
+    all_triangles = []
+    for corona, transform, triangles in iamond_copies:
+        all_triangles.extend(triangles)
     
     # Find bounding box
     all_coords = [t[1] for t in all_triangles]
@@ -131,8 +143,31 @@ def generate_svg():
         color = colors[min(corona, len(colors)-1)]
         points_str = ' '.join(f"{p[0]},{p[1]}" for p in points)
         svg_lines.append(
-            f'<polygon points="{points_str}" fill="{color}" stroke="black" stroke-width="0.03" opacity="0.9"/>'
+            f'<polygon points="{points_str}" fill="{color}" stroke="black" stroke-width="0.05" opacity="0.9"/>'
         )
+    
+    # Draw thick outlines around each complete 10iamond copy
+    for corona, transform, triangles in iamond_copies:
+        # Collect all points from this 10iamond copy to create an outline
+        all_points = []
+        for _, coord in triangles:
+            tri_points = get_triangle_points(coord[0], coord[1])
+            all_points.extend(tri_points)
+        
+        # Create a convex hull or outline path
+        # For simplicity, we'll draw a polyline connecting the outer edge points
+        if len(all_points) > 0:
+            # Find the convex hull of points to draw boundary
+            from functools import reduce
+            
+            # Simple approach: draw very thick strokes on the triangles at the perimeter
+            # We'll redraw the triangles with thick transparent strokes
+            for _, coord in triangles:
+                points = get_triangle_points(coord[0], coord[1])
+                points_str = ' '.join(f"{p[0]},{p[1]}" for p in points)
+                svg_lines.append(
+                    f'<polygon points="{points_str}" fill="none" stroke="darkblue" stroke-width="0.15" opacity="0.6"/>'
+                )
     
     svg_lines.append('</g>')
     svg_lines.append('</svg>')
@@ -150,12 +185,19 @@ def generate_png():
     scale = 40
     margin = 100
     
-    # Collect all transformed triangles
-    all_triangles = []
+    # Collect all transformed triangles, grouped by 10iamond copy
+    iamond_copies = []
     for corona, transform in patches:
+        triangles = []
         for coord in iamond_coords:
             transformed = apply_transform(coord, transform)
-            all_triangles.append((corona, transformed))
+            triangles.append((corona, transformed))
+        iamond_copies.append((corona, transform, triangles))
+    
+    # Also collect all triangles
+    all_triangles = []
+    for corona, transform, triangles in iamond_copies:
+        all_triangles.extend(triangles)
     
     # Find bounding box
     all_coords = [t[1] for t in all_triangles]
@@ -195,6 +237,18 @@ def generate_png():
         ]
         color = colors[min(corona, len(colors)-1)]
         draw.polygon(pixel_points, fill=color, outline=(0, 0, 0, 255), width=2)
+    
+    # Draw thick outlines around each complete 10iamond copy
+    for corona, transform, triangles in iamond_copies:
+        for _, coord in triangles:
+            points = get_triangle_points(coord[0], coord[1])
+            pixel_points = [
+                (int((p[0] - min_x) * scale + margin), 
+                 int((p[1] - min_y) * scale + margin))
+                for p in points
+            ]
+            # Draw thick blue outline
+            draw.polygon(pixel_points, fill=None, outline=(0, 0, 139, 150), width=6)
     
     return img
 
