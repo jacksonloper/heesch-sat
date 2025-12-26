@@ -92,27 +92,70 @@ def get_triangle_points(x, y):
         ]
     return points
 
-def get_triangle_edges(x, y):
-    """Get the three edges of a triangle as tuples of (point1, point2)."""
-    points = get_triangle_points(x, y)
+def get_triangle_edges_grid(x, y):
+    """Get the three edges of a triangle in GRID coordinates.
+    
+    Each triangle has 3 neighbors. An edge is shared if the neighbor exists.
+    For iamond grids, adjacent triangles share edges based on these rules:
+    - If x%3==0 and y%3==0 (upward triangle), neighbors are at relative positions
+    - Otherwise (downward triangle), different neighbor positions
+    
+    We return edges as pairs of grid coordinates (sorted for canonical form).
+    """
+    # In iamond coordinates, each triangle has up to 3 neighbors
+    # We define edges by the pair of triangles they separate
+    # An edge can be identified by the two triangle coordinates it touches
+    
+    # For simplicity, define each edge by computing which grid cells share it
+    # In the triangular grid with our coordinate system:
+    # - Upward triangles (sum(x,y) divisible by 3): point up
+    # - Downward triangles (sum(x,y) not divisible by 3): point down
+    
+    # Actually, let's use a different approach: represent each edge by its endpoints
+    # in terms of the triangular lattice
+    
+    # Each triangle in the grid can be adjacent to 3 others
+    # For coordinates (x,y), the three potential neighbors are:
+    neighbors = [
+        (x+1, y),   # right neighbor
+        (x, y+1),   # up-right neighbor  
+        (x-1, y+1), # up-left neighbor
+    ]
+    
+    # Create edge identifiers - use sorted tuple of the two triangle coords
     edges = []
-    for i in range(3):
-        p1 = points[i]
-        p2 = points[(i + 1) % 3]
-        edge = tuple(sorted([p1, p2]))
+    for nx, ny in neighbors:
+        edge = tuple(sorted([(x, y), (nx, ny)]))
         edges.append(edge)
+    
     return edges
 
 def find_perimeter_edges(triangle_coords):
-    """Find the perimeter edges of a set of triangles."""
+    """Find the perimeter edges of a set of triangles by counting edge occurrences.
+    
+    An edge appears twice if it's internal (shared by two triangles in the set).
+    An edge appears once if it's on the perimeter.
+    """
     edge_count = defaultdict(int)
     
-    for corona, coord in triangle_coords:
-        edges = get_triangle_edges(coord[0], coord[1])
-        for edge in edges:
-            edge_count[edge] += 1
+    # Convert to set for fast lookup
+    coord_set = set(c for corona, c in triangle_coords)
     
-    perimeter = [edge for edge, count in edge_count.items() if count == 1]
+    for corona, coord in triangle_coords:
+        edges = get_triangle_edges_grid(coord[0], coord[1])
+        for edge in edges:
+            # An edge is internal only if BOTH triangles are in our set
+            tri1, tri2 = edge
+            if tri1 in coord_set and tri2 in coord_set:
+                # Both triangles exist, so this is an internal edge
+                edge_count[edge] += 1
+            elif tri1 == coord:
+                # Only tri1 (our current triangle) is in the set, so edge is on perimeter
+                # Store which side of the edge to draw
+                edge_count[edge] = 1
+    
+    # Perimeter edges are those that appear exactly once
+    perimeter = [(edge, coord_set) for edge, count in edge_count.items() if count == 1]
     return perimeter
 
 # Generate SVG
@@ -215,16 +258,48 @@ def generate_svg():
                 f'<polygon points="{points_str}" fill="url(#{pattern_id})" stroke="black" stroke-width="0.015" opacity="0.5"/>'
             )
     
-    # Draw THICK red outlines around each complete iamond
-    for corona, transform, triangles in iamond_copies:
+    # Draw THICK red outlines around each complete iamond perimeter
+    for iamond_idx, (corona, transform, triangles) in enumerate(iamond_copies):
         perimeter_edges = find_perimeter_edges(triangles)
         
-        for edge in perimeter_edges:
-            p1, p2 = edge
-            svg_lines.append(
-                f'<line x1="{p1[0]}" y1="{p1[1]}" x2="{p2[0]}" y2="{p2[1]}" '
-                f'stroke="darkred" stroke-width="0.25" opacity="0.95" stroke-linecap="round"/>'
-            )
+        # Convert grid edges to cartesian line segments
+        for edge_data in perimeter_edges:
+            edge, coord_set = edge_data
+            tri1, tri2 = edge
+            
+            # Determine which triangle is in our set and which is outside
+            if tri1 in coord_set:
+                our_tri = tri1
+                other_tri = tri2
+            else:
+                our_tri = tri2
+                other_tri = tri1
+            
+            # Get the triangle vertices for our triangle
+            our_points = get_triangle_points(our_tri[0], our_tri[1])
+            
+            # Get the triangle vertices for the other triangle (even if it doesn't exist)
+            other_points = get_triangle_points(other_tri[0], other_tri[1])
+            
+            # Find the shared edge - the two vertices that are common
+            # Due to floating point, we need to find close matches
+            tolerance = 0.01
+            shared_vertices = []
+            for p1 in our_points:
+                for p2 in other_points:
+                    dist = math.sqrt((p1[0]-p2[0])**2 + (p1[1]-p2[1])**2)
+                    if dist < tolerance:
+                        shared_vertices.append(p1)
+                        break
+            
+            if len(shared_vertices) == 2:
+                # Draw the shared edge
+                p1, p2 = shared_vertices
+                svg_lines.append(
+                    f'<line x1="{p1[0]}" y1="{p1[1]}" x2="{p2[0]}" y2="{p2[1]}" '
+                    f'stroke="darkred" stroke-width="0.25" opacity="0.95" stroke-linecap="round"/>'
+                )
+    
     
     # Add title
     svg_lines.append(f'<text x="{(max_x + min_x)/2}" y="{min_y - 0.5}" font-size="0.6" fill="black" text-anchor="middle" font-weight="bold">5iamond with First Corona (Heesch visualization)</text>')
