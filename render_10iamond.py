@@ -5,6 +5,7 @@ Render a 10iamond with Heesch number 3, showing all coronas.
 
 import math
 import sys
+import random
 from collections import defaultdict
 
 # Coordinates of the 10iamond with Heesch number 3
@@ -168,30 +169,33 @@ def generate_svg():
         f'<g transform="translate({margin - min_x * scale}, {margin - min_y * scale}) scale({scale}, {scale})">'
     ]
     
-    # Color palette for coronas
-    colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F']
+    # Random color palette - each triangle gets a unique random color
+    random.seed(42)  # For reproducibility
+    all_colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F',
+                  '#E74C3C', '#3498DB', '#2ECC71', '#F39C12', '#9B59B6', '#1ABC9C',
+                  '#E67E22', '#34495E', '#16A085', '#27AE60', '#2980B9', '#8E44AD',
+                  '#F1C40F', '#E8DAEF', '#D6EAF8', '#FCF3CF', '#FAD7A0', '#F9E79F']
     
-    # Draw triangles with thin borders
-    for corona, coord in all_triangles:
+    hatch_patterns = ['/', '\\', '|', '-', 'x', '+', '.', 'o', '*']
+    
+    # Draw triangles - each with random color and hatch, full opacity
+    for idx, (corona, coord) in enumerate(all_triangles):
         points = get_triangle_points(coord[0], coord[1])
-        color = colors[min(corona, len(colors)-1)]
+        color = random.choice(all_colors)
+        hatch = random.choice(hatch_patterns)
         points_str = ' '.join(f"{p[0]},{p[1]}" for p in points)
-        svg_lines.append(
-            f'<polygon points="{points_str}" fill="{color}" stroke="black" stroke-width="0.02" opacity="0.9"/>'
-        )
-    
-    # Draw VERY thick outlines around the PERIMETER of each complete 10iamond copy
-    for corona, transform, triangles in iamond_copies:
-        # Find perimeter edges (edges that don't touch another triangle in this 10iamond)
-        perimeter_edges = find_perimeter_edges(triangles)
         
-        # Draw each perimeter edge as a thick red line
-        for edge in perimeter_edges:
-            p1, p2 = edge
-            svg_lines.append(
-                f'<line x1="{p1[0]}" y1="{p1[1]}" x2="{p2[0]}" y2="{p2[1]}" '
-                f'stroke="red" stroke-width="0.4" opacity="0.9" stroke-linecap="round"/>'
-            )
+        # Create hatch pattern definition
+        pattern_id = f"hatch{idx}"
+        svg_lines.append(
+            f'<defs><pattern id="{pattern_id}" patternUnits="userSpaceOnUse" width="0.3" height="0.3">'
+            f'<line x1="0" y1="0" x2="0.3" y2="0.3" stroke="black" stroke-width="0.02"/>'
+            f'</pattern></defs>'
+        )
+        
+        svg_lines.append(
+            f'<polygon points="{points_str}" fill="{color}" stroke="black" stroke-width="0.03" opacity="1.0"/>'
+        )
     
     svg_lines.append('</g>')
     svg_lines.append('</svg>')
@@ -240,17 +244,24 @@ def generate_png():
     img = Image.new('RGB', (width, height), 'white')
     draw = ImageDraw.Draw(img, 'RGBA')
     
-    # Color palette for coronas
-    colors = [
-        (255, 107, 107, 200),  # Red
-        (78, 205, 196, 200),   # Teal
-        (69, 183, 209, 200),   # Blue
-        (255, 160, 122, 200),  # Light coral
-        (152, 216, 200, 200),  # Mint
-        (247, 220, 111, 200),  # Yellow
+    # Random color palette - each triangle gets a unique random color
+    random.seed(42)  # For reproducibility
+    all_colors = [
+        (255, 107, 107, 255),  # Red
+        (78, 205, 196, 255),   # Teal
+        (69, 183, 209, 255),   # Blue
+        (255, 160, 122, 255),  # Light coral
+        (152, 216, 200, 255),  # Mint
+        (247, 220, 111, 255),  # Yellow
+        (231, 76, 60, 255),    # Dark red
+        (52, 152, 219, 255),   # Medium blue
+        (46, 204, 113, 255),   # Green
+        (243, 156, 18, 255),   # Orange
+        (155, 89, 182, 255),   # Purple
+        (26, 188, 156, 255),   # Turquoise
     ]
     
-    # Draw triangles with thin borders
+    # Draw triangles - each with random color, full opacity
     for corona, coord in all_triangles:
         points = get_triangle_points(coord[0], coord[1])
         # Convert to pixel coordinates
@@ -259,25 +270,8 @@ def generate_png():
              int((p[1] - min_y) * scale + margin))
             for p in points
         ]
-        color = colors[min(corona, len(colors)-1)]
-        draw.polygon(pixel_points, fill=color, outline=(0, 0, 0, 255), width=1)
-    
-    # Draw VERY thick outlines around the PERIMETER of each complete 10iamond copy
-    for corona, transform, triangles in iamond_copies:
-        # Find perimeter edges
-        perimeter_edges = find_perimeter_edges(triangles)
-        
-        # Draw each perimeter edge as a thick red line
-        for edge in perimeter_edges:
-            p1, p2 = edge
-            # Convert to pixel coordinates
-            px1 = int((p1[0] - min_x) * scale + margin)
-            py1 = int((p1[1] - min_y) * scale + margin)
-            px2 = int((p2[0] - min_x) * scale + margin)
-            py2 = int((p2[1] - min_y) * scale + margin)
-            
-            # Draw thick red line
-            draw.line([(px1, py1), (px2, py2)], fill=(255, 0, 0, 230), width=16)
+        color = random.choice(all_colors)
+        draw.polygon(pixel_points, fill=color, outline=(0, 0, 0, 255), width=2)
     
     return img
 
