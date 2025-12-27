@@ -113,6 +113,13 @@ struct neighbour_maker
 
 	struct neighbour_iter
 	{
+		// Iterator traits for STL compatibility
+		using iterator_category = std::input_iterator_tag;
+		using value_type = point_t;
+		using difference_type = std::ptrdiff_t;
+		using pointer = point_t*;
+		using reference = point_t;
+
 		neighbour_iter()
 			: pt_ {}
 			, idx_ { 0 }

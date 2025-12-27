@@ -1,0 +1,25 @@
+20iamond coordinates (unordered set):
+(-18, 12)
+(-17, 10)
+(-15, 9)
+(-17, 13)
+(-15, 12)
+(-14, 10)
+(-12, 9)
+(-3, 0)
+(-14, 13)
+(-12, 12)
+(-11, 10)
+(-9, 9)
+(-8, 7)
+(-6, 6)
+(-5, 4)
+(-3, 3)
+(-2, 1)
+(-5, 7)
+(-3, 6)
+(-2, 4)
+
+Set hash: 73eba6ed
+Heesch number (connected): 4
+Witness patch size: 69 tiles

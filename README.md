@@ -97,6 +97,42 @@ If none of the filtering switches (`-unknown`, `-holes`, `-inconclusive`, `-nont
 
 To close out the running example, executing `./viz 6hex_out.txt` will produce an 81-page PDF `out.pdf` containing drawings of the hole-free 6-hexes.  Those that don't tile will have (possibly trivial) patches exhibiting their Heesch numbers.  The isohedral tilers will show just a single copy of the shape.  The inconclusive (anisohedral) tile will show a number of coronas.
 
+## Generating SVG witness patches for polyiamonds
+
+The `render_witness` tool generates SVG images of witness patches for individual polyiamonds. Unlike `viz` which produces PDF output for batches of polyforms, `render_witness` creates standalone SVG files with one polygon per copy of the polyiamond in the witness patch.
+
+### Usage
+
+```
+./render_witness x1 y1 x2 y2 ... xN yN
+```
+
+Coordinates are given as space-separated x y pairs representing the cells of the polyiamond. The program computes the witness patch (up to Heesch number 5) and outputs:
+- An SVG file with the witness visualization
+- A text file with the coordinates and analysis results
+
+Output files are saved to the `renderings/` directory with filenames based on the polyiamond size and a set hash of the coordinates (ensuring consistent naming regardless of coordinate order).
+
+### Examples
+
+Generate a witness for a 10-iamond:
+```
+./render_witness 3 -6 1 -5 0 -3 3 -3 1 -2 4 -2 0 0 -2 1 1 1 0 3
+```
+
+Generate a witness for a 20-iamond:
+```
+./render_witness -18 12 -17 10 -15 9 -17 13 -15 12 -14 10 -12 9 -3 0 \
+    -14 13 -12 12 -11 10 -9 9 -8 7 -6 6 -5 4 -3 3 -2 1 -5 7 -3 6 -2 4
+```
+
+### Color scheme
+
+In the generated SVG:
+- **Yellow**: The central tile (kernel/corona 0)
+- **Light gray**: Odd-numbered coronas (1, 3, 5, ...)
+- **Dark gray**: Even-numbered coronas (2, 4, ...)
+
 # The grids
 
 At present, I am not providing complete documentation for the text file format used by the programs above.  If you want to understand the format, a good starting point would be to look at the function `TileInfo<grid>::write( std::ostream& os )` in `tileio.h`.  That being said, there is some value in describing the encoding of the cells of the different polyform grids.
