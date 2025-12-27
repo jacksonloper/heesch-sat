@@ -32,7 +32,7 @@ viz: viz.o
 	$(CXX) $(LIBS) $(CAIROLIBS) -o viz viz.o
 
 render_witness: render_witness.o
-	$(CXX) -o render_witness render_witness.o $(LIBS) $(CAIROLIBS) 
+	$(CXX) -o render_witness render_witness.o $(LIBS) 
 
 gen: gen.o
 	$(CXX) $(LIBS) -o gen gen.o
