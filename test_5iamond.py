@@ -6,30 +6,49 @@ Test rendering with a simple 5iamond - show just first corona
 import math
 import sys
 from collections import defaultdict
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-from matplotlib.patches import Polygon
-from matplotlib.collections import PatchCollection
 
 # Pick the first 5iamond - the most symmetric one
 # I 0 -3 1 -2 0 0 -2 1 1 1
 iamond_coords = [(0,-3), (1,-2), (0,0), (-2,1), (1,1)]
 
-# Manual patch data for first corona (identity + 8 transforms)
-# These are the transforms for a simple 5iamond's first corona
-patches = [
-    (0, (1,0,0,0,1,0)),      # Central (identity)
-    (1, (-1,-1,-9,1,0,6)),   # Corona 1, transform 1
-    (1, (0,1,-2,1,0,4)),     # Corona 1, transform 2  
-    (1, (0,-1,-3,-1,-1,-3)), # Corona 1, transform 3
-    (1, (1,1,3,-1,0,-3)),    # Corona 1, transform 4
-    (1, (0,-1,4,-1,-1,-11)), # Corona 1, transform 5
-    (1, (-1,0,-2,-1,1,-2)),  # Corona 1, transform 6
-    (1, (1,0,6,1,-1,-6)),    # Corona 1, transform 7
-    (1, (1,0,1,0,1,3)),      # Corona 1, transform 8
-]
+# Read the witness patch data for this 5iamond
+patch_file = "/tmp/5iamonds_classified.txt"
+patches = []
 
-print(f"Using manual patch data with {len(patches)} copies (1 central + 8 in first corona)")
+try:
+    with open(patch_file, 'r') as f:
+        lines = [l.strip() for l in f.readlines()]
+        
+    # Find the FIRST shape's patch data  
+    idx = 0
+    for i, line in enumerate(lines):
+        if line.startswith("! 1"):
+            idx = i + 1
+            break
+    
+    if idx > 0 and idx < len(lines):
+        num_patches = int(lines[idx])
+        idx += 1
+        
+        # Load only corona 0 and 1 for clarity
+        for _ in range(min(num_patches, 200)):
+            if idx >= len(lines):
+                break
+            corona = int(lines[idx].split()[0])
+            if corona > 1:  # Skip corona 2 and higher
+                idx += 1
+                continue
+            # Parse transform: <a,b,c,d,e,f>
+            transform_str = lines[idx].split()[1]
+            transform_parts = transform_str.strip('<>').split(',')
+            transform = tuple(int(x) for x in transform_parts)
+            patches.append((corona, transform))
+            idx += 1
+        print(f"Loaded {len(patches)} patches (corona 0-1 only)")
+except Exception as e:
+    print(f"Note: Could not parse full patch data: {e}")
+    print("Will render just the base shape")
+    patches = [(0, (1,0,0,0,1,0))]
 
 # Helper functions
 def iamond_to_cartesian(x, y):
@@ -57,8 +76,7 @@ def get_triangle_points(x, y):
     side = 3.0
     height = side * math.sqrt(3) / 2
     
-    # Fixed orientation test: use (x+y) % 3 == 0 for upward triangles
-    if (x + y) % 3 == 0:
+    if x % 3 == 0 and y % 3 == 0:
         # Upward pointing triangle
         points = [
             (cx - side/2, cy - height/3),
@@ -74,46 +92,71 @@ def get_triangle_points(x, y):
         ]
     return points
 
-def snap_point(p, eps=1e-6):
-    """Snap a point to a grid for consistent edge matching."""
-    return (round(p[0]/eps)*eps, round(p[1]/eps)*eps)
-
-def triangle_edges_cartesian(x, y, eps=1e-6):
-    """Get the three edges of a triangle in cartesian coordinates.
+def get_triangle_edges_grid(x, y):
+    """Get the three edges of a triangle in GRID coordinates.
     
-    Each edge is represented as a sorted tuple of two snapped endpoints.
-    This allows edges to be matched even when triangles are processed in different orders.
+    Each triangle has 3 neighbors. An edge is shared if the neighbor exists.
+    For iamond grids, adjacent triangles share edges based on these rules:
+    - If x%3==0 and y%3==0 (upward triangle), neighbors are at relative positions
+    - Otherwise (downward triangle), different neighbor positions
+    
+    We return edges as pairs of grid coordinates (sorted for canonical form).
     """
-    pts = [snap_point(p, eps) for p in get_triangle_points(x, y)]
-    a, b, c = pts
-    edges = [
-        tuple(sorted((a, b))),
-        tuple(sorted((b, c))),
-        tuple(sorted((c, a))),
+    # In iamond coordinates, each triangle has up to 3 neighbors
+    # We define edges by the pair of triangles they separate
+    # An edge can be identified by the two triangle coordinates it touches
+    
+    # For simplicity, define each edge by computing which grid cells share it
+    # In the triangular grid with our coordinate system:
+    # - Upward triangles (sum(x,y) divisible by 3): point up
+    # - Downward triangles (sum(x,y) not divisible by 3): point down
+    
+    # Actually, let's use a different approach: represent each edge by its endpoints
+    # in terms of the triangular lattice
+    
+    # Each triangle in the grid can be adjacent to 3 others
+    # For coordinates (x,y), the three potential neighbors are:
+    neighbors = [
+        (x+1, y),   # right neighbor
+        (x, y+1),   # up-right neighbor  
+        (x-1, y+1), # up-left neighbor
     ]
+    
+    # Create edge identifiers - use sorted tuple of the two triangle coords
+    edges = []
+    for nx, ny in neighbors:
+        edge = tuple(sorted([(x, y), (nx, ny)]))
+        edges.append(edge)
+    
     return edges
 
-def find_perimeter_edges(triangle_coords, eps=1e-6):
-    """Find the perimeter edges by counting edge occurrences in cartesian space.
+def find_perimeter_edges(triangle_coords):
+    """Find the perimeter edges of a set of triangles by counting edge occurrences.
     
-    This approach:
-    1. Converts each triangle to its cartesian vertices
-    2. Creates edges as pairs of snapped endpoints
-    3. Counts edge occurrences - edges seen once are on the perimeter
-    4. Returns perimeter edges as cartesian line segments
-    
-    This is robust because it works directly with the actual geometry,
-    avoiding issues with grid neighbor relationships under transformations.
+    An edge appears twice if it's internal (shared by two triangles in the set).
+    An edge appears once if it's on the perimeter.
     """
     edge_count = defaultdict(int)
     
-    for corona, (x, y) in triangle_coords:
-        for edge in triangle_edges_cartesian(x, y, eps):
-            edge_count[edge] += 1
+    # Convert to set for fast lookup
+    coord_set = set(c for corona, c in triangle_coords)
+    
+    for corona, coord in triangle_coords:
+        edges = get_triangle_edges_grid(coord[0], coord[1])
+        for edge in edges:
+            # An edge is internal only if BOTH triangles are in our set
+            tri1, tri2 = edge
+            if tri1 in coord_set and tri2 in coord_set:
+                # Both triangles exist, so this is an internal edge
+                edge_count[edge] += 1
+            elif tri1 == coord:
+                # Only tri1 (our current triangle) is in the set, so edge is on perimeter
+                # Store which side of the edge to draw
+                edge_count[edge] = 1
     
     # Perimeter edges are those that appear exactly once
-    perimeter_edges = [edge for edge, count in edge_count.items() if count == 1]
-    return perimeter_edges
+    perimeter = [(edge, coord_set) for edge, count in edge_count.items() if count == 1]
+    return perimeter
 
 # Generate SVG
 def generate_svg():
@@ -218,14 +261,44 @@ def generate_svg():
     # Draw THICK red outlines around each complete iamond perimeter
     for iamond_idx, (corona, transform, triangles) in enumerate(iamond_copies):
         perimeter_edges = find_perimeter_edges(triangles)
-        print(f"  Iamond {iamond_idx}: Found {len(perimeter_edges)} perimeter edges")
         
-        # Perimeter edges are already in cartesian coordinates as (p1, p2) tuples
-        for (p1, p2) in perimeter_edges:
-            svg_lines.append(
-                f'<line x1="{p1[0]}" y1="{p1[1]}" x2="{p2[0]}" y2="{p2[1]}" '
-                f'stroke="darkred" stroke-width="0.25" opacity="0.95" stroke-linecap="round"/>'
-            )
+        # Convert grid edges to cartesian line segments
+        for edge_data in perimeter_edges:
+            edge, coord_set = edge_data
+            tri1, tri2 = edge
+            
+            # Determine which triangle is in our set and which is outside
+            if tri1 in coord_set:
+                our_tri = tri1
+                other_tri = tri2
+            else:
+                our_tri = tri2
+                other_tri = tri1
+            
+            # Get the triangle vertices for our triangle
+            our_points = get_triangle_points(our_tri[0], our_tri[1])
+            
+            # Get the triangle vertices for the other triangle (even if it doesn't exist)
+            other_points = get_triangle_points(other_tri[0], other_tri[1])
+            
+            # Find the shared edge - the two vertices that are common
+            # Due to floating point, we need to find close matches
+            tolerance = 0.01
+            shared_vertices = []
+            for p1 in our_points:
+                for p2 in other_points:
+                    dist = math.sqrt((p1[0]-p2[0])**2 + (p1[1]-p2[1])**2)
+                    if dist < tolerance:
+                        shared_vertices.append(p1)
+                        break
+            
+            if len(shared_vertices) == 2:
+                # Draw the shared edge
+                p1, p2 = shared_vertices
+                svg_lines.append(
+                    f'<line x1="{p1[0]}" y1="{p1[1]}" x2="{p2[0]}" y2="{p2[1]}" '
+                    f'stroke="darkred" stroke-width="0.25" opacity="0.95" stroke-linecap="round"/>'
+                )
     
     
     # Add title
@@ -238,65 +311,11 @@ def generate_svg():
 
 # Main execution
 if __name__ == "__main__":
-    output_svg = "/tmp/5iamond_test.svg"
-    output_png = "/home/runner/work/heesch-sat/heesch-sat/renderings/5iamond_test.png"
+    output_file = "/tmp/5iamond_test.svg"
     
     svg_content = generate_svg()
-    with open(output_svg, 'w') as f:
+    with open(output_file, 'w') as f:
         f.write(svg_content)
-    print(f"Generated {output_svg}")
-    
-    # Also generate PNG using matplotlib
-    fig, ax = plt.subplots(1, 1, figsize=(12, 12))
-    ax.set_aspect('equal')
-    ax.axis('off')
-    
-    # Colors and hatches
-    colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', 
-              '#F7DC6F', '#E8B4F9', '#A8E6CF', '#FFB6B9']
-    hatches = ['/', '\\', '|', '-', 'x', '+', '.', 'o', '*']
-    
-    # Collect all transformed triangles
-    iamond_copies = []
-    for corona, transform in patches:
-        triangles = []
-        for coord in iamond_coords:
-            transformed = apply_transform(coord, transform)
-            triangles.append((corona, transformed))
-        iamond_copies.append((corona, transform, triangles))
-    
-    # Draw triangles
-    for iamond_idx, (corona, transform, triangles) in enumerate(iamond_copies):
-        for triangle_corona, coord in triangles:
-            points = get_triangle_points(coord[0], coord[1])
-            poly = Polygon(points, facecolor=colors[iamond_idx], 
-                          edgecolor='black', linewidth=0.5, 
-                          hatch=hatches[iamond_idx], alpha=0.5)
-            ax.add_patch(poly)
-    
-    # Draw perimeter edges
-    for iamond_idx, (corona, transform, triangles) in enumerate(iamond_copies):
-        perimeter_edges = find_perimeter_edges(triangles)
-        for (p1, p2) in perimeter_edges:
-            ax.plot([p1[0], p2[0]], [p1[1], p2[1]], 
-                   color='darkred', linewidth=3, alpha=0.95, solid_capstyle='round')
-    
-    # Set limits
-    all_triangles = []
-    for corona, transform, triangles in iamond_copies:
-        all_triangles.extend(triangles)
-    all_coords = [t[1] for t in all_triangles]
-    cart_coords = [iamond_to_cartesian(x, y) for x, y in all_coords]
-    min_x = min(c[0] for c in cart_coords) - 2
-    max_x = max(c[0] for c in cart_coords) + 2
-    min_y = min(c[1] for c in cart_coords) - 2
-    max_y = max(c[1] for c in cart_coords) + 2
-    ax.set_xlim(min_x, max_x)
-    ax.set_ylim(min_y, max_y)
-    
-    plt.tight_layout()
-    plt.savefig(output_png, dpi=150, bbox_inches='tight')
-    print(f"Generated {output_png}")
-    
+    print(f"Generated {output_file}")
     print(f"Rendered {len(patches)} copies of the 5iamond (central shape + first corona)")
     print(f"Shape coordinates: {iamond_coords}")
