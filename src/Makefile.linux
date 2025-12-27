@@ -1,0 +1,34 @@
+INCLUDES = -I/usr/include/cryptominisat5 -I/usr/include
+
+CXX = g++
+OPT = -O3 -DNDEBUG
+CXXFLAGS = -std=c++17 -Wall -MMD $(INCLUDES) $(OPT)
+LIBS = -lcryptominisat5
+CAIRO_LIBS = -lcairo
+
+OBJECTS = sat.o viz.o surrounds.o gen.o report.o
+DEPENDS = ${OBJECTS:.o=.d}
+
+all: sat viz gen surrounds report
+
+sat: sat.o 
+	$(CXX) -o sat sat.o $(LIBS)
+
+viz: viz.o
+	$(CXX) -o viz viz.o $(LIBS) $(CAIRO_LIBS)
+
+gen: gen.o
+	$(CXX) -o gen gen.o $(LIBS)
+
+surrounds: surrounds.o 
+	$(CXX) -o surrounds surrounds.o $(LIBS)
+
+report: report.o 
+	$(CXX) -o report report.o $(LIBS)
+
+-include ${DEPENDS}
+
+.PHONY: clean
+
+clean:
+	rm -f ${OBJECTS} ${DEPENDS} sat viz gen surrounds report
