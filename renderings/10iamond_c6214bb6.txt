@@ -11,3 +11,5 @@
 (0, 3)
 
 Set hash: c6214bb6
+Heesch number (connected): 3
+Witness patch size: 47 tiles

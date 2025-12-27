@@ -20,6 +20,13 @@
 #include "tileio.h"
 
 // Render a witness patch for a polyiamond to SVG format.
+//
+// Usage: render_witness x1 y1 x2 y2 ... xN yN
+//
+// Coordinates are given as space-separated pairs. The program computes the
+// witness patch (up to Heesch number 5) and outputs an SVG file with one
+// polygon per copy of the polyiamond. Files are saved to ../renderings/
+// with filenames based on a set hash of the coordinates.
 
 using namespace std;
 using coord_t = int16_t;
@@ -38,17 +45,15 @@ size_t computeSetHash(const Shape<grid>& shape)
 	}
 	sort(pts.begin(), pts.end());
 
-	// XOR together the hashes of all points (order-independent operation)
-	// But since we sorted, we can also use boost::hash_combine for a better hash
+	// Combine hashes in an order-independent way
 	size_t hash = 0;
 	for (const auto& p : pts) {
-		// Use XOR for order independence
 		hash ^= p.hash() + 0x9e3779b9 + (hash << 6) + (hash >> 2);
 	}
 	return hash;
 }
 
-// Draw a patch to the cairo context, returning bounds for centering
+// Draw a patch to the cairo context
 void drawPatchToSVG(cairo_t *cr, const Shape<grid>& shape, const patch_t& patch,
 	double width, double height)
 {
@@ -107,7 +112,7 @@ void drawPatchToSVG(cairo_t *cr, const Shape<grid>& shape, const patch_t& patch,
 
 	double lw = 1.0 / scale;  // Line width in page coordinates
 
-	// Draw each polygon (one per copy of the 10iamond)
+	// Draw each polygon (one per copy of the polyiamond)
 	for (size_t idx = 0; idx < outlines.size(); ++idx) {
 		const auto& pts = outlines[idx];
 		size_t corona_level = patch[idx].first;
@@ -143,13 +148,34 @@ void drawPatchToSVG(cairo_t *cr, const Shape<grid>& shape, const patch_t& patch,
 	cairo_restore(cr);
 }
 
+void printUsage(const char *prog)
+{
+	cerr << "Usage: " << prog << " x1 y1 x2 y2 ... xN yN" << endl;
+	cerr << endl;
+	cerr << "Generates an SVG witness patch for a polyiamond." << endl;
+	cerr << "Coordinates are given as space-separated x y pairs." << endl;
+	cerr << "Output files are saved to ../renderings/ with names based on" << endl;
+	cerr << "the polyiamond size and a set hash of the coordinates." << endl;
+}
+
 int main(int argc, char **argv)
 {
-	// The 10iamond coordinates: (3, -6), (1, -5), (0, -3), (3, -3), (1, -2), (4, -2), (0, 0), (-2, 1), (1, 1), (0, 3)
-	vector<pair<coord_t, coord_t>> coords = {
-		{3, -6}, {1, -5}, {0, -3}, {3, -3}, {1, -2},
-		{4, -2}, {0, 0}, {-2, 1}, {1, 1}, {0, 3}
-	};
+	vector<pair<coord_t, coord_t>> coords;
+
+	// Parse command-line arguments
+	if (argc < 3 || (argc - 1) % 2 != 0) {
+		printUsage(argv[0]);
+		return 1;
+	}
+
+	for (int i = 1; i < argc; i += 2) {
+		coord_t x = atoi(argv[i]);
+		coord_t y = atoi(argv[i + 1]);
+		coords.push_back({x, y});
+	}
+
+	size_t numCells = coords.size();
+	cerr << "Polyiamond has " << numCells << " cells" << endl;
 
 	// Build the shape
 	Shape<grid> shape;
@@ -175,40 +201,23 @@ int main(int argc, char **argv)
 		filesystem::create_directories(outDir);
 	}
 
-	string baseName = "10iamond_" + hashSuffix;
+	string baseName = to_string(numCells) + "iamond_" + hashSuffix;
 	string svgPath = (outDir / (baseName + ".svg")).string();
 	string txtPath = (outDir / (baseName + ".txt")).string();
 
 	// Compute the witness
-	cerr << "Computing witness for 10iamond..." << endl;
+	cerr << "Computing witness for " << numCells << "iamond..." << endl;
 	HeeschSolver<grid> solver{shape, ALL, true};
+
+	patch_t bestPatch;
+	size_t hc = 0;
 
 	if (!solver.isSurroundable()) {
 		cerr << "Shape is not surroundable at all (Hc = 0)" << endl;
-		// Still draw the shape itself
-		patch_t patch;
-		patch.push_back(make_pair(0, xform_t{}));
-
-		// Create SVG
-		double width = 400.0;
-		double height = 400.0;
-		cairo_surface_t *surface = cairo_svg_surface_create(svgPath.c_str(), width, height);
-		cairo_t *cr = cairo_create(surface);
-
-		// White background
-		cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
-		cairo_paint(cr);
-
-		drawPatchToSVG(cr, shape, patch, width, height);
-
-		cairo_destroy(cr);
-		cairo_surface_destroy(surface);
-		cerr << "SVG written to: " << svgPath << endl;
+		bestPatch.push_back(make_pair(0, xform_t{}));
 	} else {
 		// Try to find coronas
 		size_t maxLevel = 5;
-		patch_t bestPatch;
-		size_t hc = 0;
 
 		solver.increaseLevel();
 		while (solver.getLevel() <= maxLevel) {
@@ -233,38 +242,39 @@ int main(int argc, char **argv)
 		}
 
 		if (bestPatch.empty()) {
-			// Just the kernel
 			bestPatch.push_back(make_pair(0, xform_t{}));
 		}
-
-		cerr << "Heesch number (connected): " << hc << endl;
-		cerr << "Witness patch has " << bestPatch.size() << " tiles" << endl;
-
-		// Create SVG
-		double width = 800.0;
-		double height = 800.0;
-		cairo_surface_t *surface = cairo_svg_surface_create(svgPath.c_str(), width, height);
-		cairo_t *cr = cairo_create(surface);
-
-		// White background
-		cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
-		cairo_paint(cr);
-
-		drawPatchToSVG(cr, shape, bestPatch, width, height);
-
-		cairo_destroy(cr);
-		cairo_surface_destroy(surface);
-		cerr << "SVG written to: " << svgPath << endl;
 	}
+
+	cerr << "Heesch number (connected): " << hc << endl;
+	cerr << "Witness patch has " << bestPatch.size() << " tiles" << endl;
+
+	// Create SVG
+	double width = 800.0;
+	double height = 800.0;
+	cairo_surface_t *surface = cairo_svg_surface_create(svgPath.c_str(), width, height);
+	cairo_t *cr = cairo_create(surface);
+
+	// White background
+	cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
+	cairo_paint(cr);
+
+	drawPatchToSVG(cr, shape, bestPatch, width, height);
+
+	cairo_destroy(cr);
+	cairo_surface_destroy(surface);
+	cerr << "SVG written to: " << svgPath << endl;
 
 	// Write the text file with coordinates
 	ofstream txtFile(txtPath);
-	txtFile << "10iamond coordinates (unordered set):" << endl;
+	txtFile << numCells << "iamond coordinates (unordered set):" << endl;
 	for (const auto& c : coords) {
 		txtFile << "(" << c.first << ", " << c.second << ")" << endl;
 	}
 	txtFile << endl;
 	txtFile << "Set hash: " << hashSuffix << endl;
+	txtFile << "Heesch number (connected): " << hc << endl;
+	txtFile << "Witness patch size: " << bestPatch.size() << " tiles" << endl;
 	txtFile.close();
 	cerr << "Text written to: " << txtPath << endl;
 
