@@ -1,16 +1,67 @@
-# React + Vite
+# Heesch Witness Browser
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A static website for browsing Heesch number witness renderings across different grid types.
 
-Currently, two official plugins are available:
+## Overview
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+This website displays polyform witnesses that demonstrate Heesch numbers - the maximum number of complete coronas that can surround a shape. Each witness shows the original tile and its surrounding coronas, rendered as SVGs on-the-fly from JSON data.
 
-## React Compiler
+Supported grid types include: Omino, Hex, Iamond, OctaSquare, TriHex, Abolo, Drafter, Kite, HalfCairo, and BevelHex.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Development
 
-## Expanding the ESLint configuration
+### Prerequisites
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- Node.js 18+
+- npm
+
+### Local Development
+
+```bash
+cd website
+npm install
+npm run dev
+```
+
+This starts a development server at `http://localhost:5173`.
+
+### Building for Production
+
+```bash
+npm run build
+```
+
+This runs the data build step (concatenating JSON witness files into JSONL) and then builds the Vite application. Output is in `dist/`.
+
+## Data Pipeline
+
+Witness data lives in `../renderings/` as individual JSON files organized by grid type. During the build:
+
+1. `scripts/build-data.js` scans `../renderings/**/*.json`
+2. Each JSON is read and concatenated into `public/data/witnesses.jsonl`
+3. The JSONL file is served statically and parsed by the frontend
+
+Each witness JSON contains:
+- `grid` - Grid type name
+- `hash` - Unique identifier based on tile coordinates
+- `coords` - List of [x, y] coordinate pairs defining the tile
+- `tile_boundary` - Line segments for rendering the tile outline
+- `witness_patches` - List of `{corona, transform}` pairs for the connected witness
+- `witness_with_holes_patches` - Same format for the holes-allowed witness (or null)
+
+## SVG Rendering
+
+SVGs are generated client-side from the JSON data:
+- The tile boundary defines a `<path>` element in `<defs>`
+- Each witness patch uses `<use>` with a CSS transform matrix
+- Coronas are colored distinctly (tile=red, corona 1=yellow, corona 2=green, etc.)
+
+## Deployment
+
+The site is configured for Netlify deployment. Simply connect your repository and Netlify will:
+
+1. Use `website` as the base directory
+2. Run `npm run build`
+3. Publish from `dist/`
+
+See `netlify.toml` for the full configuration.
