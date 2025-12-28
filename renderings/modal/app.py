@@ -29,7 +29,7 @@ volume = modal.Volume.from_name("heesch-renderings-vol", create_if_missing=True)
 VOLUME_PATH = "/data"
 
 # Image with dependencies
-image = modal.Image.debian_slim(python_version="3.11")
+image = modal.Image.debian_slim(python_version="3.11").pip_install("fastapi")
 
 
 def get_rendering_path(grid_type: str, coords_str: str) -> str:
@@ -86,7 +86,7 @@ def update_index(grid_type: str, coords_str: str):
 
 
 @app.function(image=image, volumes={VOLUME_PATH: volume})
-@modal.web_endpoint(method="GET")
+@modal.fastapi_endpoint(method="GET")
 def render(grid_type: str, coords: str) -> dict:
     """
     Get rendering for a polyform.
@@ -143,7 +143,7 @@ def render(grid_type: str, coords: str) -> dict:
 
 
 @app.function(image=image, volumes={VOLUME_PATH: volume})
-@modal.web_endpoint(method="GET")
+@modal.fastapi_endpoint(method="GET")
 def list_polyforms(grid_type: Optional[str] = None) -> dict:
     """
     List available polyforms.
@@ -184,7 +184,7 @@ def list_polyforms(grid_type: Optional[str] = None) -> dict:
 
 
 @app.function(image=image)
-@modal.web_endpoint(method="GET")
+@modal.fastapi_endpoint(method="GET")
 def grid_types() -> dict:
     """List all supported grid types."""
     return {
@@ -196,7 +196,7 @@ def grid_types() -> dict:
 
 
 @app.function(image=image, volumes={VOLUME_PATH: volume})
-@modal.web_endpoint(method="GET")
+@modal.fastapi_endpoint(method="GET")
 def render_sync(grid_type: str, coords: str) -> dict:
     """
     Get rendering for a polyform, computing synchronously if needed.
