@@ -59,7 +59,7 @@ image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("build-essential", "libcryptominisat5-dev", "libboost-dev")
     .pip_install("fastapi")
-    .add_local_dir("../../src", "/app/src", copy=True)
+    .add_local_dir("../src", "/app/src", copy=True)
     .run_commands(
         "cd /app/src && make render_witness",
         "cp /app/src/render_witness /usr/local/bin/",
@@ -92,58 +92,21 @@ def compute_hash(grid_type: str, coords: List[Tuple[int, int]]) -> str:
 
 
 def get_polyform_path(grid_type: str, cell_count: int, hash_value: str) -> str:
-    """Get path in volume for a polyform JSON file."""
+    """Get path in volume for a polyform JSON file (flat structure)."""
     filename = f"{cell_count}{grid_type}_{hash_value}.json"
-    return os.path.join(VOLUME_PATH, "polyforms", grid_type, filename)
-
-
-def get_index_path(grid_type: str) -> str:
-    """Get path to index file for a grid type."""
-    return os.path.join(VOLUME_PATH, "index", f"{grid_type}.json")
-
-
-def update_index(grid_type: str, hash_value: str, cell_count: int, coords: List[Tuple[int, int]]):
-    """Update the index file for a grid type."""
-    index_path = get_index_path(grid_type)
-    os.makedirs(os.path.dirname(index_path), exist_ok=True)
-
-    # Load existing index or create new
-    if os.path.exists(index_path):
-        with open(index_path, 'r') as f:
-            index = json.load(f)
-    else:
-        index = {"grid_type": grid_type, "polyforms": []}
-
-    # Add new entry if not exists
-    entry = {
-        "hash": hash_value,
-        "cell_count": cell_count,
-        "coordinates": [list(c) for c in coords]
-    }
-
-    # Check if hash already exists
-    existing_hashes = {p.get("hash") for p in index["polyforms"]}
-    if hash_value not in existing_hashes:
-        index["polyforms"].append(entry)
-        with open(index_path, 'w') as f:
-            json.dump(index, f, indent=2)
+    return os.path.join(VOLUME_PATH, filename)
 
 
 def find_polyform_by_hash(hash_value: str) -> Optional[dict]:
     """Find a polyform JSON file by its hash."""
-    # Search through all grid type directories
-    polyforms_dir = os.path.join(VOLUME_PATH, "polyforms")
-    if not os.path.exists(polyforms_dir):
+    if not os.path.exists(VOLUME_PATH):
         return None
 
-    for grid_type_dir in os.listdir(polyforms_dir):
-        grid_path = os.path.join(polyforms_dir, grid_type_dir)
-        if os.path.isdir(grid_path):
-            for filename in os.listdir(grid_path):
-                if hash_value in filename and filename.endswith('.json'):
-                    file_path = os.path.join(grid_path, filename)
-                    with open(file_path, 'r') as f:
-                        return json.load(f)
+    for filename in os.listdir(VOLUME_PATH):
+        if hash_value in filename and filename.endswith('.json'):
+            file_path = os.path.join(VOLUME_PATH, filename)
+            with open(file_path, 'r') as f:
+                return json.load(f)
     return None
 
 
@@ -157,6 +120,37 @@ def find_polyform_by_coords(grid_type: str, coords: List[Tuple[int, int]]) -> Op
         with open(file_path, 'r') as f:
             return json.load(f)
     return None
+
+
+def list_all_polyforms(grid_type_filter: Optional[str] = None) -> List[dict]:
+    """List all polyforms in the volume."""
+    result = []
+    if not os.path.exists(VOLUME_PATH):
+        return result
+
+    for filename in os.listdir(VOLUME_PATH):
+        if not filename.endswith('.json'):
+            continue
+        file_path = os.path.join(VOLUME_PATH, filename)
+        try:
+            with open(file_path, 'r') as f:
+                data = json.load(f)
+            gt = data.get("grid_type", "")
+            if grid_type_filter and gt != grid_type_filter:
+                continue
+            abbrev = GRID_ABBREVS.get(gt, gt)
+            result.append({
+                "grid_type": gt,
+                "abbrev": abbrev,
+                "full_name": GRID_NAMES.get(abbrev, gt),
+                "hash": data.get("hash", ""),
+                "cell_count": data.get("cell_count", 0),
+                "coordinates": data.get("coordinates", []),
+                "heesch_connected": data.get("heesch_connected"),
+            })
+        except (json.JSONDecodeError, IOError):
+            continue
+    return result
 
 
 def run_render_witness(grid_type: str, coords: List[Tuple[int, int]]) -> dict:
@@ -219,6 +213,7 @@ def web():
                 "/polyform?grid_type=hex&coords=0,0_1,0_0,1",
                 "/compute?grid_type=hex&coords=0,0_1,0_0,1",
                 "/list?grid_type=hex",
+                "/list_full - full data including witnesses",
             ],
             "post_endpoints": [
                 "POST /polyform - Store new polyform data"
@@ -333,13 +328,10 @@ def web():
         hash_value = data.get("hash", compute_hash(gt, parsed))
         cell_count = len(parsed)
         file_path = get_polyform_path(gt, cell_count, hash_value)
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
 
         with open(file_path, 'w') as f:
             json.dump(data, f, indent=2)
 
-        # Update index
-        update_index(gt, hash_value, cell_count, parsed)
         volume.commit()
 
         return {
@@ -385,13 +377,9 @@ def web():
 
         # Store the polyform
         file_path = get_polyform_path(grid_type, cell_count, hash_value)
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
 
         with open(file_path, 'w') as f:
             json.dump(data, f, indent=2)
-
-        # Update index
-        update_index(grid_type, hash_value, cell_count, coords)
 
         volume.commit()
 
@@ -408,38 +396,56 @@ def web():
         """List available polyforms."""
         volume.reload()
 
-        result = {"polyforms": []}
-
-        # Determine which grid types to check
+        # Normalize grid type filter
+        gt_filter = None
         if grid_type:
-            # Normalize grid type
             if grid_type in GRID_TYPES:
-                grid_types_to_check = [GRID_TYPES[grid_type]]
+                gt_filter = GRID_TYPES[grid_type]
             elif grid_type in GRID_TYPES.values():
-                grid_types_to_check = [grid_type]
+                gt_filter = grid_type
             else:
                 return {
                     "status": "error",
                     "message": f"Invalid grid type: {grid_type}"
                 }
-        else:
-            grid_types_to_check = list(GRID_TYPES.values())
 
-        for gt in grid_types_to_check:
-            index_path = get_index_path(gt)
-            if os.path.exists(index_path):
-                with open(index_path, 'r') as f:
-                    index = json.load(f)
-                abbrev = GRID_ABBREVS.get(gt, gt)
-                for entry in index.get("polyforms", []):
-                    result["polyforms"].append({
-                        "grid_type": gt,
-                        "abbrev": abbrev,
-                        "full_name": GRID_NAMES.get(abbrev, gt),
-                        **entry
-                    })
+        return {"polyforms": list_all_polyforms(gt_filter)}
 
-        return result
+    @web_app.get("/list_full")
+    def list_polyforms_full(grid_type: Optional[str] = None):
+        """List available polyforms with full data (including tile_boundary, witness)."""
+        volume.reload()
+
+        # Normalize grid type filter
+        gt_filter = None
+        if grid_type:
+            if grid_type in GRID_TYPES:
+                gt_filter = GRID_TYPES[grid_type]
+            elif grid_type in GRID_TYPES.values():
+                gt_filter = grid_type
+            else:
+                return {
+                    "status": "error",
+                    "message": f"Invalid grid type: {grid_type}"
+                }
+
+        result = []
+        if os.path.exists(VOLUME_PATH):
+            for filename in os.listdir(VOLUME_PATH):
+                if not filename.endswith('.json'):
+                    continue
+                file_path = os.path.join(VOLUME_PATH, filename)
+                try:
+                    with open(file_path, 'r') as f:
+                        data = json.load(f)
+                    gt = data.get("grid_type", "")
+                    if gt_filter and gt != gt_filter:
+                        continue
+                    result.append(data)
+                except (json.JSONDecodeError, IOError):
+                    continue
+
+        return {"polyforms": result}
 
     return web_app
 
