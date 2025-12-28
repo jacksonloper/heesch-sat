@@ -28,8 +28,12 @@ app = modal.App("heesch-renderings")
 volume = modal.Volume.from_name("heesch-renderings-vol", create_if_missing=True)
 VOLUME_PATH = "/data"
 
-# Image with dependencies
-image = modal.Image.debian_slim(python_version="3.11").pip_install("fastapi")
+# Image with dependencies - add local render.py to the image
+image = (
+    modal.Image.debian_slim(python_version="3.11")
+    .pip_install("fastapi")
+    .add_local_file("render.py", "/root/render.py")
+)
 
 
 def get_rendering_path(grid_type: str, coords_str: str) -> str:
