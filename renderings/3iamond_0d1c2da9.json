@@ -11,6 +11,7 @@
   ],
   "heesch_connected": 0,
   "heesch_with_holes": null,
+  "tiles_isohedrally": false,
   "witness_connected": [
     {"corona": 0, "transform": [1.000000, 0.000000, 0.000000, 0.000000, 1.000000, 0.000000]}
   ],
