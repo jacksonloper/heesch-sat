@@ -1,0 +1,24 @@
+[build]
+  # Directory to change to before starting build
+  base = "website"
+  # Build command
+  command = "npm run build"
+  # Directory containing the built site
+  publish = "dist"
+
+# Handle SPA routing - redirect all requests to index.html
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Headers for caching
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/data/*"
+  [headers.values]
+    Cache-Control = "public, max-age=3600"
