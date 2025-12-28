@@ -10,15 +10,13 @@ function App() {
   const [error, setError] = useState(null)
 
   useEffect(() => {
-    fetch('/data/witnesses.jsonl')
+    fetch('https://hloper--heesch-renderings-web.modal.run/list_full')
       .then(res => {
         if (!res.ok) throw new Error('Failed to load witnesses')
-        return res.text()
+        return res.json()
       })
-      .then(text => {
-        const lines = text.trim().split('\n').filter(Boolean)
-        const data = lines.map(line => JSON.parse(line))
-        setWitnesses(data)
+      .then(data => {
+        setWitnesses(data.polyforms || [])
         setLoading(false)
       })
       .catch(err => {
