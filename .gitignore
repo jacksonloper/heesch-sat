@@ -1,5 +1,7 @@
 .*
 !/.gitignore
+__pycache__/
+*.pyc
 src/sat
 src/viz
 *.d
