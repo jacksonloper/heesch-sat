@@ -5,6 +5,7 @@ Endpoints:
 - GET /polyform?hash=abc123 - Get polyform data by hash
 - GET /polyform?grid_type=hex&coords=0,0_1,0_0,1 - Get polyform data by grid type and coordinates
 - POST /polyform - Store new polyform data
+- GET /compute?grid_type=hex&coords=0,0_1,0_0,1 - Compute Heesch data for a polyform
 - GET /list?grid_type=hex - List available polyforms for a grid type
 - GET /grid_types - List all supported grid types
 """
@@ -13,6 +14,7 @@ import modal
 import json
 import os
 import hashlib
+import subprocess
 from typing import Optional, List, Tuple
 
 # Grid type abbreviations (matching C++ common.h)
@@ -52,8 +54,17 @@ app = modal.App("heesch-renderings")
 volume = modal.Volume.from_name("heesch-renderings-vol", create_if_missing=True)
 VOLUME_PATH = "/data"
 
-# Image with dependencies
-image = modal.Image.debian_slim(python_version="3.11").pip_install("fastapi")
+# Image with heesch-sat binaries compiled
+image = (
+    modal.Image.debian_slim(python_version="3.11")
+    .apt_install("build-essential", "libcryptominisat5-dev", "libboost-dev")
+    .pip_install("fastapi")
+    .add_local_dir("../../src", "/app/src", copy=True)
+    .run_commands(
+        "cd /app/src && make render_witness",
+        "cp /app/src/render_witness /usr/local/bin/",
+    )
+)
 
 
 def parse_coords(coord_string: str) -> List[Tuple[int, int]]:
@@ -148,6 +159,47 @@ def find_polyform_by_coords(grid_type: str, coords: List[Tuple[int, int]]) -> Op
     return None
 
 
+def run_render_witness(grid_type: str, coords: List[Tuple[int, int]]) -> dict:
+    """Run the render_witness binary to compute Heesch data."""
+    import tempfile
+    import shutil
+
+    # Build command: render_witness -gridtype x1 y1 x2 y2 ...
+    cmd = ["render_witness", f"-{grid_type}"]
+    for x, y in coords:
+        cmd.extend([str(x), str(y)])
+
+    # Create temp directory for output (render_witness writes to ../renderings/)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Create the renderings subdir that render_witness expects
+        renderings_dir = os.path.join(tmpdir, "renderings")
+        os.makedirs(renderings_dir, exist_ok=True)
+
+        # Run from a subdir so ../renderings points to our temp dir
+        workdir = os.path.join(tmpdir, "work")
+        os.makedirs(workdir, exist_ok=True)
+
+        result = subprocess.run(
+            cmd,
+            cwd=workdir,
+            capture_output=True,
+            text=True,
+            timeout=300  # 5 minute timeout
+        )
+
+        if result.returncode != 0:
+            raise RuntimeError(f"render_witness failed: {result.stderr}")
+
+        # Find the output JSON file
+        json_files = [f for f in os.listdir(renderings_dir) if f.endswith('.json')]
+        if not json_files:
+            raise RuntimeError(f"No output JSON found. stderr: {result.stderr}")
+
+        json_path = os.path.join(renderings_dir, json_files[0])
+        with open(json_path, 'r') as f:
+            return json.load(f)
+
+
 @app.function(image=image, volumes={VOLUME_PATH: volume})
 @modal.asgi_app()
 def web():
@@ -165,6 +217,7 @@ def web():
                 "/grid_types",
                 "/polyform?hash=abc123",
                 "/polyform?grid_type=hex&coords=0,0_1,0_0,1",
+                "/compute?grid_type=hex&coords=0,0_1,0_0,1",
                 "/list?grid_type=hex",
             ],
             "post_endpoints": [
@@ -231,6 +284,67 @@ def web():
         return {
             "status": "error",
             "message": "Provide either 'hash' or both 'grid_type' and 'coords'"
+        }
+
+    @web_app.get("/compute")
+    def compute_polyform(grid_type: str, coords: str):
+        """
+        Compute Heesch data for a polyform using the render_witness binary.
+        Returns the computed data and stores it in the database.
+        """
+        # Normalize grid_type (accept both abbreviation and full name)
+        gt = grid_type
+        if grid_type in GRID_TYPES:
+            gt = GRID_TYPES[grid_type]  # Convert abbrev to full name
+        elif grid_type not in GRID_ABBREVS:
+            return {
+                "status": "error",
+                "message": f"Invalid grid type: {grid_type}. Valid: {list(GRID_TYPES.keys())} or {list(GRID_TYPES.values())}"
+            }
+
+        try:
+            parsed = parse_coords(coords)
+        except (ValueError, IndexError):
+            return {"status": "error", "message": f"Invalid coordinates format: {coords}"}
+
+        if len(parsed) < 1:
+            return {"status": "error", "message": "At least one coordinate required"}
+
+        # Check if already computed
+        volume.reload()
+        existing = find_polyform_by_coords(gt, parsed)
+        if existing:
+            return {
+                "status": "found",
+                "message": "Already computed",
+                "data": existing
+            }
+
+        # Compute using render_witness
+        try:
+            data = run_render_witness(gt, parsed)
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"Computation failed: {str(e)}"
+            }
+
+        # Store the result
+        hash_value = data.get("hash", compute_hash(gt, parsed))
+        cell_count = len(parsed)
+        file_path = get_polyform_path(gt, cell_count, hash_value)
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+        with open(file_path, 'w') as f:
+            json.dump(data, f, indent=2)
+
+        # Update index
+        update_index(gt, hash_value, cell_count, parsed)
+        volume.commit()
+
+        return {
+            "status": "computed",
+            "data": data
         }
 
     @web_app.post("/polyform")
