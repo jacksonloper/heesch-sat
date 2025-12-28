@@ -58,7 +58,7 @@ VOLUME_PATH = "/data"
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("build-essential", "libcryptominisat5-dev", "libboost-dev")
-    .pip_install("fastapi")
+    .pip_install("fastapi", "psutil")
     .add_local_dir("../src", "/app/src", copy=True)
     .run_commands(
         "cd /app/src && make render_witness",
@@ -156,12 +156,33 @@ def list_all_polyforms(grid_type_filter: Optional[str] = None) -> List[dict]:
 def run_render_witness(grid_type: str, coords: List[Tuple[int, int]]) -> dict:
     """Run the render_witness binary to compute Heesch data."""
     import tempfile
-    import shutil
+    import threading
+    import time
+    import psutil
+
+    # Resource monitoring
+    stop_monitor = threading.Event()
+
+    def monitor_resources():
+        """Log CPU and RAM usage every 10 seconds."""
+        start_time = time.time()
+        while not stop_monitor.is_set():
+            elapsed = time.time() - start_time
+            cpu_percent = psutil.cpu_percent(interval=1)
+            mem = psutil.virtual_memory()
+            mem_used_mb = mem.used / (1024 * 1024)
+            mem_total_mb = mem.total / (1024 * 1024)
+            mem_percent = mem.percent
+            print(f"[{elapsed:.0f}s] CPU: {cpu_percent:.1f}% | RAM: {mem_used_mb:.0f}/{mem_total_mb:.0f} MB ({mem_percent:.1f}%)")
+            # Wait up to 10 seconds, but check stop flag
+            stop_monitor.wait(timeout=9)
 
     # Build command: render_witness -gridtype x1 y1 x2 y2 ...
     cmd = ["render_witness", f"-{grid_type}"]
     for x, y in coords:
         cmd.extend([str(x), str(y)])
+
+    print(f"Starting render_witness for {len(coords)} {grid_type} cells...")
 
     # Create temp directory for output (render_witness writes to ../renderings/)
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -173,13 +194,25 @@ def run_render_witness(grid_type: str, coords: List[Tuple[int, int]]) -> dict:
         workdir = os.path.join(tmpdir, "work")
         os.makedirs(workdir, exist_ok=True)
 
-        result = subprocess.run(
-            cmd,
-            cwd=workdir,
-            capture_output=True,
-            text=True,
-            timeout=300  # 5 minute timeout
-        )
+        # Start resource monitor thread
+        monitor_thread = threading.Thread(target=monitor_resources, daemon=True)
+        monitor_thread.start()
+
+        try:
+            start_time = time.time()
+            result = subprocess.run(
+                cmd,
+                cwd=workdir,
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 minute timeout
+            )
+            elapsed = time.time() - start_time
+            print(f"render_witness completed in {elapsed:.1f}s")
+        finally:
+            # Stop the monitor thread
+            stop_monitor.set()
+            monitor_thread.join(timeout=2)
 
         if result.returncode != 0:
             raise RuntimeError(f"render_witness failed: {result.stderr}")
