@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Heesch Polyform Explorer</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Heesch Polyform Explorer</h1>
+            <p class="subtitle">Explore polyforms and their Heesch numbers</p>
+        </header>
+
+        <div class="controls">
+            <div class="control-group">
+                <label for="grid-type">Grid Type:</label>
+                <select id="grid-type">
+                    <option value="">Loading...</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label for="coords-input">Coordinates:</label>
+                <input type="text" id="coords-input" placeholder="e.g., 0,0_1,0_2,0_2,1">
+                <button id="render-btn">Render</button>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="render-panel">
+                <h2>Rendering</h2>
+                <div id="render-output" class="render-output">
+                    <p class="placeholder">Select a polyform or enter coordinates to render</p>
+                </div>
+                <div id="render-status" class="status-message"></div>
+            </div>
+
+            <div class="list-panel">
+                <h2>Available Polyforms</h2>
+                <div class="list-controls">
+                    <button id="refresh-list-btn">Refresh List</button>
+                </div>
+                <div id="polyform-list" class="polyform-list">
+                    <p class="placeholder">Loading available polyforms...</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="sample-polyforms">
+            <h2>Sample Polyforms</h2>
+            <p>Click to render:</p>
+            <div id="samples" class="samples-grid">
+                <!-- Samples will be populated by JS -->
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
