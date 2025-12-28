@@ -90,42 +90,117 @@ def update_index(grid_type: str, coords_str: str):
 
 
 @app.function(image=image, volumes={VOLUME_PATH: volume})
-@modal.fastapi_endpoint(method="GET")
-def render(grid_type: str, coords: str) -> dict:
-    """
-    Get rendering for a polyform.
+@modal.asgi_app()
+def web():
+    """Single FastAPI app with all endpoints."""
+    from fastapi import FastAPI, Query
+    from render import render_polyform, parse_coords
 
-    Args:
-        grid_type: Single character grid type (O, H, I, etc.)
-        coords: Coordinates as "x1,y1_x2,y2_x3,y3" format
+    web_app = FastAPI(title="Heesch Renderings API")
 
-    Returns:
-        JSON with status and svg (if available)
-    """
-    # Validate grid type
-    if grid_type not in GRID_TYPES:
+    @web_app.get("/")
+    def root():
         return {
-            "status": "error",
-            "message": f"Invalid grid type: {grid_type}. Valid types: {list(GRID_TYPES.keys())}"
+            "message": "Heesch Polyform Renderings API",
+            "endpoints": [
+                "/grid_types",
+                "/render?grid_type=H&coords=0,0_1,0_2,0",
+                "/render_sync?grid_type=H&coords=0,0_1,0_2,0",
+                "/list?grid_type=H",
+            ]
         }
 
-    # Normalize coordinates (sort them)
-    try:
-        parsed = parse_coords(coords)
-        coords_str = coords_to_string(parsed)
-    except (ValueError, IndexError):
+    @web_app.get("/grid_types")
+    def get_grid_types():
+        """List all supported grid types."""
         return {
-            "status": "error",
-            "message": f"Invalid coordinates format: {coords}"
+            "grid_types": [
+                {"abbrev": k, "name": v, "full_name": GRID_NAMES.get(k, v)}
+                for k, v in GRID_TYPES.items()
+            ]
         }
 
-    # Check if rendering exists in volume
-    rendering_path = get_rendering_path(grid_type, coords_str)
-    volume.reload()
+    @web_app.get("/render")
+    def render(grid_type: str, coords: str):
+        """
+        Get rendering for a polyform (async - starts background computation if needed).
+        """
+        # Validate grid type
+        if grid_type not in GRID_TYPES:
+            return {
+                "status": "error",
+                "message": f"Invalid grid type: {grid_type}. Valid types: {list(GRID_TYPES.keys())}"
+            }
 
-    if os.path.exists(rendering_path):
-        with open(rendering_path, 'r') as f:
-            svg = f.read()
+        # Normalize coordinates (sort them)
+        try:
+            parsed = parse_coords(coords)
+            coords_str = coords_to_string(parsed)
+        except (ValueError, IndexError):
+            return {
+                "status": "error",
+                "message": f"Invalid coordinates format: {coords}"
+            }
+
+        # Check if rendering exists in volume
+        rendering_path = get_rendering_path(grid_type, coords_str)
+        volume.reload()
+
+        if os.path.exists(rendering_path):
+            with open(rendering_path, 'r') as f:
+                svg = f.read()
+            return {
+                "status": "available",
+                "grid_type": grid_type,
+                "grid_name": GRID_NAMES.get(grid_type, "Unknown"),
+                "coords": coords_str,
+                "svg": svg
+            }
+
+        # Not available - start computing in background
+        compute_and_store_rendering.spawn(grid_type, coords_str)
+
+        return {
+            "status": "computing",
+            "message": "Rendering is being computed. Please try again shortly.",
+            "grid_type": grid_type,
+            "grid_name": GRID_NAMES.get(grid_type, "Unknown"),
+            "coords": coords_str
+        }
+
+    @web_app.get("/render_sync")
+    def render_sync(grid_type: str, coords: str):
+        """
+        Get rendering for a polyform (sync - blocks until ready).
+        """
+        # Validate grid type
+        if grid_type not in GRID_TYPES:
+            return {
+                "status": "error",
+                "message": f"Invalid grid type: {grid_type}"
+            }
+
+        # Normalize coordinates
+        try:
+            parsed = parse_coords(coords)
+            coords_str = coords_to_string(parsed)
+        except (ValueError, IndexError):
+            return {
+                "status": "error",
+                "message": f"Invalid coordinates format: {coords}"
+            }
+
+        # Check if rendering exists
+        rendering_path = get_rendering_path(grid_type, coords_str)
+        volume.reload()
+
+        if os.path.exists(rendering_path):
+            with open(rendering_path, 'r') as f:
+                svg = f.read()
+        else:
+            # Compute and store
+            svg = compute_and_store_rendering.local(grid_type, coords_str)
+
         return {
             "status": "available",
             "grid_type": grid_type,
@@ -134,124 +209,38 @@ def render(grid_type: str, coords: str) -> dict:
             "svg": svg
         }
 
-    # Not available - start computing in background
-    compute_and_store_rendering.spawn(grid_type, coords_str)
+    @web_app.get("/list")
+    def list_polyforms(grid_type: Optional[str] = None):
+        """List available polyforms."""
+        volume.reload()
 
-    return {
-        "status": "computing",
-        "message": "Rendering is being computed. Please try again shortly.",
-        "grid_type": grid_type,
-        "grid_name": GRID_NAMES.get(grid_type, "Unknown"),
-        "coords": coords_str
-    }
+        result = {"polyforms": []}
 
+        if grid_type:
+            if grid_type not in GRID_TYPES:
+                return {
+                    "status": "error",
+                    "message": f"Invalid grid type: {grid_type}"
+                }
+            grid_types_to_check = [grid_type]
+        else:
+            grid_types_to_check = list(GRID_TYPES.keys())
 
-@app.function(image=image, volumes={VOLUME_PATH: volume})
-@modal.fastapi_endpoint(method="GET")
-def list_polyforms(grid_type: Optional[str] = None) -> dict:
-    """
-    List available polyforms.
+        for gt in grid_types_to_check:
+            index_path = get_index_path(gt)
+            if os.path.exists(index_path):
+                with open(index_path, 'r') as f:
+                    index = json.load(f)
+                for coords_str in index.get("polyforms", []):
+                    result["polyforms"].append({
+                        "grid_type": gt,
+                        "grid_name": GRID_NAMES.get(gt, "Unknown"),
+                        "coords": coords_str
+                    })
 
-    Args:
-        grid_type: Optional filter by grid type
+        return result
 
-    Returns:
-        JSON with list of available polyforms
-    """
-    volume.reload()
-
-    result = {"polyforms": []}
-
-    if grid_type:
-        if grid_type not in GRID_TYPES:
-            return {
-                "status": "error",
-                "message": f"Invalid grid type: {grid_type}"
-            }
-        grid_types = [grid_type]
-    else:
-        grid_types = list(GRID_TYPES.keys())
-
-    for gt in grid_types:
-        index_path = get_index_path(gt)
-        if os.path.exists(index_path):
-            with open(index_path, 'r') as f:
-                index = json.load(f)
-            for coords_str in index.get("polyforms", []):
-                result["polyforms"].append({
-                    "grid_type": gt,
-                    "grid_name": GRID_NAMES.get(gt, "Unknown"),
-                    "coords": coords_str
-                })
-
-    return result
-
-
-@app.function(image=image)
-@modal.fastapi_endpoint(method="GET")
-def grid_types() -> dict:
-    """List all supported grid types."""
-    return {
-        "grid_types": [
-            {"abbrev": k, "name": v, "full_name": GRID_NAMES.get(k, v)}
-            for k, v in GRID_TYPES.items()
-        ]
-    }
-
-
-@app.function(image=image, volumes={VOLUME_PATH: volume})
-@modal.fastapi_endpoint(method="GET")
-def render_sync(grid_type: str, coords: str) -> dict:
-    """
-    Get rendering for a polyform, computing synchronously if needed.
-
-    This endpoint blocks until the rendering is ready.
-    Use the async 'render' endpoint for non-blocking behavior.
-
-    Args:
-        grid_type: Single character grid type (O, H, I, etc.)
-        coords: Coordinates as "x1,y1_x2,y2_x3,y3" format
-
-    Returns:
-        JSON with svg
-    """
-    from render import render_polyform, parse_coords
-
-    # Validate grid type
-    if grid_type not in GRID_TYPES:
-        return {
-            "status": "error",
-            "message": f"Invalid grid type: {grid_type}"
-        }
-
-    # Normalize coordinates
-    try:
-        parsed = parse_coords(coords)
-        coords_str = coords_to_string(parsed)
-    except (ValueError, IndexError):
-        return {
-            "status": "error",
-            "message": f"Invalid coordinates format: {coords}"
-        }
-
-    # Check if rendering exists
-    rendering_path = get_rendering_path(grid_type, coords_str)
-    volume.reload()
-
-    if os.path.exists(rendering_path):
-        with open(rendering_path, 'r') as f:
-            svg = f.read()
-    else:
-        # Compute and store
-        svg = compute_and_store_rendering.local(grid_type, coords_str)
-
-    return {
-        "status": "available",
-        "grid_type": grid_type,
-        "grid_name": GRID_NAMES.get(grid_type, "Unknown"),
-        "coords": coords_str,
-        "svg": svg
-    }
+    return web_app
 
 
 # Local entry point for testing
