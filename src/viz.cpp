@@ -2,8 +2,13 @@
 #include <fstream>
 #include <filesystem>
 
+#ifdef __APPLE__
 #include <cairo.h>
 #include <cairo-pdf.h>
+#else
+#include <cairo/cairo.h>
+#include <cairo/cairo-pdf.h>
+#endif
 
 #include "visualizer.h"
 #include "grid.h"
