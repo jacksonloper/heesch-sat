@@ -12,26 +12,89 @@
 #include "tileio.h"
 #include "boundary.h"
 
-// Render a witness patch for a polyiamond to SVG format using defs/use.
+// Render witness data for a polyform to JSON format.
 //
-// Usage: render_witness x1 y1 x2 y2 ... xN yN
+// Usage: render_witness -grid x1 y1 x2 y2 ... xN yN
 //
-// The polyiamond shape is defined once in <defs>, then instantiated at each
-// position using <use> with appropriate transforms. This produces smaller,
-// more semantically meaningful SVG files.
+// Outputs JSON with:
+// - coordinates: the cell coordinates
+// - hash: order-independent hash of the coordinate set
+// - grid_type: the grid type name
+// - tile_boundary: line segments for rendering one tile in page coordinates
+// - witness_connected: (corona, transform) pairs for hole-free witness (page coords)
+// - witness_with_holes: (corona, transform) pairs for witness allowing holes (page coords), or null
 
 using namespace std;
-using coord_t = int16_t;
-using grid = IamondGrid<coord_t>;
-using point_t = typename grid::point_t;
-using xform_t = typename grid::xform_t;
-using patch_t = LabelledPatch<coord_t>;
 
-const double SQRT3 = 1.73205080756887729353;
+// Convert grid-space transform to page-space transform
+// For page coords P and grid coords G with gridToPage M: P = M * G
+// A grid transform T becomes page transform: M * T * M^(-1)
+template<typename grid, typename coord_t>
+xform<double> gridToPageTransform(const xform<coord_t>& T)
+{
+	// For grids with identity gridToPage, return as-is
+	// For skewed grids, conjugate by gridToPage matrix
+	//
+	// gridToPage for skewed grids: { x + 0.5*y, (sqrt3/2)*y }
+	// Matrix form: | 1    0.5     0 |
+	//              | 0  sqrt3/2   0 |
+	//              | 0    0       1 |
+	//
+	// Inverse:     | 1   -1/sqrt3  0 |
+	//              | 0   2/sqrt3   0 |
+	//              | 0     0       1 |
+
+	const double sqrt3 = 1.73205080756887729353;
+
+	// Check if this grid has identity gridToPage
+	point<double> test_pt{1.0, 1.0};
+	point<double> page_pt = grid::gridToPage(test_pt);
+	bool isIdentity = (fabs(page_pt.x_ - 1.0) < 1e-9 && fabs(page_pt.y_ - 1.0) < 1e-9);
+
+	if (isIdentity) {
+		// Just convert to double
+		return xform<double>(T.a_, T.b_, T.c_, T.d_, T.e_, T.f_);
+	}
+
+	// For skewed grids: compute M * T * M^(-1)
+	// M = | 1    0.5     0 |      M^(-1) = | 1   -1/sqrt3  0 |
+	//     | 0  sqrt3/2   0 |               | 0   2/sqrt3   0 |
+	//     | 0    0       1 |               | 0     0       1 |
+
+	double a = T.a_, b = T.b_, c = T.c_;
+	double d = T.d_, e = T.e_, f = T.f_;
+
+	// First compute T * M^(-1)
+	// | a  b  c |   | 1   -1/sqrt3  0 |   | a    (a*(-1/sqrt3) + b*(2/sqrt3))   c |
+	// | d  e  f | * | 0    2/sqrt3  0 | = | d    (d*(-1/sqrt3) + e*(2/sqrt3))   f |
+	// | 0  0  1 |   | 0      0      1 |   | 0               0                   1 |
+	double t_a = a;
+	double t_b = (-a + 2*b) / sqrt3;
+	double t_c = c;
+	double t_d = d;
+	double t_e = (-d + 2*e) / sqrt3;
+	double t_f = f;
+
+	// Then compute M * (T * M^(-1))
+	// | 1    0.5     0 |   | t_a  t_b  t_c |   | t_a + 0.5*t_d    t_b + 0.5*t_e    t_c + 0.5*t_f     |
+	// | 0  sqrt3/2   0 | * | t_d  t_e  t_f | = | sqrt3/2*t_d      sqrt3/2*t_e      sqrt3/2*t_f       |
+	// | 0    0       1 |   |  0    0    1  |   |    0                 0                 1            |
+
+	double r_a = t_a + 0.5 * t_d;
+	double r_b = t_b + 0.5 * t_e;
+	double r_c = t_c + 0.5 * t_f;
+	double r_d = (sqrt3 / 2.0) * t_d;
+	double r_e = (sqrt3 / 2.0) * t_e;
+	double r_f = (sqrt3 / 2.0) * t_f;
+
+	return xform<double>(r_a, r_b, r_c, r_d, r_e, r_f);
+}
 
 // Compute a proper set hash of the coordinates (order-independent)
+template<typename grid>
 size_t computeSetHash(const Shape<grid>& shape)
 {
+	using point_t = typename grid::point_t;
 	vector<point_t> pts;
 	for (const auto& p : shape) {
 		pts.push_back(p);
@@ -45,79 +108,70 @@ size_t computeSetHash(const Shape<grid>& shape)
 	return hash;
 }
 
-// Convert grid xform to SVG matrix transform coefficients
-// The xform operates in grid coordinates; we need the equivalent in page coordinates.
-// Given gridToPage: (x,y) -> (x + 0.5*y, sqrt3/2 * y)
-// The SVG matrix is: M = G * T * G^(-1) where G is gridToPage, T is the tile xform
-struct SVGMatrix {
-	double a, b, c, d, e, f;  // matrix(a,b,c,d,e,f) in SVG notation
-};
-
-SVGMatrix xformToSVGMatrix(const xform_t& T)
+// Get the tile boundary as line segments in page coordinates
+template<typename grid>
+vector<pair<point<double>, point<double>>> getTileBoundarySegments(const Shape<grid>& shape)
 {
-	// T = [Ta, Tb, Tc; Td, Te, Tf; 0, 0, 1] in grid coordinates
-	double Ta = T.a_, Tb = T.b_, Tc = T.c_;
-	double Td = T.d_, Te = T.e_, Tf = T.f_;
+	using point_t = typename grid::point_t;
 
-	// Compute M = G * T * G^(-1) in page coordinates
-	// Result matrix coefficients (see derivation in comments):
-	SVGMatrix M;
-	M.a = Ta + 0.5 * Td;
-	M.b = SQRT3 / 2.0 * Td;
-	M.c = (-Ta + 2.0 * Tb - 0.5 * Td + Te) / SQRT3;
-	M.d = -Td / 2.0 + Te;
-	M.e = Tc + 0.5 * Tf;
-	M.f = SQRT3 / 2.0 * Tf;
+	vector<point_t> boundary_vs = getTileBoundary(shape);
+	vector<pair<point<double>, point<double>>> segments;
 
-	return M;
+	for (size_t i = 0; i < boundary_vs.size(); ++i) {
+		size_t j = (i + 1) % boundary_vs.size();
+		point<double> p1 = grid::gridToPage(grid::vertexToGrid(boundary_vs[i]));
+		point<double> p2 = grid::gridToPage(grid::vertexToGrid(boundary_vs[j]));
+		segments.push_back({p1, p2});
+	}
+
+	return segments;
 }
 
-// Get color based on corona level
-void getCoronaColor(size_t level, double& r, double& g, double& b)
+// Get grid type name
+const char* getGridTypeName(GridType gt)
 {
-	if (level == 0) {
-		r = 1.0; g = 1.0; b = 0.4;  // Yellow for kernel
-	} else if ((level % 2) == 0) {
-		r = 0.5; g = 0.5; b = 0.5;  // Dark gray for even coronas
-	} else {
-		r = 0.8; g = 0.8; b = 0.8;  // Light gray for odd coronas
+	switch (gt) {
+		case OMINO: return "omino";
+		case HEX: return "hex";
+		case IAMOND: return "iamond";
+		case OCTASQUARE: return "octasquare";
+		case TRIHEX: return "trihex";
+		case ABOLO: return "abolo";
+		case DRAFTER: return "drafter";
+		case KITE: return "kite";
+		case HALFCAIRO: return "halfcairo";
+		case BEVELHEX: return "bevelhex";
+		default: return "unknown";
 	}
 }
 
-string colorToRGB(double r, double g, double b)
+// Write a patch as JSON array, converting transforms to page coordinates
+template<typename grid, typename coord_t>
+void writePatchJson(ostream& os, const LabelledPatch<coord_t>& patch, const string& indent)
 {
-	ostringstream ss;
-	ss << "rgb(" << (int)(r * 255) << "," << (int)(g * 255) << "," << (int)(b * 255) << ")";
-	return ss.str();
+	os << "[\n";
+	for (size_t i = 0; i < patch.size(); ++i) {
+		const auto& tile = patch[i];
+		// Convert grid-space transform to page-space transform
+		xform<double> pageT = gridToPageTransform<grid>(tile.second);
+		os << indent << "  {\"corona\": " << tile.first << ", \"transform\": ["
+		   << pageT.a_ << ", " << pageT.b_ << ", " << pageT.c_ << ", "
+		   << pageT.d_ << ", " << pageT.e_ << ", " << pageT.f_ << "]}";
+		if (i + 1 < patch.size()) os << ",";
+		os << "\n";
+	}
+	os << indent << "]";
 }
 
-void printUsage(const char *prog)
+template<typename grid>
+int processShape(const vector<pair<typename grid::coord_t, typename grid::coord_t>>& coords)
 {
-	cerr << "Usage: " << prog << " x1 y1 x2 y2 ... xN yN" << endl;
-	cerr << endl;
-	cerr << "Generates an SVG witness patch for a polyiamond." << endl;
-	cerr << "Coordinates are given as space-separated x y pairs." << endl;
-	cerr << "Output files are saved to ../renderings/ with names based on" << endl;
-	cerr << "the polyiamond size and a set hash of the coordinates." << endl;
-}
-
-int main(int argc, char **argv)
-{
-	vector<pair<coord_t, coord_t>> coords;
-
-	if (argc < 3 || (argc - 1) % 2 != 0) {
-		printUsage(argv[0]);
-		return 1;
-	}
-
-	for (int i = 1; i < argc; i += 2) {
-		coord_t x = atoi(argv[i]);
-		coord_t y = atoi(argv[i + 1]);
-		coords.push_back({x, y});
-	}
+	using coord_t = typename grid::coord_t;
+	using xform_t = typename grid::xform_t;
+	using patch_t = LabelledPatch<coord_t>;
 
 	size_t numCells = coords.size();
-	cerr << "Polyiamond has " << numCells << " cells" << endl;
+	cerr << "Processing " << numCells << "-" << getGridTypeName(grid::grid_type) << endl;
 
 	// Build the shape
 	Shape<grid> shape;
@@ -142,44 +196,48 @@ int main(int argc, char **argv)
 		filesystem::create_directories(outDir);
 	}
 
-	string baseName = to_string(numCells) + "iamond_" + hashSuffix;
-	string svgPath = (outDir / (baseName + ".svg")).string();
-	string txtPath = (outDir / (baseName + ".txt")).string();
+	string baseName = to_string(numCells) + getGridTypeName(grid::grid_type) + "_" + hashSuffix;
+	string jsonPath = (outDir / (baseName + ".json")).string();
 
-	// Get the shape boundary in page coordinates
-	vector<point_t> boundary_vs = getTileBoundary(shape);
-	vector<point<double>> baseShape;
-	for (const auto& v : boundary_vs) {
-		point<double> gv = grid::vertexToGrid(v);
-		baseShape.push_back(grid::gridToPage(gv));
-	}
+	// Get the tile boundary segments
+	auto boundarySegments = getTileBoundarySegments(shape);
 
-	// Compute the witness
-	cerr << "Computing witness for " << numCells << "iamond..." << endl;
+	// Compute the witnesses
+	cerr << "Computing witnesses..." << endl;
 	HeeschSolver<grid> solver{shape, ALL, true};
 
-	patch_t bestPatch;
+	patch_t connectedPatch;
+	patch_t holesPatch;
 	size_t hc = 0;
+	size_t hh = 0;
+	bool hasHolesPatch = false;
 
 	if (!solver.isSurroundable()) {
 		cerr << "Shape is not surroundable at all (Hc = 0)" << endl;
-		bestPatch.push_back(make_pair(0, xform_t{}));
+		connectedPatch.push_back(make_pair(0, xform_t{}));
 	} else {
 		size_t maxLevel = 5;
 		solver.increaseLevel();
+
 		while (solver.getLevel() <= maxLevel) {
 			bool hasHoles;
 			patch_t curPatch;
+
 			if (solver.hasCorona(true, hasHoles, curPatch)) {
 				if (!hasHoles) {
 					hc = solver.getLevel();
-					bestPatch = curPatch;
+					connectedPatch = curPatch;
 					cerr << "Found hole-free corona at level " << hc << endl;
 					solver.increaseLevel();
 				} else {
-					cerr << "Found corona with holes at level " << solver.getLevel() << endl;
-					if (bestPatch.empty()) {
-						bestPatch = curPatch;
+					hh = solver.getLevel();
+					holesPatch = curPatch;
+					hasHolesPatch = true;
+					cerr << "Found corona with holes at level " << hh << endl;
+
+					if (connectedPatch.empty()) {
+						// No hole-free patch found yet, use this one for connected too
+						connectedPatch = curPatch;
 					}
 					break;
 				}
@@ -187,113 +245,124 @@ int main(int argc, char **argv)
 				break;
 			}
 		}
-		if (bestPatch.empty()) {
-			bestPatch.push_back(make_pair(0, xform_t{}));
+
+		if (connectedPatch.empty()) {
+			connectedPatch.push_back(make_pair(0, xform_t{}));
 		}
 	}
 
 	cerr << "Heesch number (connected): " << hc << endl;
-	cerr << "Witness patch has " << bestPatch.size() << " tiles" << endl;
-
-	// Compute bounds of all tiles in page coordinates
-	double xmin = 1e9, xmax = -1e9, ymin = 1e9, ymax = -1e9;
-	for (const auto& tile : bestPatch) {
-		SVGMatrix M = xformToSVGMatrix(tile.second);
-		for (const auto& pt : baseShape) {
-			double px = M.a * pt.x_ + M.c * pt.y_ + M.e;
-			double py = M.b * pt.x_ + M.d * pt.y_ + M.f;
-			xmin = min(xmin, px);
-			xmax = max(xmax, px);
-			ymin = min(ymin, py);
-			ymax = max(ymax, py);
-		}
+	if (hasHolesPatch) {
+		cerr << "Heesch number (with holes): " << hh << endl;
 	}
+	cerr << "Connected witness has " << connectedPatch.size() << " tiles" << endl;
 
-	// SVG dimensions and scaling
-	double svgWidth = 800.0, svgHeight = 800.0;
-	double margin = 20.0;
-	double patchWidth = xmax - xmin;
-	double patchHeight = ymax - ymin;
-	double scale = min((svgWidth - 2 * margin) / patchWidth,
-	                   (svgHeight - 2 * margin) / patchHeight);
-	double offsetX = (svgWidth - patchWidth * scale) / 2.0 - xmin * scale;
-	double offsetY = (svgHeight - patchHeight * scale) / 2.0 - ymin * scale;
+	// Write JSON file
+	ofstream json(jsonPath);
+	json << fixed << setprecision(6);
 
-	// Build the path data for the base shape
-	ostringstream pathData;
-	pathData << fixed << setprecision(4);
-	pathData << "M " << baseShape[0].x_ << " " << baseShape[0].y_;
-	for (size_t i = 1; i < baseShape.size(); ++i) {
-		pathData << " L " << baseShape[i].x_ << " " << baseShape[i].y_;
+	json << "{\n";
+
+	// Grid type
+	json << "  \"grid_type\": \"" << getGridTypeName(grid::grid_type) << "\",\n";
+
+	// Coordinates
+	json << "  \"coordinates\": [";
+	for (size_t i = 0; i < coords.size(); ++i) {
+		json << "[" << coords[i].first << ", " << coords[i].second << "]";
+		if (i + 1 < coords.size()) json << ", ";
 	}
-	pathData << " Z";
+	json << "],\n";
 
-	// Write SVG file
-	ofstream svg(svgPath);
-	svg << fixed << setprecision(4);
+	// Hash
+	json << "  \"hash\": \"" << hashSuffix << "\",\n";
 
-	svg << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
-	svg << "<svg xmlns=\"http://www.w3.org/2000/svg\" "
-	    << "width=\"" << svgWidth << "\" height=\"" << svgHeight << "\" "
-	    << "viewBox=\"0 0 " << svgWidth << " " << svgHeight << "\">\n";
+	// Cell count
+	json << "  \"cell_count\": " << numCells << ",\n";
 
-	// Defs section - define the polyiamond shape once per corona level
-	svg << "  <defs>\n";
-
-	// Group corona levels
-	map<size_t, vector<size_t>> coronaTiles;  // level -> tile indices
-	for (size_t i = 0; i < bestPatch.size(); ++i) {
-		coronaTiles[bestPatch[i].first].push_back(i);
+	// Tile boundary segments in page coordinates
+	json << "  \"tile_boundary\": [\n";
+	for (size_t i = 0; i < boundarySegments.size(); ++i) {
+		const auto& seg = boundarySegments[i];
+		json << "    [[" << seg.first.x_ << ", " << seg.first.y_ << "], "
+		     << "[" << seg.second.x_ << ", " << seg.second.y_ << "]]";
+		if (i + 1 < boundarySegments.size()) json << ",";
+		json << "\n";
 	}
+	json << "  ],\n";
 
-	// Define shape for each corona level (different colors)
-	for (const auto& [level, tiles] : coronaTiles) {
-		double r, g, b;
-		getCoronaColor(level, r, g, b);
-		svg << "    <path id=\"shape-c" << level << "\" "
-		    << "d=\"" << pathData.str() << "\" "
-		    << "fill=\"" << colorToRGB(r, g, b) << "\" "
-		    << "stroke=\"black\" stroke-width=\"" << (1.0 / scale) << "\"/>\n";
+	// Heesch numbers
+	json << "  \"heesch_connected\": " << hc << ",\n";
+	json << "  \"heesch_with_holes\": " << (hasHolesPatch ? to_string(hh) : "null") << ",\n";
+
+	// Connected witness
+	json << "  \"witness_connected\": ";
+	writePatchJson<grid>(json, connectedPatch, "  ");
+	json << ",\n";
+
+	// Holes witness (or null)
+	json << "  \"witness_with_holes\": ";
+	if (hasHolesPatch && hh > hc) {
+		writePatchJson<grid>(json, holesPatch, "  ");
+	} else {
+		json << "null";
 	}
+	json << "\n";
 
-	svg << "  </defs>\n";
+	json << "}\n";
+	json.close();
 
-	// White background
-	svg << "  <rect width=\"100%\" height=\"100%\" fill=\"white\"/>\n";
-
-	// Main group with overall transform (scale and center)
-	svg << "  <g transform=\"translate(" << offsetX << "," << offsetY
-	    << ") scale(" << scale << ")\">\n";
-
-	// Place each tile using <use>
-	for (size_t i = 0; i < bestPatch.size(); ++i) {
-		size_t level = bestPatch[i].first;
-		SVGMatrix M = xformToSVGMatrix(bestPatch[i].second);
-
-		svg << "    <use href=\"#shape-c" << level << "\" "
-		    << "transform=\"matrix("
-		    << M.a << "," << M.b << "," << M.c << "," << M.d << "," << M.e << "," << M.f
-		    << ")\"/>\n";
-	}
-
-	svg << "  </g>\n";
-	svg << "</svg>\n";
-	svg.close();
-
-	cerr << "SVG written to: " << svgPath << endl;
-
-	// Write the text file
-	ofstream txtFile(txtPath);
-	txtFile << numCells << "iamond coordinates (unordered set):" << endl;
-	for (const auto& c : coords) {
-		txtFile << "(" << c.first << ", " << c.second << ")" << endl;
-	}
-	txtFile << endl;
-	txtFile << "Set hash: " << hashSuffix << endl;
-	txtFile << "Heesch number (connected): " << hc << endl;
-	txtFile << "Witness patch size: " << bestPatch.size() << " tiles" << endl;
-	txtFile.close();
-	cerr << "Text written to: " << txtPath << endl;
+	cerr << "JSON written to: " << jsonPath << endl;
 
 	return 0;
+}
+
+// Wrapper for grid dispatch
+template<typename grid>
+struct ProcessShapeWrapper
+{
+	int operator()(const vector<pair<int16_t, int16_t>>& coords)
+	{
+		return processShape<grid>(coords);
+	}
+};
+
+void printUsage(const char *prog)
+{
+	cerr << "Usage: " << prog << " -grid x1 y1 x2 y2 ... xN yN" << endl;
+	cerr << endl;
+	cerr << "Generates a JSON witness file for a polyform." << endl;
+	cerr << "Grid options: -omino, -hex, -iamond, -octasquare, -trihex," << endl;
+	cerr << "              -abolo, -drafter, -kite, -halfcairo, -bevelhex" << endl;
+	cerr << endl;
+	cerr << "Coordinates are given as space-separated x y pairs." << endl;
+	cerr << "Output files are saved to ../renderings/ with names based on" << endl;
+	cerr << "the polyform size, grid type, and a set hash of the coordinates." << endl;
+}
+
+int main(int argc, char **argv)
+{
+	if (argc < 4) {
+		printUsage(argv[0]);
+		return 1;
+	}
+
+	// Get grid type from arguments
+	GridType gt = getGridType(argc, argv);
+
+	// Now argc has been decremented and the grid arg removed
+	if ((argc - 1) % 2 != 0 || argc < 3) {
+		printUsage(argv[0]);
+		return 1;
+	}
+
+	vector<pair<int16_t, int16_t>> coords;
+	for (int i = 1; i < argc; i += 2) {
+		int16_t x = atoi(argv[i]);
+		int16_t y = atoi(argv[i + 1]);
+		coords.push_back({x, y});
+	}
+
+	// Dispatch to the appropriate grid type
+	return dispatchToGridType<ProcessShapeWrapper>(gt, coords);
 }
