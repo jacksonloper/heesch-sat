@@ -26,22 +26,22 @@ DEPENDS = ${OBJECTS:.o=.d}
 all: sat viz gen surrounds report render_witness
 
 sat: sat.o
-	$(CXX) $(LIBS) -o sat sat.o
+	$(CXX) -o sat sat.o $(LIBS)
 
 viz: viz.o
-	$(CXX) $(LIBS) $(CAIROLIBS) -o viz viz.o
+	$(CXX) -o viz viz.o $(LIBS) $(CAIROLIBS)
 
 gen: gen.o
-	$(CXX) $(LIBS) -o gen gen.o
+	$(CXX) -o gen gen.o $(LIBS)
 
 surrounds: surrounds.o
-	$(CXX) $(LIBS) -o surrounds surrounds.o
+	$(CXX) -o surrounds surrounds.o $(LIBS)
 
 report: report.o
-	$(CXX) $(LIBS) -o report report.o
+	$(CXX) -o report report.o $(LIBS)
 
 render_witness: render_witness.o
-	$(CXX) $(LIBS) -o render_witness render_witness.o
+	$(CXX) -o render_witness render_witness.o $(LIBS)
 
 # tile: tile.o
 #	$(CXX) $(LIBS) -o tile tile.o

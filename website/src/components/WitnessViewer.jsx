@@ -109,28 +109,22 @@ function WitnessSVG({ witness, patch }) {
 
   // Transform a point using the affine matrix [a, b, c, d, e, f]
   // New point: (a*x + b*y + c, d*x + e*y + f)
+  // Transforms are now in page coordinates (converted from grid space in C++)
   const transformPoint = ([x, y], [a, b, c, d, e, f]) => [
     a * x + b * y + c,
     d * x + e * y + f
   ]
 
-  // For grids with skewed coordinates, we need to apply gridToPage after transform
-  // The transform matrix operates in grid space, so we transform in grid space
-  // then the SVG path (already in page space) needs the equivalent page-space transform
-
   // Calculate bounds across all transformed tiles
   let minX = Infinity, maxX = -Infinity
   let minY = Infinity, maxY = -Infinity
 
-  // For each tile, transform its boundary and track bounds
+  // For each tile, transform its boundary vertices and track bounds
   const transformedTiles = patch.map(tile => {
     const [a, b, c, d, e, f] = tile.transform
 
-    // Transform each boundary point
+    // Transform each boundary vertex (both boundary and transforms are in page coords)
     const points = tile_boundary.map(([[x1, y1]]) => {
-      // Transform in page space (simplified - works for identity gridToPage grids)
-      // For skewed grids, we'd need M = G * T * G^(-1), but since tile_boundary
-      // is already in page coords and the transform is in grid coords, we approximate
       return transformPoint([x1, y1], [a, b, c, d, e, f])
     })
 
@@ -148,7 +142,9 @@ function WitnessSVG({ witness, patch }) {
   const width = maxX - minX + padding * 2
   const height = maxY - minY + padding * 2
 
-  // Create SVG transform strings
+  // Convert from C++ xform [a,b,c,d,e,f] to SVG matrix(a,b,c,d,e,f)
+  // C++: x'=a*x+b*y+c, y'=d*x+e*y+f
+  // SVG: x'=a*x+c*y+e, y'=b*x+d*y+f
   const getSvgTransform = ([a, b, c, d, e, f]) =>
     `matrix(${a} ${d} ${b} ${e} ${c} ${f})`
 

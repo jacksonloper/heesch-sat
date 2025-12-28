@@ -21,10 +21,74 @@
 // - hash: order-independent hash of the coordinate set
 // - grid_type: the grid type name
 // - tile_boundary: line segments for rendering one tile in page coordinates
-// - witness_connected: (corona, transform) pairs for hole-free witness
-// - witness_with_holes: (corona, transform) pairs for witness allowing holes, or null
+// - witness_connected: (corona, transform) pairs for hole-free witness (page coords)
+// - witness_with_holes: (corona, transform) pairs for witness allowing holes (page coords), or null
 
 using namespace std;
+
+// Convert grid-space transform to page-space transform
+// For page coords P and grid coords G with gridToPage M: P = M * G
+// A grid transform T becomes page transform: M * T * M^(-1)
+template<typename grid, typename coord_t>
+xform<double> gridToPageTransform(const xform<coord_t>& T)
+{
+	// For grids with identity gridToPage, return as-is
+	// For skewed grids, conjugate by gridToPage matrix
+	//
+	// gridToPage for skewed grids: { x + 0.5*y, (sqrt3/2)*y }
+	// Matrix form: | 1    0.5     0 |
+	//              | 0  sqrt3/2   0 |
+	//              | 0    0       1 |
+	//
+	// Inverse:     | 1   -1/sqrt3  0 |
+	//              | 0   2/sqrt3   0 |
+	//              | 0     0       1 |
+
+	const double sqrt3 = 1.73205080756887729353;
+
+	// Check if this grid has identity gridToPage
+	point<double> test_pt{1.0, 1.0};
+	point<double> page_pt = grid::gridToPage(test_pt);
+	bool isIdentity = (fabs(page_pt.x_ - 1.0) < 1e-9 && fabs(page_pt.y_ - 1.0) < 1e-9);
+
+	if (isIdentity) {
+		// Just convert to double
+		return xform<double>(T.a_, T.b_, T.c_, T.d_, T.e_, T.f_);
+	}
+
+	// For skewed grids: compute M * T * M^(-1)
+	// M = | 1    0.5     0 |      M^(-1) = | 1   -1/sqrt3  0 |
+	//     | 0  sqrt3/2   0 |               | 0   2/sqrt3   0 |
+	//     | 0    0       1 |               | 0     0       1 |
+
+	double a = T.a_, b = T.b_, c = T.c_;
+	double d = T.d_, e = T.e_, f = T.f_;
+
+	// First compute T * M^(-1)
+	// | a  b  c |   | 1   -1/sqrt3  0 |   | a    (a*(-1/sqrt3) + b*(2/sqrt3))   c |
+	// | d  e  f | * | 0    2/sqrt3  0 | = | d    (d*(-1/sqrt3) + e*(2/sqrt3))   f |
+	// | 0  0  1 |   | 0      0      1 |   | 0               0                   1 |
+	double t_a = a;
+	double t_b = (-a + 2*b) / sqrt3;
+	double t_c = c;
+	double t_d = d;
+	double t_e = (-d + 2*e) / sqrt3;
+	double t_f = f;
+
+	// Then compute M * (T * M^(-1))
+	// | 1    0.5     0 |   | t_a  t_b  t_c |   | t_a + 0.5*t_d    t_b + 0.5*t_e    t_c + 0.5*t_f     |
+	// | 0  sqrt3/2   0 | * | t_d  t_e  t_f | = | sqrt3/2*t_d      sqrt3/2*t_e      sqrt3/2*t_f       |
+	// | 0    0       1 |   |  0    0    1  |   |    0                 0                 1            |
+
+	double r_a = t_a + 0.5 * t_d;
+	double r_b = t_b + 0.5 * t_e;
+	double r_c = t_c + 0.5 * t_f;
+	double r_d = (sqrt3 / 2.0) * t_d;
+	double r_e = (sqrt3 / 2.0) * t_e;
+	double r_f = (sqrt3 / 2.0) * t_f;
+
+	return xform<double>(r_a, r_b, r_c, r_d, r_e, r_f);
+}
 
 // Compute a proper set hash of the coordinates (order-independent)
 template<typename grid>
@@ -81,16 +145,18 @@ const char* getGridTypeName(GridType gt)
 	}
 }
 
-// Write a patch as JSON array
-template<typename coord_t>
+// Write a patch as JSON array, converting transforms to page coordinates
+template<typename grid, typename coord_t>
 void writePatchJson(ostream& os, const LabelledPatch<coord_t>& patch, const string& indent)
 {
 	os << "[\n";
 	for (size_t i = 0; i < patch.size(); ++i) {
 		const auto& tile = patch[i];
+		// Convert grid-space transform to page-space transform
+		xform<double> pageT = gridToPageTransform<grid>(tile.second);
 		os << indent << "  {\"corona\": " << tile.first << ", \"transform\": ["
-		   << (int)tile.second.a_ << ", " << (int)tile.second.b_ << ", " << (int)tile.second.c_ << ", "
-		   << (int)tile.second.d_ << ", " << (int)tile.second.e_ << ", " << (int)tile.second.f_ << "]}";
+		   << pageT.a_ << ", " << pageT.b_ << ", " << pageT.c_ << ", "
+		   << pageT.d_ << ", " << pageT.e_ << ", " << pageT.f_ << "]}";
 		if (i + 1 < patch.size()) os << ",";
 		os << "\n";
 	}
@@ -231,13 +297,13 @@ int processShape(const vector<pair<typename grid::coord_t, typename grid::coord_
 
 	// Connected witness
 	json << "  \"witness_connected\": ";
-	writePatchJson(json, connectedPatch, "  ");
+	writePatchJson<grid>(json, connectedPatch, "  ");
 	json << ",\n";
 
 	// Holes witness (or null)
 	json << "  \"witness_with_holes\": ";
 	if (hasHolesPatch && hh > hc) {
-		writePatchJson(json, holesPatch, "  ");
+		writePatchJson<grid>(json, holesPatch, "  ");
 	} else {
 		json << "null";
 	}
