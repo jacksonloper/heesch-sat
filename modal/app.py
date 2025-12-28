@@ -200,8 +200,18 @@ def web():
     """Single FastAPI app with all endpoints."""
     from fastapi import FastAPI, Request
     from fastapi.responses import JSONResponse
+    from fastapi.middleware.cors import CORSMiddleware
 
     web_app = FastAPI(title="Heesch Polyform Data API")
+
+    # Add CORS middleware to allow requests from any origin
+    web_app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     @web_app.get("/")
     def root():
