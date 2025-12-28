@@ -205,12 +205,14 @@ int processShape(const vector<pair<typename grid::coord_t, typename grid::coord_
 	// Compute the witnesses
 	cerr << "Computing witnesses..." << endl;
 	HeeschSolver<grid> solver{shape, ALL, true};
+	solver.setCheckIsohedral(true);
 
 	patch_t connectedPatch;
 	patch_t holesPatch;
 	size_t hc = 0;
 	size_t hh = 0;
 	bool hasHolesPatch = false;
+	bool tilesIsohedrally = false;
 
 	if (!solver.isSurroundable()) {
 		cerr << "Shape is not surroundable at all (Hc = 0)" << endl;
@@ -241,21 +243,30 @@ int processShape(const vector<pair<typename grid::coord_t, typename grid::coord_
 					}
 					break;
 				}
+			} else if (solver.tilesIsohedrally()) {
+				// Shape tiles the plane isohedrally - infinite Heesch number
+				cerr << "Shape tiles isohedrally - infinite Heesch number!" << endl;
+				tilesIsohedrally = true;
+				break;
 			} else {
 				break;
 			}
 		}
 
-		if (connectedPatch.empty()) {
+		if (connectedPatch.empty() && !tilesIsohedrally) {
 			connectedPatch.push_back(make_pair(0, xform_t{}));
 		}
 	}
 
-	cerr << "Heesch number (connected): " << hc << endl;
-	if (hasHolesPatch) {
-		cerr << "Heesch number (with holes): " << hh << endl;
+	if (tilesIsohedrally) {
+		cerr << "Heesch number: infinity (tiles isohedrally)" << endl;
+	} else {
+		cerr << "Heesch number (connected): " << hc << endl;
+		if (hasHolesPatch) {
+			cerr << "Heesch number (with holes): " << hh << endl;
+		}
+		cerr << "Connected witness has " << connectedPatch.size() << " tiles" << endl;
 	}
-	cerr << "Connected witness has " << connectedPatch.size() << " tiles" << endl;
 
 	// Write JSON file
 	ofstream json(jsonPath);
@@ -291,18 +302,25 @@ int processShape(const vector<pair<typename grid::coord_t, typename grid::coord_
 	}
 	json << "  ],\n";
 
-	// Heesch numbers
-	json << "  \"heesch_connected\": " << hc << ",\n";
-	json << "  \"heesch_with_holes\": " << (hasHolesPatch ? to_string(hh) : "null") << ",\n";
+	// Heesch numbers (null for isohedral tilers)
+	json << "  \"heesch_connected\": " << (tilesIsohedrally ? "null" : to_string(hc)) << ",\n";
+	json << "  \"heesch_with_holes\": " << (tilesIsohedrally ? "null" : (hasHolesPatch ? to_string(hh) : "null")) << ",\n";
+
+	// Tiles isohedrally flag
+	json << "  \"tiles_isohedrally\": " << (tilesIsohedrally ? "true" : "false") << ",\n";
 
 	// Connected witness
 	json << "  \"witness_connected\": ";
-	writePatchJson<grid>(json, connectedPatch, "  ");
+	if (tilesIsohedrally) {
+		json << "null";
+	} else {
+		writePatchJson<grid>(json, connectedPatch, "  ");
+	}
 	json << ",\n";
 
 	// Holes witness (or null)
 	json << "  \"witness_with_holes\": ";
-	if (hasHolesPatch && hh > hc) {
+	if (!tilesIsohedrally && hasHolesPatch && hh > hc) {
 		writePatchJson<grid>(json, holesPatch, "  ");
 	} else {
 		json << "null";
