@@ -32,6 +32,11 @@ function WitnessViewer({ witness, onClose }) {
         <div className="viewer-header">
           <h2>{witness.cell_count}-{witness.grid_type}</h2>
           <code className="hash">{witness.hash}</code>
+          {witness.tiles_isohedrally && (
+            <div className="isohedral-badge" title="This polyform tiles the plane isohedrally">
+              ♾️ Isohedral Tiler
+            </div>
+          )}
         </div>
 
         <div className="viewer-content">
@@ -45,7 +50,9 @@ function WitnessViewer({ witness, onClose }) {
           <div className="viewer-info">
             <div className="info-row">
               <label>Heesch number:</label>
-              <span className="value">{heeschValue}</span>
+              <span className="value">
+                {witness.tiles_isohedrally ? '∞ (tiles isohedrally)' : heeschValue}
+              </span>
             </div>
 
             <div className="info-row">

@@ -70,3 +70,8 @@
 .witness-info .heesch {
   color: #888;
 }
+
+.witness-info .heesch.isohedral {
+  color: #667eea;
+  font-weight: 600;
+}
