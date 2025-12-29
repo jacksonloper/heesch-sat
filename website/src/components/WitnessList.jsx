@@ -28,7 +28,11 @@ function WitnessList({ witnesses, selected, onSelect }) {
                 <TileThumbnail witness={witness} />
                 <div className="witness-info">
                   <span className="cell-count">{witness.cell_count} cells</span>
-                  <span className="heesch">H={witness.heesch_connected}</span>
+                  {witness.tiles_isohedrally ? (
+                    <span className="heesch isohedral" title="Tiles the plane isohedrally">H=∞</span>
+                  ) : (
+                    <span className="heesch">H={witness.heesch_connected}</span>
+                  )}
                 </div>
               </button>
             ))}

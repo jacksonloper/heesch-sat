@@ -47,6 +47,7 @@
   display: flex;
   align-items: baseline;
   gap: 1rem;
+  flex-wrap: wrap;
 }
 
 .viewer-header h2 {
@@ -60,6 +61,18 @@
   background: #f5f5f5;
   padding: 0.25rem 0.5rem;
   border-radius: 4px;
+}
+
+.isohedral-badge {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
 }
 
 .viewer-content {

@@ -363,10 +363,13 @@ def web():
         }
 
     @web_app.get("/compute")
-    def compute_polyform(grid_type: str, coords: str):
+    def compute_polyform(grid_type: str, coords: str, force: bool = False):
         """
         Compute Heesch data for a polyform using the render_witness binary.
         Returns the computed data and stores it in the database.
+        
+        Parameters:
+        - force: If True, recompute even if already exists (useful for updating old computations)
         """
         # Normalize grid_type (accept both abbreviation and full name)
         gt = grid_type
@@ -386,10 +389,10 @@ def web():
         if len(parsed) < 1:
             return {"status": "error", "message": "At least one coordinate required"}
 
-        # Check if already computed
+        # Check if already computed (unless force=True)
         volume.reload()
         existing = find_polyform_by_coords(gt, parsed)
-        if existing:
+        if existing and not force:
             return {
                 "status": "found",
                 "message": "Already computed",
