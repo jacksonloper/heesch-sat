@@ -355,12 +355,12 @@ def run_render_witness(grid_type: str, coords: List[Tuple[int, int]]) -> dict:
             return json.load(f)
 
 
-def run_gen(grid_abbrev: str, num_cells: int, free: bool = True) -> List[List[Tuple[int, int]]]:
+def run_gen(grid_type: str, num_cells: int, free: bool = True) -> List[List[Tuple[int, int]]]:
     """
     Run the gen binary to generate all polyforms of a given size.
 
     Parameters:
-    - grid_abbrev: Single-character grid type abbreviation (O, H, I, etc.)
+    - grid_type: Full grid type name (hex, iamond, omino, etc.)
     - num_cells: Number of cells in each polyform
     - free: If True, generate free polyforms (topologically unique)
 
@@ -368,7 +368,8 @@ def run_gen(grid_abbrev: str, num_cells: int, free: bool = True) -> List[List[Tu
     """
     import time
 
-    cmd = ["gen", f"-{grid_abbrev}", "-size", str(num_cells)]
+    # gen expects the full grid name like -hex, -iamond, not abbreviations
+    cmd = ["gen", f"-{grid_type}", "-size", str(num_cells)]
     if free:
         cmd.append("-free")
 
@@ -443,16 +444,15 @@ def search_for_heesch(grid_type: str, num_cells: int, max_to_store: int = 3) -> 
     import time
     import heapq
 
-    # Get the grid abbreviation
-    grid_abbrev = GRID_ABBREVS.get(grid_type)
-    if not grid_abbrev:
+    # Validate grid type
+    if grid_type not in GRID_ABBREVS:
         raise ValueError(f"Unknown grid type: {grid_type}")
 
     print(f"Starting Heesch search for {num_cells}-cell {grid_type} polyforms...")
     start_time = time.time()
 
     # Generate all polyforms
-    polyforms = run_gen(grid_abbrev, num_cells, free=True)
+    polyforms = run_gen(grid_type, num_cells, free=True)
 
     if not polyforms:
         return {
