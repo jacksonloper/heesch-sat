@@ -1,6 +1,6 @@
 # Heesch Witness Browser
 
-A static website for browsing Heesch number witness renderings across different grid types.
+A static website for browsing Heesch number witness renderings across different grid types.  View live at https://unmarkedpolyformheesch.netlify.app/
 
 ## Overview
 
