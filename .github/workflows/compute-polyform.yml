@@ -1,0 +1,79 @@
+name: Compute Polyform
+
+on:
+  workflow_dispatch:
+    inputs:
+      grid_type:
+        description: 'Grid type (hex, iamond, omino, octasquare, trihex, abolo, drafter, kite, halfcairo, bevelhex)'
+        required: true
+        type: choice
+        options:
+          - hex
+          - iamond
+          - omino
+          - octasquare
+          - trihex
+          - abolo
+          - drafter
+          - kite
+          - halfcairo
+          - bevelhex
+      coords:
+        description: 'Coordinates in format: 0,0_1,0_0,1 (underscore separated x,y pairs)'
+        required: true
+        type: string
+      force:
+        description: 'Force recompute even if already exists'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  compute:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compute polyform via Modal API
+        id: compute
+        run: |
+          echo "Computing polyform..."
+          echo "Grid type: ${{ inputs.grid_type }}"
+          echo "Coordinates: ${{ inputs.coords }}"
+          echo "Force: ${{ inputs.force }}"
+
+          # Build the API URL
+          API_URL="https://hloper--heesch-renderings-web.modal.run/compute"
+          PARAMS="grid_type=${{ inputs.grid_type }}&coords=${{ inputs.coords }}"
+          if [ "${{ inputs.force }}" = "true" ]; then
+            PARAMS="${PARAMS}&force=true"
+          fi
+
+          echo "Calling: ${API_URL}?${PARAMS}"
+
+          # Make the API call
+          RESPONSE=$(curl -s -w "\n%{http_code}" "${API_URL}?${PARAMS}")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          echo "HTTP Status: ${HTTP_CODE}"
+          echo "Response:"
+          echo "$BODY" | jq . || echo "$BODY"
+
+          # Check for success
+          STATUS=$(echo "$BODY" | jq -r '.status // "unknown"')
+          echo "status=${STATUS}" >> $GITHUB_OUTPUT
+
+          if [ "$STATUS" = "error" ]; then
+            MESSAGE=$(echo "$BODY" | jq -r '.message // "Unknown error"')
+            echo "::error::Computation failed: ${MESSAGE}"
+            exit 1
+          fi
+
+          echo "::notice::Computation status: ${STATUS}"
+
+      - name: Summary
+        run: |
+          echo "## Polyform Computation Result" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Grid Type:** ${{ inputs.grid_type }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Coordinates:** ${{ inputs.coords }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** ${{ steps.compute.outputs.status }}" >> $GITHUB_STEP_SUMMARY
