@@ -36,6 +36,7 @@ on:
 jobs:
   search:
     runs-on: ubuntu-latest
+    timeout-minutes: 180  # 3 hour timeout for job
     steps:
       - name: Search polyforms via Modal API
         id: search
@@ -55,14 +56,67 @@ jobs:
 
           echo "Calling: ${API_URL}?${PARAMS}"
 
-          # Make the API call with extended timeout (search can take a while)
-          RESPONSE=$(curl -s -w "\n%{http_code}" --max-time 600 "${API_URL}?${PARAMS}")
-          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
-          BODY=$(echo "$RESPONSE" | sed '$d')
+          # First, spawn the job with wait=false so it runs independently
+          # This ensures the job continues even if our connection drops
+          echo "Spawning search job..."
+          SPAWN_RESPONSE=$(curl -s -w "\n%{http_code}" --max-time 120 "${API_URL}?${PARAMS}&wait=false")
+          SPAWN_HTTP_CODE=$(echo "$SPAWN_RESPONSE" | tail -n1)
+          SPAWN_BODY=$(echo "$SPAWN_RESPONSE" | sed '$d')
 
-          echo "HTTP Status: ${HTTP_CODE}"
-          echo "Response:"
-          echo "$BODY" | jq . || echo "$BODY"
+          echo "Spawn HTTP Status: ${SPAWN_HTTP_CODE}"
+          echo "Spawn Response:"
+          echo "$SPAWN_BODY" | jq . || echo "$SPAWN_BODY"
+
+          SPAWN_STATUS=$(echo "$SPAWN_BODY" | jq -r '.status // "unknown"')
+
+          # If we got cached results immediately, we're done
+          if [ "$SPAWN_STATUS" = "cached" ] || [ "$SPAWN_STATUS" = "completed" ]; then
+            echo "Got immediate results (status: $SPAWN_STATUS)"
+            BODY="$SPAWN_BODY"
+          elif [ "$SPAWN_STATUS" = "spawned" ]; then
+            echo "Job spawned, polling for results..."
+
+            # Poll for results every 30 seconds for up to 2 hours
+            MAX_ATTEMPTS=240  # 240 * 30s = 2 hours
+            ATTEMPT=0
+            while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+              ATTEMPT=$((ATTEMPT + 1))
+              echo "Poll attempt $ATTEMPT/$MAX_ATTEMPTS..."
+
+              sleep 30
+
+              # Check for cached results (without force, without wait)
+              POLL_RESPONSE=$(curl -s -w "\n%{http_code}" --max-time 60 "${API_URL}?grid_type=${{ inputs.grid_type }}&num_cells=${{ inputs.num_cells }}&max_results=${{ inputs.max_results }}")
+              POLL_HTTP_CODE=$(echo "$POLL_RESPONSE" | tail -n1)
+              POLL_BODY=$(echo "$POLL_RESPONSE" | sed '$d')
+
+              POLL_STATUS=$(echo "$POLL_BODY" | jq -r '.status // "unknown"')
+
+              if [ "$POLL_STATUS" = "cached" ] || [ "$POLL_STATUS" = "completed" ]; then
+                echo "Results ready! Status: $POLL_STATUS"
+                echo "$POLL_BODY" | jq .
+                BODY="$POLL_BODY"
+                break
+              elif [ "$POLL_STATUS" = "error" ]; then
+                echo "Got error during poll:"
+                echo "$POLL_BODY" | jq .
+                BODY="$POLL_BODY"
+                break
+              else
+                echo "Status: $POLL_STATUS - still waiting..."
+              fi
+            done
+
+            if [ $ATTEMPT -ge $MAX_ATTEMPTS ]; then
+              echo "::warning::Polling timed out after 2 hours"
+              BODY='{"status": "timeout", "message": "Polling timed out, but job may still be running. Check again later."}'
+            fi
+          elif [ "$SPAWN_STATUS" = "error" ]; then
+            BODY="$SPAWN_BODY"
+          else
+            echo "Unexpected status: $SPAWN_STATUS"
+            BODY="$SPAWN_BODY"
+          fi
 
           # Check for success
           STATUS=$(echo "$BODY" | jq -r '.status // "unknown"')
