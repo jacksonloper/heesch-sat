@@ -1,0 +1,94 @@
+name: Search Polyforms by Heesch
+
+on:
+  workflow_dispatch:
+    inputs:
+      grid_type:
+        description: 'Grid type (hex, iamond, omino, octasquare, trihex, abolo, drafter, kite, halfcairo, bevelhex)'
+        required: true
+        type: choice
+        options:
+          - hex
+          - iamond
+          - omino
+          - octasquare
+          - trihex
+          - abolo
+          - drafter
+          - kite
+          - halfcairo
+          - bevelhex
+      num_cells:
+        description: 'Number of cells in polyforms to search'
+        required: true
+        type: number
+      max_results:
+        description: 'Maximum number of results to store (default: 3)'
+        required: false
+        type: number
+        default: 3
+      force:
+        description: 'Force recompute even if already cached'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  search:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Search polyforms via Modal API
+        id: search
+        run: |
+          echo "Searching for polyforms with Heesch >= 1..."
+          echo "Grid type: ${{ inputs.grid_type }}"
+          echo "Number of cells: ${{ inputs.num_cells }}"
+          echo "Max results: ${{ inputs.max_results }}"
+          echo "Force: ${{ inputs.force }}"
+
+          # Build the API URL
+          API_URL="https://hloper--heesch-renderings-web.modal.run/search_heesch"
+          PARAMS="grid_type=${{ inputs.grid_type }}&num_cells=${{ inputs.num_cells }}&max_results=${{ inputs.max_results }}"
+          if [ "${{ inputs.force }}" = "true" ]; then
+            PARAMS="${PARAMS}&force=true"
+          fi
+
+          echo "Calling: ${API_URL}?${PARAMS}"
+
+          # Make the API call with extended timeout (search can take a while)
+          RESPONSE=$(curl -s -w "\n%{http_code}" --max-time 600 "${API_URL}?${PARAMS}")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          echo "HTTP Status: ${HTTP_CODE}"
+          echo "Response:"
+          echo "$BODY" | jq . || echo "$BODY"
+
+          # Check for success
+          STATUS=$(echo "$BODY" | jq -r '.status // "unknown"')
+          echo "status=${STATUS}" >> $GITHUB_OUTPUT
+
+          # Extract result counts
+          POLYFORMS_CHECKED=$(echo "$BODY" | jq -r '.polyforms_checked // 0')
+          RESULTS_FOUND=$(echo "$BODY" | jq -r '.results_found // 0')
+          echo "polyforms_checked=${POLYFORMS_CHECKED}" >> $GITHUB_OUTPUT
+          echo "results_found=${RESULTS_FOUND}" >> $GITHUB_OUTPUT
+
+          if [ "$STATUS" = "error" ]; then
+            MESSAGE=$(echo "$BODY" | jq -r '.message // "Unknown error"')
+            echo "::error::Search failed: ${MESSAGE}"
+            exit 1
+          fi
+
+          echo "::notice::Search status: ${STATUS} - Found ${RESULTS_FOUND} polyforms with Heesch >= 1 out of ${POLYFORMS_CHECKED} checked"
+
+      - name: Summary
+        run: |
+          echo "## Heesch Search Result" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Grid Type:** ${{ inputs.grid_type }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Number of Cells:** ${{ inputs.num_cells }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Max Results:** ${{ inputs.max_results }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** ${{ steps.search.outputs.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Polyforms Checked:** ${{ steps.search.outputs.polyforms_checked }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Results Found (Heesch >= 1):** ${{ steps.search.outputs.results_found }}" >> $GITHUB_STEP_SUMMARY
