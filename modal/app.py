@@ -162,6 +162,56 @@ def find_polyform_by_coords(grid_type: str, coords: List[Tuple[int, int]]) -> Op
     return None
 
 
+def find_heesch_polyforms(grid_type: str, num_cells: int, min_heesch: int = 1) -> List[dict]:
+    """
+    Find existing polyforms in the volume with Heesch number >= min_heesch.
+
+    Parameters:
+    - grid_type: Full grid type name (e.g., 'hex', 'iamond')
+    - num_cells: Number of cells in each polyform
+    - min_heesch: Minimum Heesch number to include (default 1)
+
+    Returns list of polyform data dicts sorted by Heesch number (descending).
+    """
+    results = []
+    if not os.path.exists(VOLUME_PATH):
+        return results
+
+    # Look for files matching the pattern: {num_cells}{grid_type}_*.json
+    prefix = f"{num_cells}{grid_type}_"
+
+    for filename in os.listdir(VOLUME_PATH):
+        if not filename.startswith(prefix) or not filename.endswith('.json'):
+            continue
+
+        file_path = os.path.join(VOLUME_PATH, filename)
+        try:
+            with open(file_path, 'r') as f:
+                data = json.load(f)
+
+            # Check if this is the right grid type and cell count
+            if data.get("grid_type") != grid_type:
+                continue
+            if data.get("cell_count") != num_cells:
+                continue
+
+            # Skip isohedral tilers (infinite Heesch)
+            if data.get("tiles_isohedrally", False):
+                continue
+
+            # Check Heesch number
+            hc = data.get("heesch_connected")
+            if hc is not None and hc >= min_heesch:
+                results.append(data)
+
+        except (json.JSONDecodeError, IOError):
+            continue
+
+    # Sort by Heesch number descending
+    results.sort(key=lambda x: -(x.get("heesch_connected") or 0))
+    return results
+
+
 def list_all_polyforms(grid_type_filter: Optional[str] = None) -> List[dict]:
     """List all polyforms in the volume."""
     result = []
@@ -495,6 +545,119 @@ def search_for_heesch(grid_type: str, num_cells: int, max_to_store: int = 3) -> 
     }
 
 
+@app.function(image=image, volumes={VOLUME_PATH: volume}, timeout=1800)
+def search_heesch_workflow(
+    grid_type: str,
+    num_cells: int,
+    max_results: int = 3,
+    force: bool = False
+) -> dict:
+    """
+    Modal workflow function to search for polyforms with Heesch number >= 1.
+
+    This function can be called programmatically via:
+        modal run modal/app.py::search_heesch_workflow --grid-type hex --num-cells 6
+
+    Or from Python:
+        from modal import App
+        app = App.lookup("heesch-renderings")
+        result = app.search_heesch_workflow.remote(grid_type="hex", num_cells=6)
+
+    Parameters:
+    - grid_type: Grid type (e.g., 'hex', 'iamond', or abbreviation like 'H', 'I')
+    - num_cells: Number of cells in each polyform
+    - max_results: Maximum number of results to store (default 3)
+    - force: If True, run the search even if results already exist
+
+    Returns dict with search results.
+    """
+    # Normalize grid_type
+    gt = grid_type
+    if grid_type in GRID_TYPES:
+        gt = GRID_TYPES[grid_type]
+    elif grid_type not in GRID_ABBREVS:
+        return {
+            "status": "error",
+            "message": f"Invalid grid type: {grid_type}. Valid: {list(GRID_TYPES.keys())} or {list(GRID_TYPES.values())}"
+        }
+
+    if num_cells < 1:
+        return {"status": "error", "message": "num_cells must be at least 1"}
+
+    if max_results < 1:
+        return {"status": "error", "message": "max_results must be at least 1"}
+
+    # Check for existing results (unless force=True)
+    volume.reload()
+    if not force:
+        existing = find_heesch_polyforms(gt, num_cells, min_heesch=1)
+        if existing:
+            existing = existing[:max_results]
+            print(f"Found {len(existing)} existing polyform(s) with Heesch >= 1")
+            return {
+                "status": "cached",
+                "message": f"Found {len(existing)} existing polyform(s) with Heesch >= 1",
+                "grid_type": gt,
+                "num_cells": num_cells,
+                "results_found": len(existing),
+                "results": existing
+            }
+
+    # Run the search
+    try:
+        result = search_for_heesch(gt, num_cells, max_to_store=max_results)
+        volume.commit()
+        return result
+    except Exception as e:
+        return {"status": "error", "message": f"Search failed: {str(e)}"}
+
+
+@app.local_entrypoint()
+def main(
+    grid_type: str = "hex",
+    num_cells: int = 6,
+    max_results: int = 3,
+    force: bool = False
+):
+    """
+    Local entrypoint for running the Heesch search workflow.
+
+    Usage:
+        modal run modal/app.py --grid-type hex --num-cells 6
+        modal run modal/app.py --grid-type iamond --num-cells 8 --max-results 5
+        modal run modal/app.py --grid-type hex --num-cells 6 --force
+    """
+    import json as json_module
+
+    print(f"Starting Heesch search for {num_cells}-cell {grid_type} polyforms...")
+    print(f"Max results to store: {max_results}, Force: {force}")
+
+    result = search_heesch_workflow.remote(
+        grid_type=grid_type,
+        num_cells=num_cells,
+        max_results=max_results,
+        force=force
+    )
+
+    print("\n" + "=" * 60)
+    print("RESULTS")
+    print("=" * 60)
+    print(json_module.dumps(result, indent=2, default=str))
+
+    if result.get("status") == "completed":
+        print(f"\nSearch completed!")
+        print(f"  Polyforms checked: {result.get('polyforms_checked', 0)}")
+        print(f"  Skipped (isohedral): {result.get('polyforms_skipped_isohedral', 0)}")
+        print(f"  Results found: {result.get('results_found', 0)}")
+        print(f"  Elapsed time: {result.get('elapsed_seconds', 0):.1f}s")
+    elif result.get("status") == "cached":
+        print(f"\nReturned cached results: {result.get('results_found', 0)} polyform(s)")
+    else:
+        print(f"\nStatus: {result.get('status')}")
+        if result.get("message"):
+            print(f"Message: {result.get('message')}")
+
+
 @app.function(image=image, volumes={VOLUME_PATH: volume})
 @modal.asgi_app()
 def web():
@@ -771,7 +934,7 @@ def web():
         return {"polyforms": result}
 
     @web_app.get("/search_heesch")
-    def search_heesch_endpoint(grid_type: str, num_cells: int, max_results: int = 3):
+    def search_heesch_endpoint(grid_type: str, num_cells: int, max_results: int = 3, force: bool = False):
         """
         Search for polyforms with Heesch number >= 1 by generating all polyforms
         of the given size and computing their Heesch numbers.
@@ -780,9 +943,13 @@ def web():
         - grid_type: Grid type (e.g., 'hex', 'iamond', or abbreviation like 'H', 'I')
         - num_cells: Number of cells in each polyform
         - max_results: Maximum number of results to store (default 3, stores highest Heesch numbers)
+        - force: If True, run the search even if results already exist in the volume
 
         Note: This endpoint only stores polyforms with Heesch number >= 1.
         Polyforms with Heesch 0 or infinity (tiles isohedrally) are not stored.
+
+        If results already exist in the volume for this grid type and cell count,
+        they will be returned immediately (unless force=True).
 
         Warning: This can be a long-running operation depending on the number of polyforms.
         """
@@ -807,6 +974,22 @@ def web():
                 "status": "error",
                 "message": "max_results must be at least 1"
             }
+
+        # Check for existing results (unless force=True)
+        volume.reload()
+        if not force:
+            existing = find_heesch_polyforms(gt, num_cells, min_heesch=1)
+            if existing:
+                # Return existing results (up to max_results)
+                existing = existing[:max_results]
+                return {
+                    "status": "cached",
+                    "message": f"Found {len(existing)} existing polyform(s) with Heesch >= 1",
+                    "grid_type": gt,
+                    "num_cells": num_cells,
+                    "results_found": len(existing),
+                    "results": existing
+                }
 
         try:
             result = search_for_heesch(gt, num_cells, max_to_store=max_results)
