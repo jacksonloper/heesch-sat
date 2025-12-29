@@ -465,6 +465,9 @@ def search_for_heesch(grid_type: str, num_cells: int, max_to_store: int = 3) -> 
             "elapsed_seconds": time.time() - start_time
         }
 
+    gen_elapsed = time.time() - start_time
+    print(f"Generated {len(polyforms)} polyforms in {gen_elapsed:.1f}s - starting Heesch computation...")
+
     # Track top results: use a min-heap of (heesch_number, data)
     # We want to keep the highest Heesch numbers, so we use negative values
     top_results = []  # List of (heesch_connected, data)
@@ -473,10 +476,45 @@ def search_for_heesch(grid_type: str, num_cells: int, max_to_store: int = 3) -> 
     skipped = 0
     errors = 0
 
+    total_polyforms = len(polyforms)
+    last_log_time = start_time
+
     for coords in polyforms:
         checked += 1
-        if checked % 10 == 0:
-            print(f"Checked {checked}/{len(polyforms)} polyforms, found {len(top_results)} with Heesch >= 1")
+        current_time = time.time()
+
+        # Log progress every 10 polyforms or every 30 seconds
+        if checked % 10 == 0 or (current_time - last_log_time) >= 30:
+            elapsed = current_time - start_time
+            remaining = total_polyforms - checked
+
+            # Calculate ETA based on average time per polyform
+            if checked > 0:
+                avg_time_per_polyform = elapsed / checked
+                eta_seconds = remaining * avg_time_per_polyform
+
+                # Format ETA nicely
+                if eta_seconds < 60:
+                    eta_str = f"{eta_seconds:.0f}s"
+                elif eta_seconds < 3600:
+                    eta_str = f"{eta_seconds/60:.1f}min"
+                else:
+                    eta_str = f"{eta_seconds/3600:.1f}hr"
+
+                # Format elapsed time
+                if elapsed < 60:
+                    elapsed_str = f"{elapsed:.0f}s"
+                elif elapsed < 3600:
+                    elapsed_str = f"{elapsed/60:.1f}min"
+                else:
+                    elapsed_str = f"{elapsed/3600:.1f}hr"
+
+                pct = (checked / total_polyforms) * 100
+                print(f"Progress: {checked}/{total_polyforms} ({pct:.1f}%) | "
+                      f"Elapsed: {elapsed_str} | ETA: {eta_str} | "
+                      f"Found: {len(top_results)} with Heesch >= 1")
+
+            last_log_time = current_time
 
         try:
             data = run_render_witness(grid_type, coords)
@@ -507,9 +545,16 @@ def search_for_heesch(grid_type: str, num_cells: int, max_to_store: int = 3) -> 
             continue
 
     elapsed = time.time() - start_time
-    print(f"Search completed in {elapsed:.1f}s")
-    print(f"Checked: {checked}, Skipped (isohedral): {skipped}, Errors: {errors}")
-    print(f"Found {len(top_results)} polyforms with Heesch >= 1")
+    rate = checked / elapsed if elapsed > 0 else 0
+    print(f"=" * 60)
+    print(f"Search completed!")
+    print(f"  Total time: {elapsed:.1f}s ({elapsed/60:.1f} min)")
+    print(f"  Polyforms checked: {checked}/{total_polyforms}")
+    print(f"  Average rate: {rate:.2f} polyforms/sec")
+    print(f"  Skipped (isohedral): {skipped}")
+    print(f"  Errors: {errors}")
+    print(f"  Found with Heesch >= 1: {len(top_results)}")
+    print(f"=" * 60)
 
     # Sort results by Heesch number (descending)
     results = sorted(top_results, key=lambda x: -x[0])
