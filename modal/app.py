@@ -84,6 +84,46 @@ def coords_to_string(coords: List[Tuple[int, int]]) -> str:
     return '_'.join(f"{x},{y}" for x, y in sorted(coords))
 
 
+def validate_coordinates(grid_type: str, coords: List[Tuple[int, int]]) -> Tuple[bool, str]:
+    """
+    Validate that coordinates are legal for the given grid type.
+    Returns (is_valid, error_message).
+    
+    Grid-specific rules:
+    - iamond: Either (x%3==0 AND y%3==0) OR ((x-1)%3==0 AND (y-1)%3==0)
+    - drafter: Uses a sparse lookup table (not all coords valid)
+    - bevelhex: Uses a sparse lookup table (not all coords valid)
+    - halfcairo: Uses a sparse lookup table (not all coords valid)
+    - kite: Uses mod 6 pattern (not all coords valid)
+    - omino, hex, octasquare, trihex, abolo: All integer coordinates are valid
+    """
+    if not coords:
+        return True, ""
+    
+    # Grids where all integer coordinates are valid
+    unrestricted_grids = {'omino', 'hex', 'octasquare', 'trihex', 'abolo'}
+    if grid_type in unrestricted_grids:
+        return True, ""
+    
+    # Iamond grid validation (sparse grid)
+    if grid_type == 'iamond':
+        invalid_coords = []
+        for x, y in coords:
+            # Valid if both x and y are multiples of 3, OR both are 1 more than multiples of 3
+            valid = (x % 3 == 0 and y % 3 == 0) or ((x - 1) % 3 == 0 and (y - 1) % 3 == 0)
+            if not valid:
+                invalid_coords.append((x, y))
+        
+        if invalid_coords:
+            return False, f"Invalid iamond coordinates: {invalid_coords}. Must satisfy: (x%3==0 AND y%3==0) OR ((x-1)%3==0 AND (y-1)%3==0)"
+    
+    # For other sparse grids (drafter, bevelhex, halfcairo, kite), we could add validation
+    # but it's more complex and requires lookup tables. For now, we'll let the C++ code
+    # detect these as "has holes" if invalid.
+    
+    return True, ""
+
+
 def compute_hash(grid_type: str, coords: List[Tuple[int, int]]) -> str:
     """Compute a hash for a polyform based on grid type and normalized coordinates."""
     sorted_coords = sorted(coords)
@@ -388,6 +428,14 @@ def web():
 
         if len(parsed) < 1:
             return {"status": "error", "message": "At least one coordinate required"}
+
+        # Validate coordinates for the grid type
+        is_valid, error_msg = validate_coordinates(gt, parsed)
+        if not is_valid:
+            return {
+                "status": "error",
+                "message": f"Invalid coordinates for {gt} grid: {error_msg}"
+            }
 
         # Check if already computed (unless force=True)
         volume.reload()
