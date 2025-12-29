@@ -19,7 +19,10 @@ boundary_edge_map<typename grid::coord_t> getTileEdgeMap(
 	point_t vs[MAX_CELL_SIZE];
 	for (const auto& p: shape) {
 		vertices<grid> v {p};
-		size_t num = std::copy(v.begin(), v.end(), vs) - vs;
+		size_t num = 0;
+		for (auto it = v.begin(); it != v.end(); ++it) {
+			vs[num++] = *it;
+		}
 		point_t prev = vs[num - 1];
 		for (size_t idx = 0; idx < num; ++idx) {
 			point_t cur = vs[idx];

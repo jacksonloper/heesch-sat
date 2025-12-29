@@ -8,7 +8,11 @@
 
 #include <boost/functional/hash.hpp>
 
+#ifdef __APPLE__
 #include <cairo.h>
+#else
+#include <cairo/cairo.h>
+#endif
 
 #include "geom.h"
 #include "heesch.h"
