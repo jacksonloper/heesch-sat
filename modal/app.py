@@ -61,8 +61,8 @@ image = (
     .pip_install("fastapi", "psutil")
     .add_local_dir("../src", "/app/src", copy=True)
     .run_commands(
-        "cd /app/src && make render_witness",
-        "cp /app/src/render_witness /usr/local/bin/",
+        "cd /app/src && make render_witness gen",
+        "cp /app/src/render_witness /app/src/gen /usr/local/bin/",
     )
 )
 
@@ -305,6 +305,196 @@ def run_render_witness(grid_type: str, coords: List[Tuple[int, int]]) -> dict:
             return json.load(f)
 
 
+def run_gen(grid_abbrev: str, num_cells: int, free: bool = True) -> List[List[Tuple[int, int]]]:
+    """
+    Run the gen binary to generate all polyforms of a given size.
+
+    Parameters:
+    - grid_abbrev: Single-character grid type abbreviation (O, H, I, etc.)
+    - num_cells: Number of cells in each polyform
+    - free: If True, generate free polyforms (topologically unique)
+
+    Returns a list of polyforms, where each polyform is a list of (x, y) coordinates.
+    """
+    import time
+
+    cmd = ["gen", f"-{grid_abbrev}", "-size", str(num_cells)]
+    if free:
+        cmd.append("-free")
+
+    print(f"Running gen: {' '.join(cmd)}")
+    start_time = time.time()
+
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+
+    try:
+        stdout, stderr = proc.communicate(timeout=600)  # 10 minute timeout
+        elapsed = time.time() - start_time
+        print(f"gen completed in {elapsed:.1f}s")
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.communicate()
+        raise RuntimeError("gen timed out after 10 minutes")
+
+    if proc.returncode != 0:
+        raise RuntimeError(f"gen failed: {stderr}")
+
+    # Parse output: each line is "X? x1 y1 x2 y2 ..." or "X x1 y1 x2 y2 ..."
+    # where X is the grid type abbreviation
+    polyforms = []
+    for line in stdout.strip().split('\n'):
+        if not line:
+            continue
+
+        # Skip the grid type character at the start
+        # Format can be "I? 0 0 3 0 ..." (UNKNOWN) or "I 0 0 3 0 ..." etc.
+        parts = line.split()
+        if not parts:
+            continue
+
+        # First part contains grid type (and possibly '?'), skip it
+        # Remaining parts are coordinate pairs
+        coord_parts = parts[1:] if parts[0][0] in GRID_TYPES else parts
+
+        # Parse coordinate pairs
+        coords = []
+        for i in range(0, len(coord_parts), 2):
+            if i + 1 < len(coord_parts):
+                try:
+                    x = int(coord_parts[i])
+                    y = int(coord_parts[i + 1])
+                    coords.append((x, y))
+                except ValueError:
+                    continue
+
+        if coords:
+            polyforms.append(coords)
+
+    print(f"Generated {len(polyforms)} polyforms")
+    return polyforms
+
+
+def search_for_heesch(grid_type: str, num_cells: int, max_to_store: int = 3) -> dict:
+    """
+    Search for polyforms with Heesch number >= 1.
+
+    Parameters:
+    - grid_type: Full grid type name (e.g., 'hex', 'iamond')
+    - num_cells: Number of cells in each polyform
+    - max_to_store: Maximum number of results to store (default 3)
+
+    Returns dict with search results.
+    """
+    import time
+    import heapq
+
+    # Get the grid abbreviation
+    grid_abbrev = GRID_ABBREVS.get(grid_type)
+    if not grid_abbrev:
+        raise ValueError(f"Unknown grid type: {grid_type}")
+
+    print(f"Starting Heesch search for {num_cells}-cell {grid_type} polyforms...")
+    start_time = time.time()
+
+    # Generate all polyforms
+    polyforms = run_gen(grid_abbrev, num_cells, free=True)
+
+    if not polyforms:
+        return {
+            "status": "completed",
+            "grid_type": grid_type,
+            "num_cells": num_cells,
+            "polyforms_checked": 0,
+            "results_found": 0,
+            "stored": [],
+            "elapsed_seconds": time.time() - start_time
+        }
+
+    # Track top results: use a min-heap of (heesch_number, data)
+    # We want to keep the highest Heesch numbers, so we use negative values
+    top_results = []  # List of (heesch_connected, data)
+
+    checked = 0
+    skipped = 0
+    errors = 0
+
+    for coords in polyforms:
+        checked += 1
+        if checked % 10 == 0:
+            print(f"Checked {checked}/{len(polyforms)} polyforms, found {len(top_results)} with Heesch >= 1")
+
+        try:
+            data = run_render_witness(grid_type, coords)
+
+            # Skip if tiles isohedrally (infinite Heesch)
+            if data.get("tiles_isohedrally", False):
+                print(f"  Polyform {checked} tiles isohedrally - skipping (infinite Heesch)")
+                skipped += 1
+                continue
+
+            hc = data.get("heesch_connected")
+
+            # Skip if Heesch is 0 or None
+            if hc is None or hc == 0:
+                continue
+
+            print(f"  Found polyform with Heesch = {hc}!")
+
+            # Add to results, keeping only top max_to_store
+            if len(top_results) < max_to_store:
+                heapq.heappush(top_results, (hc, data))
+            elif hc > top_results[0][0]:
+                heapq.heapreplace(top_results, (hc, data))
+
+        except Exception as e:
+            print(f"  Error processing polyform {checked}: {e}")
+            errors += 1
+            continue
+
+    elapsed = time.time() - start_time
+    print(f"Search completed in {elapsed:.1f}s")
+    print(f"Checked: {checked}, Skipped (isohedral): {skipped}, Errors: {errors}")
+    print(f"Found {len(top_results)} polyforms with Heesch >= 1")
+
+    # Sort results by Heesch number (descending)
+    results = sorted(top_results, key=lambda x: -x[0])
+
+    # Store the results to the volume
+    stored = []
+    for hc, data in results:
+        hash_value = data.get("hash", compute_hash(grid_type, [(c[0], c[1]) for c in data.get("coordinates", [])]))
+        cell_count = data.get("cell_count", num_cells)
+        file_path = get_polyform_path(grid_type, cell_count, hash_value)
+
+        with open(file_path, 'w') as f:
+            json.dump(data, f, indent=2)
+
+        stored.append({
+            "hash": hash_value,
+            "heesch_connected": hc,
+            "file_path": file_path
+        })
+        print(f"Stored: {file_path} (Heesch = {hc})")
+
+    return {
+        "status": "completed",
+        "grid_type": grid_type,
+        "num_cells": num_cells,
+        "polyforms_checked": checked,
+        "polyforms_skipped_isohedral": skipped,
+        "errors": errors,
+        "results_found": len(results),
+        "stored": stored,
+        "elapsed_seconds": elapsed,
+        "results": [data for _, data in results]
+    }
+
+
 @app.function(image=image, volumes={VOLUME_PATH: volume})
 @modal.asgi_app()
 def web():
@@ -333,6 +523,7 @@ def web():
                 "/polyform?hash=abc123",
                 "/polyform?grid_type=hex&coords=0,0_1,0_0,1",
                 "/compute?grid_type=hex&coords=0,0_1,0_0,1",
+                "/search_heesch?grid_type=hex&num_cells=6 - Search for polyforms with Heesch >= 1",
                 "/list?grid_type=hex",
                 "/list_full - full data including witnesses",
             ],
@@ -578,6 +769,54 @@ def web():
                     continue
 
         return {"polyforms": result}
+
+    @web_app.get("/search_heesch")
+    def search_heesch_endpoint(grid_type: str, num_cells: int, max_results: int = 3):
+        """
+        Search for polyforms with Heesch number >= 1 by generating all polyforms
+        of the given size and computing their Heesch numbers.
+
+        Parameters:
+        - grid_type: Grid type (e.g., 'hex', 'iamond', or abbreviation like 'H', 'I')
+        - num_cells: Number of cells in each polyform
+        - max_results: Maximum number of results to store (default 3, stores highest Heesch numbers)
+
+        Note: This endpoint only stores polyforms with Heesch number >= 1.
+        Polyforms with Heesch 0 or infinity (tiles isohedrally) are not stored.
+
+        Warning: This can be a long-running operation depending on the number of polyforms.
+        """
+        # Normalize grid_type (accept both abbreviation and full name)
+        gt = grid_type
+        if grid_type in GRID_TYPES:
+            gt = GRID_TYPES[grid_type]  # Convert abbrev to full name
+        elif grid_type not in GRID_ABBREVS:
+            return {
+                "status": "error",
+                "message": f"Invalid grid type: {grid_type}. Valid: {list(GRID_TYPES.keys())} or {list(GRID_TYPES.values())}"
+            }
+
+        if num_cells < 1:
+            return {
+                "status": "error",
+                "message": "num_cells must be at least 1"
+            }
+
+        if max_results < 1:
+            return {
+                "status": "error",
+                "message": "max_results must be at least 1"
+            }
+
+        try:
+            result = search_for_heesch(gt, num_cells, max_to_store=max_results)
+            volume.commit()
+            return result
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"Search failed: {str(e)}"
+            }
 
     return web_app
 
