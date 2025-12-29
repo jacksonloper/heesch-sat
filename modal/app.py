@@ -545,7 +545,7 @@ def search_for_heesch(grid_type: str, num_cells: int, max_to_store: int = 3) -> 
     }
 
 
-@app.function(image=image, volumes={VOLUME_PATH: volume}, timeout=1800)
+@app.function(image=image, volumes={VOLUME_PATH: volume}, timeout=7200)
 def search_heesch_workflow(
     grid_type: str,
     num_cells: int,
@@ -658,7 +658,7 @@ def main(
             print(f"Message: {result.get('message')}")
 
 
-@app.function(image=image, volumes={VOLUME_PATH: volume})
+@app.function(image=image, volumes={VOLUME_PATH: volume}, timeout=7200)
 @modal.asgi_app()
 def web():
     """Single FastAPI app with all endpoints."""
@@ -686,7 +686,8 @@ def web():
                 "/polyform?hash=abc123",
                 "/polyform?grid_type=hex&coords=0,0_1,0_0,1",
                 "/compute?grid_type=hex&coords=0,0_1,0_0,1",
-                "/search_heesch?grid_type=hex&num_cells=6 - Search for polyforms with Heesch >= 1",
+                "/search_heesch?grid_type=hex&num_cells=6 - Search for polyforms with Heesch >= 1 (2hr timeout)",
+                "/search_heesch?grid_type=hex&num_cells=6&wait=false - Spawn search and return immediately",
                 "/list?grid_type=hex",
                 "/list_full - full data including witnesses",
             ],
@@ -934,7 +935,13 @@ def web():
         return {"polyforms": result}
 
     @web_app.get("/search_heesch")
-    def search_heesch_endpoint(grid_type: str, num_cells: int, max_results: int = 3, force: bool = False):
+    def search_heesch_endpoint(
+        grid_type: str,
+        num_cells: int,
+        max_results: int = 3,
+        force: bool = False,
+        wait: bool = True
+    ):
         """
         Search for polyforms with Heesch number >= 1 by generating all polyforms
         of the given size and computing their Heesch numbers.
@@ -944,6 +951,7 @@ def web():
         - num_cells: Number of cells in each polyform
         - max_results: Maximum number of results to store (default 3, stores highest Heesch numbers)
         - force: If True, run the search even if results already exist in the volume
+        - wait: If True (default), wait for results. If False, spawn job and return immediately.
 
         Note: This endpoint only stores polyforms with Heesch number >= 1.
         Polyforms with Heesch 0 or infinity (tiles isohedrally) are not stored.
@@ -951,7 +959,8 @@ def web():
         If results already exist in the volume for this grid type and cell count,
         they will be returned immediately (unless force=True).
 
-        Warning: This can be a long-running operation depending on the number of polyforms.
+        The search runs as a spawned Modal function with a 2-hour timeout that
+        continues running even if the HTTP connection is closed.
         """
         # Normalize grid_type (accept both abbreviation and full name)
         gt = grid_type
@@ -991,10 +1000,30 @@ def web():
                     "results": existing
                 }
 
+        # Spawn the search as a separate Modal function so it survives HTTP disconnection
+        # The spawned function has a 2-hour timeout and will store results to the volume
         try:
-            result = search_for_heesch(gt, num_cells, max_to_store=max_results)
-            volume.commit()
+            function_call = search_heesch_workflow.spawn(
+                grid_type=gt,
+                num_cells=num_cells,
+                max_results=max_results,
+                force=force
+            )
+
+            if not wait:
+                # Return immediately with the function call ID for later polling
+                return {
+                    "status": "spawned",
+                    "message": "Search job started. Results will be stored to volume. Call again without force to get cached results.",
+                    "function_call_id": function_call.object_id,
+                    "grid_type": gt,
+                    "num_cells": num_cells
+                }
+
+            # Wait for the result (the spawned function continues even if we disconnect)
+            result = function_call.get()
             return result
+
         except Exception as e:
             return {
                 "status": "error",
