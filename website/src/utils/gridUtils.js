@@ -260,34 +260,66 @@ function generateKiteGrid(minX, maxX, minY, maxY) {
 }
 
 // Generate grid lines for abolo grid (polyabolos - right triangles)
+// The abolo grid consists of diamonds (squares rotated 45°), each divided into 4 right triangles.
+// Each diamond has:
+// - A center vertex where all 4 triangles meet
+// - 4 outer vertices (top, right, bottom, left)
+// - 4 internal lines from center to each outer vertex
+// - 4 boundary edges forming the diamond outline
 function generateAboloGrid(minX, maxX, minY, maxY) {
   const lines = []
-  const padding = 2
+  const padding = 3
 
-  const gMinX = Math.floor(minX) - padding
-  const gMaxX = Math.ceil(maxX) + padding
-  const gMinY = Math.floor(minY) - padding
-  const gMaxY = Math.ceil(maxY) + padding
+  // Diamond centers are at (0.5 + 2k, 0.5 + 2m) in page coords
+  // The 4 outer vertices are 2 units away along the diagonal directions
+  const gMinX = Math.floor((minX - 0.5) / 2) - padding
+  const gMaxX = Math.ceil((maxX - 0.5) / 2) + padding
+  const gMinY = Math.floor((minY - 0.5) / 2) - padding
+  const gMaxY = Math.ceil((maxY - 0.5) / 2) + padding
 
-  // Abolo grid is squares divided by diagonals
-  // Vertices are at half-integer coords due to vertexToGrid dividing by 2
+  const edgeSet = new Set()
 
-  // Vertical lines
-  for (let x = gMinX; x <= gMaxX; x++) {
-    lines.push([[x, gMinY], [x, gMaxY]])
-  }
+  // For each diamond center at (0.5 + 2i, 0.5 + 2j)
+  for (let i = gMinX; i <= gMaxX; i++) {
+    for (let j = gMinY; j <= gMaxY; j++) {
+      const cx = 0.5 + 2 * i
+      const cy = 0.5 + 2 * j
 
-  // Horizontal lines
-  for (let y = gMinY; y <= gMaxY; y++) {
-    lines.push([[gMinX, y], [gMaxX, y]])
-  }
+      // Outer vertices of the diamond (2 units from center along axes)
+      const top = [cx, cy + 2]
+      const right = [cx + 2, cy]
+      const bottom = [cx, cy - 2]
+      const left = [cx - 2, cy]
+      const center = [cx, cy]
 
-  // Diagonal lines (both directions)
-  for (let x = gMinX; x <= gMaxX; x++) {
-    for (let y = gMinY; y <= gMaxY; y++) {
-      // Both diagonals within each square
-      lines.push([[x, y], [x + 1, y + 1]])
-      lines.push([[x + 1, y], [x, y + 1]])
+      // 4 internal spokes from center to each outer vertex
+      const spokes = [
+        [center, top],
+        [center, right],
+        [center, bottom],
+        [center, left],
+      ]
+
+      // 4 boundary edges of the diamond
+      const edges = [
+        [top, right],
+        [right, bottom],
+        [bottom, left],
+        [left, top],
+      ]
+
+      // Add all edges (spokes and boundary)
+      for (const [p1, p2] of [...spokes, ...edges]) {
+        const key = [
+          Math.round(p1[0] * 1000), Math.round(p1[1] * 1000),
+          Math.round(p2[0] * 1000), Math.round(p2[1] * 1000)
+        ].sort((a, b) => a - b).join(',')
+
+        if (!edgeSet.has(key)) {
+          edgeSet.add(key)
+          lines.push([p1, p2])
+        }
+      }
     }
   }
 
