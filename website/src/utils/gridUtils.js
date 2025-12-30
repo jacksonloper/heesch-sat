@@ -2,6 +2,14 @@
 // Mirrors the C++ grid definitions in src/*grid.h
 
 const SQRT3 = Math.sqrt(3)
+
+// Helper to create a unique edge key by sorting points lexicographically
+// This correctly handles edges that might have overlapping coordinate values
+function makeEdgeKey(p1, p2, precision = 1000) {
+  const k1 = `${Math.round(p1[0] * precision)},${Math.round(p1[1] * precision)}`
+  const k2 = `${Math.round(p2[0] * precision)},${Math.round(p2[1] * precision)}`
+  return k1 < k2 ? `${k1}|${k2}` : `${k2}|${k1}`
+}
 const SQRT3_2 = SQRT3 / 2
 
 // Grid-to-page transformations for each grid type
@@ -94,11 +102,7 @@ function generateHexGrid(minX, maxX, minY, maxY) {
         const p1 = toPage(gx + dx1, gy + dy1)
         const p2 = toPage(gx + dx2, gy + dy2)
 
-        // Create unique key for edge (rounded to avoid floating point issues)
-        const key = [
-          Math.round(p1[0] * 1000), Math.round(p1[1] * 1000),
-          Math.round(p2[0] * 1000), Math.round(p2[1] * 1000)
-        ].sort((a, b) => a - b).join(',')
+        const key = makeEdgeKey(p1, p2)
 
         if (!edgeSet.has(key)) {
           edgeSet.add(key)
@@ -241,11 +245,7 @@ function generateKiteGrid(minX, maxX, minY, maxY) {
           const p1 = toPage(cx + dx1, cy + dy1)
           const p2 = toPage(cx + dx2, cy + dy2)
 
-          // Create unique key for edge deduplication
-          const key = [
-            Math.round(p1[0] * 1000), Math.round(p1[1] * 1000),
-            Math.round(p2[0] * 1000), Math.round(p2[1] * 1000)
-          ].sort((a, b) => a - b).join(',')
+          const key = makeEdgeKey(p1, p2)
 
           if (!edgeSet.has(key)) {
             edgeSet.add(key)
@@ -310,10 +310,7 @@ function generateAboloGrid(minX, maxX, minY, maxY) {
 
       // Add all edges (spokes and boundary)
       for (const [p1, p2] of [...spokes, ...edges]) {
-        const key = [
-          Math.round(p1[0] * 1000), Math.round(p1[1] * 1000),
-          Math.round(p2[0] * 1000), Math.round(p2[1] * 1000)
-        ].sort((a, b) => a - b).join(',')
+        const key = makeEdgeKey(p1, p2)
 
         if (!edgeSet.has(key)) {
           edgeSet.add(key)
@@ -372,10 +369,7 @@ function generateTrihexGrid(minX, maxX, minY, maxY) {
           const p1 = toPage(gx + dx1, gy + dy1)
           const p2 = toPage(gx + dx2, gy + dy2)
 
-          const key = [
-            Math.round(p1[0] * 1000), Math.round(p1[1] * 1000),
-            Math.round(p2[0] * 1000), Math.round(p2[1] * 1000)
-          ].sort((a, b) => a - b).join(',')
+          const key = makeEdgeKey(p1, p2)
 
           if (!edgeSet.has(key)) {
             edgeSet.add(key)
@@ -431,10 +425,7 @@ function generateOctasquareGrid(minX, maxX, minY, maxY) {
         const p1 = vertexToPage(gx * 2 + dx1, gy * 2 + dy1)
         const p2 = vertexToPage(gx * 2 + dx2, gy * 2 + dy2)
 
-        const key = [
-          Math.round(p1[0] * 10000), Math.round(p1[1] * 10000),
-          Math.round(p2[0] * 10000), Math.round(p2[1] * 10000)
-        ].sort((a, b) => a - b).join(',')
+        const key = makeEdgeKey(p1, p2, 10000)
 
         if (!edgeSet.has(key)) {
           edgeSet.add(key)
@@ -517,10 +508,7 @@ function generateDrafterGrid(minX, maxX, minY, maxY) {
           const px1 = toPage(gx * scale + dx1 * scale / 6, gy * scale + dy1 * scale / 6)
           const px2 = toPage(gx * scale + dx2 * scale / 6, gy * scale + dy2 * scale / 6)
 
-          const key = [
-            Math.round(px1[0] * 1000), Math.round(px1[1] * 1000),
-            Math.round(px2[0] * 1000), Math.round(px2[1] * 1000)
-          ].sort((a, b) => a - b).join(',')
+          const key = makeEdgeKey(px1, px2)
 
           if (!edgeSet.has(key)) {
             edgeSet.add(key)
@@ -589,10 +577,7 @@ function generateHalfcairoGrid(minX, maxX, minY, maxY) {
         const p1 = vertexToPage(xc + dx1, yc + dy1)
         const p2 = vertexToPage(xc + dx2, yc + dy2)
 
-        const key = [
-          Math.round(p1[0] * 1000), Math.round(p1[1] * 1000),
-          Math.round(p2[0] * 1000), Math.round(p2[1] * 1000)
-        ].sort((a, b) => a - b).join(',')
+        const key = makeEdgeKey(p1, p2)
 
         if (!edgeSet.has(key)) {
           edgeSet.add(key)
