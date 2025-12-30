@@ -260,15 +260,12 @@ function generateKiteGrid(minX, maxX, minY, maxY) {
 }
 
 // Generate grid lines for abolo grid (polyabolos - right triangles)
-// The abolo grid consists of diamonds, each divided into 4 right triangles.
-// Following the C++ implementation in src/abologrid.h:
-// - Grid cells are at integer coordinates (x, y)
-// - Each 2x2 block of cells forms a diamond structure
-// - Each cell contains one right triangle
-// - Triangle vertices are defined in vertex coordinates (2x the grid coordinates)
+// The abolo grid is a square grid with alternating diagonals.
+// Each unit square has one diagonal, alternating between / and \ based on position.
+// This creates the diamond tiling pattern that polyabolos are built on.
 function generateAboloGrid(minX, maxX, minY, maxY) {
   const lines = []
-  const padding = 4
+  const padding = 2
 
   // Grid coordinates are integers
   const gMinX = Math.floor(minX) - padding
@@ -278,54 +275,34 @@ function generateAboloGrid(minX, maxX, minY, maxY) {
 
   const edgeSet = new Set()
 
-  // Determine tile type from grid coordinates (from C++ getTileType)
-  const getTileType = (x, y) => {
-    if (x % 2 === 0) {
-      return y % 2 === 0 ? 'UR' : 'LR'
-    } else {
-      return y % 2 === 0 ? 'UL' : 'LL'
-    }
-  }
+  // For each unit square in the grid
+  for (let i = gMinX; i < gMaxX; i++) {
+    for (let j = gMinY; j < gMaxY; j++) {
+      // Square corners
+      const bl = [i, j]           // bottom-left
+      const br = [i + 1, j]       // bottom-right
+      const tl = [i, j + 1]       // top-left
+      const tr = [i + 1, j + 1]   // top-right
 
-  // Triangle vertices relative to cell center (in vertex coordinates)
-  // From C++ abologrid.h lines 238-252
-  const triangleVertices = {
-    'UR': [[1, 1], [1, -3], [-3, 1]],
-    'UL': [[-1, 1], [3, 1], [-1, -3]],
-    'LL': [[-1, -1], [-1, 3], [3, -1]],
-    'LR': [[1, -1], [-3, -1], [1, 3]]
-  }
+      // Square boundaries (4 edges)
+      const squareEdges = [
+        [bl, br],  // bottom
+        [br, tr],  // right
+        [tr, tl],  // top
+        [tl, bl],  // left
+      ]
 
-  // Convert vertex coords to grid coords (from C++ vertexToGrid)
-  const vertexToGrid = (vx, vy) => [vx / 2.0, vy / 2.0]
+      // Diagonal - alternates based on (i + j) parity
+      // When (i + j) is even: / diagonal (bottom-left to top-right)
+      // When (i + j) is odd: \ diagonal (top-left to bottom-right)
+      const diagonal = (i + j) % 2 === 0 ? [bl, tr] : [tl, br]
 
-  // For each cell in the grid
-  for (let cellX = gMinX; cellX <= gMaxX; cellX++) {
-    for (let cellY = gMinY; cellY <= gMaxY; cellY++) {
-      const tileType = getTileType(cellX, cellY)
-      const vertsVC = triangleVertices[tileType]
-
-      // Get vertex center (from C++ getVertexCentre: return p + p)
-      const centerVX = 2 * cellX
-      const centerVY = 2 * cellY
-
-      // Compute absolute vertex positions in grid coords
-      const vertsGC = []
-      for (const [dx, dy] of vertsVC) {
-        const [gx, gy] = vertexToGrid(centerVX + dx, centerVY + dy)
-        vertsGC.push([gx, gy])
-      }
-
-      // Add edges between consecutive vertices (triangle edges)
-      for (let i = 0; i < vertsGC.length; i++) {
-        const p1 = vertsGC[i]
-        const p2 = vertsGC[(i + 1) % vertsGC.length]
-
-        const key = makeEdgeKey(p1, p2)
-
+      // Add all edges (square boundaries + diagonal)
+      for (const edge of [...squareEdges, diagonal]) {
+        const key = makeEdgeKey(edge[0], edge[1])
         if (!edgeSet.has(key)) {
           edgeSet.add(key)
-          lines.push([p1, p2])
+          lines.push(edge)
         }
       }
     }
