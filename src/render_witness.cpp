@@ -11,6 +11,7 @@
 #include "heesch.h"
 #include "tileio.h"
 #include "boundary.h"
+#include "periodic.h"
 
 // Render witness data for a polyform to JSON format.
 //
@@ -213,6 +214,8 @@ int processShape(const vector<pair<typename grid::coord_t, typename grid::coord_
 	size_t hh = 0;
 	bool hasHolesPatch = false;
 	bool tilesIsohedrally = false;
+	bool tilesPeriodically = false;  // For anisohedral tilers
+	bool inconclusive = false;
 
 	if (!solver.isSurroundable()) {
 		cerr << "Shape is not surroundable at all (Hc = 0)" << endl;
@@ -253,13 +256,41 @@ int processShape(const vector<pair<typename grid::coord_t, typename grid::coord_
 			}
 		}
 
-		if (connectedPatch.empty() && !tilesIsohedrally) {
+		// Check if we hit maxLevel without finding a failure or detecting isohedral tiling
+		// This means the result is inconclusive
+		if (!tilesIsohedrally && solver.getLevel() > maxLevel) {
+			cerr << "Reached max level " << maxLevel << " without failure - checking for periodic tiling..." << endl;
+
+			// Try the PeriodicSolver as a last-ditch check for anisohedral tilers
+			PeriodicSolver<grid> per {shape, 16, 16};
+			vector<xform_t> per_solution;
+			if (per.solve(&per_solution)) {
+				cerr << "Shape tiles periodically (anisohedral) - infinite Heesch number!" << endl;
+				tilesPeriodically = true;
+				// Convert periodic solution to patch format for the witness
+				connectedPatch.clear();
+				for (const auto& T : per_solution) {
+					connectedPatch.push_back(make_pair(0, T));
+				}
+			} else {
+				cerr << "Result is INCONCLUSIVE - Heesch >= " << hc << " (hit max level " << maxLevel << ")" << endl;
+				inconclusive = true;
+			}
+		}
+
+		if (connectedPatch.empty() && !tilesIsohedrally && !tilesPeriodically) {
 			connectedPatch.push_back(make_pair(0, xform_t{}));
 		}
 	}
 
 	if (tilesIsohedrally) {
 		cerr << "Heesch number: infinity (tiles isohedrally)" << endl;
+	} else if (tilesPeriodically) {
+		cerr << "Heesch number: infinity (tiles periodically/anisohedrally)" << endl;
+		cerr << "Periodic witness has " << connectedPatch.size() << " tiles" << endl;
+	} else if (inconclusive) {
+		cerr << "Heesch number: >= " << hc << " (INCONCLUSIVE - hit max level)" << endl;
+		cerr << "Connected witness has " << connectedPatch.size() << " tiles" << endl;
 	} else {
 		cerr << "Heesch number (connected): " << hc << endl;
 		if (hasHolesPatch) {
@@ -302,16 +333,31 @@ int processShape(const vector<pair<typename grid::coord_t, typename grid::coord_
 	}
 	json << "  ],\n";
 
-	// Heesch numbers (null for isohedral tilers)
-	json << "  \"heesch_connected\": " << (tilesIsohedrally ? "null" : to_string(hc)) << ",\n";
-	json << "  \"heesch_with_holes\": " << (tilesIsohedrally ? "null" : (hasHolesPatch ? to_string(hh) : "null")) << ",\n";
+	// Whether the result hit the max level without definitive answer
+	bool tilesPlane = tilesIsohedrally || tilesPeriodically;
+	json << "  \"inconclusive\": " << (inconclusive ? "true" : "false") << ",\n";
 
-	// Tiles isohedrally flag
+	// Heesch numbers (null for plane tilers or inconclusive)
+	if (tilesPlane) {
+		json << "  \"heesch_connected\": null,\n";
+		json << "  \"heesch_with_holes\": null,\n";
+	} else if (inconclusive) {
+		// For inconclusive, report the minimum known Heesch number
+		json << "  \"heesch_connected\": " << hc << ",\n";
+		json << "  \"heesch_with_holes\": " << (hasHolesPatch ? to_string(hh) : "null") << ",\n";
+	} else {
+		json << "  \"heesch_connected\": " << hc << ",\n";
+		json << "  \"heesch_with_holes\": " << (hasHolesPatch ? to_string(hh) : "null") << ",\n";
+	}
+
+	// Tiling classification flags
 	json << "  \"tiles_isohedrally\": " << (tilesIsohedrally ? "true" : "false") << ",\n";
+	json << "  \"tiles_periodically\": " << (tilesPeriodically ? "true" : "false") << ",\n";
 
-	// Connected witness
+	// Connected witness (or periodic witness for plane tilers)
 	json << "  \"witness_connected\": ";
-	if (tilesIsohedrally) {
+	if (tilesIsohedrally && !tilesPeriodically) {
+		// Isohedral tilers don't need a witness (any single tile suffices)
 		json << "null";
 	} else {
 		writePatchJson<grid>(json, connectedPatch, "  ");
@@ -320,7 +366,7 @@ int processShape(const vector<pair<typename grid::coord_t, typename grid::coord_
 
 	// Holes witness (or null)
 	json << "  \"witness_with_holes\": ";
-	if (!tilesIsohedrally && hasHolesPatch && hh > hc) {
+	if (!tilesPlane && !inconclusive && hasHolesPatch && hh > hc) {
 		writePatchJson<grid>(json, holesPatch, "  ");
 	} else {
 		json << "null";

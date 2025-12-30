@@ -71,7 +71,12 @@
   color: #888;
 }
 
-.witness-info .heesch.isohedral {
+.witness-info .heesch.plane-tiler {
   color: #667eea;
+  font-weight: 600;
+}
+
+.witness-info .heesch.inconclusive {
+  color: #e67e22;
   font-weight: 600;
 }

@@ -195,8 +195,12 @@ def find_heesch_polyforms(grid_type: str, num_cells: int, min_heesch: int = 1) -
             if data.get("cell_count") != num_cells:
                 continue
 
-            # Skip isohedral tilers (infinite Heesch)
-            if data.get("tiles_isohedrally", False):
+            # Skip plane tilers (infinite Heesch)
+            if data.get("tiles_isohedrally", False) or data.get("tiles_periodically", False):
+                continue
+
+            # Skip inconclusive results (Heesch number is not definitive)
+            if data.get("inconclusive", False):
                 continue
 
             # Check Heesch number
@@ -519,9 +523,21 @@ def search_for_heesch(grid_type: str, num_cells: int, max_to_store: int = 3) -> 
         try:
             data = run_render_witness(grid_type, coords)
 
-            # Skip if tiles isohedrally (infinite Heesch)
+            # Skip if tiles the plane (infinite Heesch)
             if data.get("tiles_isohedrally", False):
                 print(f"  Polyform {checked} tiles isohedrally - skipping (infinite Heesch)")
+                skipped += 1
+                continue
+
+            if data.get("tiles_periodically", False):
+                print(f"  Polyform {checked} tiles periodically - skipping (infinite Heesch)")
+                skipped += 1
+                continue
+
+            # Skip inconclusive results (Heesch number not definitive)
+            if data.get("inconclusive", False):
+                hc = data.get("heesch_connected", 0)
+                print(f"  Polyform {checked} is inconclusive (Heesch >= {hc}) - skipping")
                 skipped += 1
                 continue
 
@@ -551,7 +567,7 @@ def search_for_heesch(grid_type: str, num_cells: int, max_to_store: int = 3) -> 
     print(f"  Total time: {elapsed:.1f}s ({elapsed/60:.1f} min)")
     print(f"  Polyforms checked: {checked}/{total_polyforms}")
     print(f"  Average rate: {rate:.2f} polyforms/sec")
-    print(f"  Skipped (isohedral): {skipped}")
+    print(f"  Skipped (plane tilers/inconclusive): {skipped}")
     print(f"  Errors: {errors}")
     print(f"  Found with Heesch >= 1: {len(top_results)}")
     print(f"=" * 60)
@@ -581,7 +597,7 @@ def search_for_heesch(grid_type: str, num_cells: int, max_to_store: int = 3) -> 
         "grid_type": grid_type,
         "num_cells": num_cells,
         "polyforms_checked": checked,
-        "polyforms_skipped_isohedral": skipped,
+        "polyforms_skipped": skipped,  # Includes isohedral, periodic, and inconclusive
         "errors": errors,
         "results_found": len(results),
         "stored": stored,
@@ -692,7 +708,7 @@ def main(
     if result.get("status") == "completed":
         print(f"\nSearch completed!")
         print(f"  Polyforms checked: {result.get('polyforms_checked', 0)}")
-        print(f"  Skipped (isohedral): {result.get('polyforms_skipped_isohedral', 0)}")
+        print(f"  Skipped (plane tilers/inconclusive): {result.get('polyforms_skipped', result.get('polyforms_skipped_isohedral', 0))}")
         print(f"  Results found: {result.get('results_found', 0)}")
         print(f"  Elapsed time: {result.get('elapsed_seconds', 0):.1f}s")
     elif result.get("status") == "cached":

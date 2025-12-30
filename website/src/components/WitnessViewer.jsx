@@ -33,8 +33,18 @@ function WitnessViewer({ witness, onClose }) {
           <h2>{witness.cell_count}-{witness.grid_type}</h2>
           <code className="hash">{witness.hash}</code>
           {witness.tiles_isohedrally && (
-            <div className="isohedral-badge" title="This polyform tiles the plane isohedrally">
+            <div className="plane-tiler-badge isohedral" title="This polyform tiles the plane isohedrally">
               ♾️ Isohedral Tiler
+            </div>
+          )}
+          {witness.tiles_periodically && (
+            <div className="plane-tiler-badge periodic" title="This polyform tiles the plane periodically (anisohedral)">
+              ♾️ Periodic Tiler
+            </div>
+          )}
+          {witness.inconclusive && (
+            <div className="inconclusive-badge" title="Inconclusive - hit max search level">
+              ⚠️ Inconclusive
             </div>
           )}
         </div>
@@ -51,7 +61,10 @@ function WitnessViewer({ witness, onClose }) {
             <div className="info-row">
               <label>Heesch number:</label>
               <span className="value">
-                {witness.tiles_isohedrally ? '∞ (tiles isohedrally)' : heeschValue}
+                {witness.tiles_isohedrally ? '∞ (tiles isohedrally)' :
+                 witness.tiles_periodically ? '∞ (tiles periodically)' :
+                 witness.inconclusive ? `≥${heeschValue} (inconclusive)` :
+                 heeschValue}
               </span>
             </div>
 
