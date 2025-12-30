@@ -455,10 +455,19 @@ def search_for_heesch(grid_type: str, num_cells: int, max_to_store: int = 3) -> 
     print(f"Starting Heesch search for {num_cells}-cell {grid_type} polyforms...")
     start_time = time.time()
 
+    # Create JSONL file for logging all findings
+    grid_abbrev = GRID_ABBREVS[grid_type]
+    jsonl_filename = f"search_results_{num_cells}{grid_abbrev}.jsonl"
+    jsonl_path = os.path.join(VOLUME_PATH, jsonl_filename)
+    print(f"Logging all findings to: {jsonl_path}")
+
     # Generate all polyforms
     polyforms = run_gen(grid_type, num_cells, free=True)
 
     if not polyforms:
+        # Create empty JSONL file
+        with open(jsonl_path, 'w') as f:
+            pass
         return {
             "status": "completed",
             "grid_type": grid_type,
@@ -466,7 +475,8 @@ def search_for_heesch(grid_type: str, num_cells: int, max_to_store: int = 3) -> 
             "polyforms_checked": 0,
             "results_found": 0,
             "stored": [],
-            "elapsed_seconds": time.time() - start_time
+            "elapsed_seconds": time.time() - start_time,
+            "jsonl_path": jsonl_path
         }
 
     gen_elapsed = time.time() - start_time
@@ -483,82 +493,94 @@ def search_for_heesch(grid_type: str, num_cells: int, max_to_store: int = 3) -> 
     total_polyforms = len(polyforms)
     last_log_time = start_time
 
-    for coords in polyforms:
-        checked += 1
-        current_time = time.time()
+    with open(jsonl_path, 'w') as jsonl_file:
+        for coords in polyforms:
+            checked += 1
+            current_time = time.time()
 
-        # Log progress every 10 polyforms or every 30 seconds
-        if checked % 10 == 0 or (current_time - last_log_time) >= 30:
-            elapsed = current_time - start_time
-            remaining = total_polyforms - checked
+            # Log progress every 10 polyforms or every 30 seconds
+            if checked % 10 == 0 or (current_time - last_log_time) >= 30:
+                elapsed = current_time - start_time
+                remaining = total_polyforms - checked
 
-            # Calculate ETA based on average time per polyform
-            if checked > 0:
-                avg_time_per_polyform = elapsed / checked
-                eta_seconds = remaining * avg_time_per_polyform
+                # Calculate ETA based on average time per polyform
+                if checked > 0:
+                    avg_time_per_polyform = elapsed / checked
+                    eta_seconds = remaining * avg_time_per_polyform
 
-                # Format ETA nicely
-                if eta_seconds < 60:
-                    eta_str = f"{eta_seconds:.0f}s"
-                elif eta_seconds < 3600:
-                    eta_str = f"{eta_seconds/60:.1f}min"
-                else:
-                    eta_str = f"{eta_seconds/3600:.1f}hr"
+                    # Format ETA nicely
+                    if eta_seconds < 60:
+                        eta_str = f"{eta_seconds:.0f}s"
+                    elif eta_seconds < 3600:
+                        eta_str = f"{eta_seconds/60:.1f}min"
+                    else:
+                        eta_str = f"{eta_seconds/3600:.1f}hr"
 
-                # Format elapsed time
-                if elapsed < 60:
-                    elapsed_str = f"{elapsed:.0f}s"
-                elif elapsed < 3600:
-                    elapsed_str = f"{elapsed/60:.1f}min"
-                else:
-                    elapsed_str = f"{elapsed/3600:.1f}hr"
+                    # Format elapsed time
+                    if elapsed < 60:
+                        elapsed_str = f"{elapsed:.0f}s"
+                    elif elapsed < 3600:
+                        elapsed_str = f"{elapsed/60:.1f}min"
+                    else:
+                        elapsed_str = f"{elapsed/3600:.1f}hr"
 
-                pct = (checked / total_polyforms) * 100
-                print(f"Progress: {checked}/{total_polyforms} ({pct:.1f}%) | "
-                      f"Elapsed: {elapsed_str} | ETA: {eta_str} | "
-                      f"Found: {len(top_results)} with Heesch >= 1")
+                    pct = (checked / total_polyforms) * 100
+                    print(f"Progress: {checked}/{total_polyforms} ({pct:.1f}%) | "
+                          f"Elapsed: {elapsed_str} | ETA: {eta_str} | "
+                          f"Found: {len(top_results)} with Heesch >= 1")
 
-            last_log_time = current_time
+                last_log_time = current_time
 
-        try:
-            data = run_render_witness(grid_type, coords)
+            try:
+                data = run_render_witness(grid_type, coords)
 
-            # Skip if tiles the plane (infinite Heesch)
-            if data.get("tiles_isohedrally", False):
-                print(f"  Polyform {checked} tiles isohedrally - skipping (infinite Heesch)")
-                skipped += 1
+                # Skip if tiles the plane (infinite Heesch)
+                if data.get("tiles_isohedrally", False):
+                    print(f"  Polyform {checked} tiles isohedrally - skipping (infinite Heesch)")
+                    skipped += 1
+                    continue
+
+                if data.get("tiles_periodically", False):
+                    print(f"  Polyform {checked} tiles periodically - skipping (infinite Heesch)")
+                    skipped += 1
+                    continue
+
+                # Skip inconclusive results (Heesch number not definitive)
+                if data.get("inconclusive", False):
+                    hc = data.get("heesch_connected", 0)
+                    print(f"  Polyform {checked} is inconclusive (Heesch >= {hc}) - skipping")
+                    skipped += 1
+                    continue
+
+                hc = data.get("heesch_connected")
+
+                # Log all definitive results to JSONL (including Heesch = 0)
+                if hc is not None:
+                    coords_str = coords_to_string(coords)
+                    jsonl_entry = {
+                        "grid_type": grid_type,
+                        "coordinates": coords_str,
+                        "heesch": hc
+                    }
+                    jsonl_file.write(json.dumps(jsonl_entry) + '\n')
+                    jsonl_file.flush()  # Ensure it's written immediately
+
+                # Skip if Heesch is 0 or None
+                if hc is None or hc == 0:
+                    continue
+
+                print(f"  Found polyform with Heesch = {hc}!")
+
+                # Add to results, keeping only top max_to_store
+                if len(top_results) < max_to_store:
+                    heapq.heappush(top_results, (hc, data))
+                elif hc > top_results[0][0]:
+                    heapq.heapreplace(top_results, (hc, data))
+
+            except Exception as e:
+                print(f"  Error processing polyform {checked}: {e}")
+                errors += 1
                 continue
-
-            if data.get("tiles_periodically", False):
-                print(f"  Polyform {checked} tiles periodically - skipping (infinite Heesch)")
-                skipped += 1
-                continue
-
-            # Skip inconclusive results (Heesch number not definitive)
-            if data.get("inconclusive", False):
-                hc = data.get("heesch_connected", 0)
-                print(f"  Polyform {checked} is inconclusive (Heesch >= {hc}) - skipping")
-                skipped += 1
-                continue
-
-            hc = data.get("heesch_connected")
-
-            # Skip if Heesch is 0 or None
-            if hc is None or hc == 0:
-                continue
-
-            print(f"  Found polyform with Heesch = {hc}!")
-
-            # Add to results, keeping only top max_to_store
-            if len(top_results) < max_to_store:
-                heapq.heappush(top_results, (hc, data))
-            elif hc > top_results[0][0]:
-                heapq.heapreplace(top_results, (hc, data))
-
-        except Exception as e:
-            print(f"  Error processing polyform {checked}: {e}")
-            errors += 1
-            continue
 
     elapsed = time.time() - start_time
     rate = checked / elapsed if elapsed > 0 else 0
@@ -592,6 +614,9 @@ def search_for_heesch(grid_type: str, num_cells: int, max_to_store: int = 3) -> 
         })
         print(f"Stored: {file_path} (Heesch = {hc})")
 
+    # JSONL file is automatically closed by the with statement
+    print(f"JSONL summary saved to: {jsonl_path}")
+
     return {
         "status": "completed",
         "grid_type": grid_type,
@@ -602,7 +627,8 @@ def search_for_heesch(grid_type: str, num_cells: int, max_to_store: int = 3) -> 
         "results_found": len(results),
         "stored": stored,
         "elapsed_seconds": elapsed,
-        "results": [data for _, data in results]
+        "results": [data for _, data in results],
+        "jsonl_path": jsonl_path
     }
 
 

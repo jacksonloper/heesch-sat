@@ -209,7 +209,7 @@ int processShape(const vector<pair<typename grid::coord_t, typename grid::coord_
 	TileInfo<grid> info;
 	info.setShape(shape);
 
-	size_t maxLevel = 5;
+	size_t maxLevel = 7;
 	HeeschSolver<grid> solver{shape, ALL, true};
 	solver.setCheckIsohedral(true);
 	solver.setCheckPeriodic(true);
