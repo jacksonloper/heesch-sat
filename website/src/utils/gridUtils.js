@@ -116,7 +116,7 @@ function generateIamondGrid(minX, maxX, minY, maxY) {
   const lines = []
   const toPage = gridToPage.iamond
   const toGrid = pageToGrid.iamond
-  const padding = 2
+  const padding = 6
 
   // Convert page bounds to approximate grid bounds
   const corners = [
@@ -131,57 +131,44 @@ function generateIamondGrid(minX, maxX, minY, maxY) {
   const gMinY = Math.floor(Math.min(...corners.map(c => c[1]))) - padding
   const gMaxY = Math.ceil(Math.max(...corners.map(c => c[1]))) + padding
 
-  const edgeSet = new Set()
+  // The iamond triangular grid has vertices at specific positions.
+  // Looking at the C++ code:
+  // - Black (up) triangle at (0,0) has vertices: (-1, 2), (-1, -1), (2, -1)
+  // - Grey (down) triangle at (1,-2) has vertices: (2, -1), (-1, -1), (2, -4)
+  //
+  // The triangle edges lie on these lines:
+  // 1. Vertical lines: x ≡ 2 (mod 3), i.e., x = ..., -1, 2, 5, 8, ...
+  // 2. Horizontal lines: y ≡ 2 (mod 3), i.e., y = ..., -1, 2, 5, 8, ...
+  // 3. Diagonal lines: (x + y) ≡ 1 (mod 3), i.e., x+y = ..., -2, 1, 4, 7, ...
 
-  // Triangular grid with up and down triangles
-  // Grid spacing is 3 in iamond coords
-  for (let gx = gMinX * 3; gx <= gMaxX * 3; gx += 3) {
-    for (let gy = gMinY * 3; gy <= gMaxY * 3; gy += 3) {
-      // Up triangle vertices
-      const upVerts = [
-        [gx - 1, gy + 2], [gx - 1, gy - 1], [gx + 2, gy - 1]
-      ]
+  // Helper to normalize modulo
+  const mod3 = (n) => ((n % 3) + 3) % 3
 
-      // Down triangle vertices (offset by 1, -2 in x)
-      const downVerts = [
-        [gx + 1 + 1, gy + 1], [gx + 1 - 2, gy + 1], [gx + 1 + 1, gy - 2]
-      ]
+  // Lines of constant x (vertical in grid, 60° in page) where x ≡ 2 (mod 3)
+  for (let gx = gMinX; gx <= gMaxX; gx++) {
+    if (mod3(gx) === 2) {
+      const p1 = toPage(gx, gMinY)
+      const p2 = toPage(gx, gMaxY)
+      lines.push([p1, p2])
+    }
+  }
 
-      // Add edges for up triangle
-      for (let i = 0; i < 3; i++) {
-        const v1 = upVerts[i]
-        const v2 = upVerts[(i + 1) % 3]
-        const p1 = toPage(v1[0], v1[1])
-        const p2 = toPage(v2[0], v2[1])
+  // Lines of constant y (horizontal in grid, horizontal in page) where y ≡ 2 (mod 3)
+  for (let gy = gMinY; gy <= gMaxY; gy++) {
+    if (mod3(gy) === 2) {
+      const p1 = toPage(gMinX, gy)
+      const p2 = toPage(gMaxX, gy)
+      lines.push([p1, p2])
+    }
+  }
 
-        const key = [
-          Math.round(p1[0] * 1000), Math.round(p1[1] * 1000),
-          Math.round(p2[0] * 1000), Math.round(p2[1] * 1000)
-        ].sort((a, b) => a - b).join(',')
-
-        if (!edgeSet.has(key)) {
-          edgeSet.add(key)
-          lines.push([p1, p2])
-        }
-      }
-
-      // Add edges for down triangle
-      for (let i = 0; i < 3; i++) {
-        const v1 = downVerts[i]
-        const v2 = downVerts[(i + 1) % 3]
-        const p1 = toPage(v1[0], v1[1])
-        const p2 = toPage(v2[0], v2[1])
-
-        const key = [
-          Math.round(p1[0] * 1000), Math.round(p1[1] * 1000),
-          Math.round(p2[0] * 1000), Math.round(p2[1] * 1000)
-        ].sort((a, b) => a - b).join(',')
-
-        if (!edgeSet.has(key)) {
-          edgeSet.add(key)
-          lines.push([p1, p2])
-        }
-      }
+  // Lines of constant (x + y) where (x + y) ≡ 1 (mod 3)
+  for (let d = gMinX + gMinY; d <= gMaxX + gMaxY; d++) {
+    if (mod3(d) === 1) {
+      // Line where x + y = d
+      const p1 = toPage(gMinX, d - gMinX)
+      const p2 = toPage(gMaxX, d - gMaxX)
+      lines.push([p1, p2])
     }
   }
 
