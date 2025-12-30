@@ -456,8 +456,7 @@ def search_for_heesch(grid_type: str, num_cells: int, max_to_store: int = 3) -> 
     start_time = time.time()
 
     # Create JSONL file for logging all findings
-    grid_abbrev = GRID_ABBREVS[grid_type]
-    jsonl_filename = f"search_results_{num_cells}{grid_abbrev}.jsonl"
+    jsonl_filename = f"{num_cells}{grid_type}.jsonl"
     jsonl_path = os.path.join(VOLUME_PATH, jsonl_filename)
     print(f"Logging all findings to: {jsonl_path}")
 
@@ -533,39 +532,59 @@ def search_for_heesch(grid_type: str, num_cells: int, max_to_store: int = 3) -> 
 
             try:
                 data = run_render_witness(grid_type, coords)
+                coords_str = coords_to_string(coords)
 
-                # Skip if tiles the plane (infinite Heesch)
+                # Log to JSONL based on result type
                 if data.get("tiles_isohedrally", False):
                     print(f"  Polyform {checked} tiles isohedrally - skipping (infinite Heesch)")
+                    jsonl_entry = {
+                        "grid_type": grid_type,
+                        "coordinates": coords_str,
+                        "heesch": None
+                    }
+                    jsonl_file.write(json.dumps(jsonl_entry) + '\n')
+                    jsonl_file.flush()
                     skipped += 1
                     continue
 
                 if data.get("tiles_periodically", False):
                     print(f"  Polyform {checked} tiles periodically - skipping (infinite Heesch)")
+                    jsonl_entry = {
+                        "grid_type": grid_type,
+                        "coordinates": coords_str,
+                        "heesch": None
+                    }
+                    jsonl_file.write(json.dumps(jsonl_entry) + '\n')
+                    jsonl_file.flush()
                     skipped += 1
                     continue
 
-                # Skip inconclusive results (Heesch number not definitive)
+                # Log inconclusive results with lower bound
                 if data.get("inconclusive", False):
                     hc = data.get("heesch_connected", 0)
                     print(f"  Polyform {checked} is inconclusive (Heesch >= {hc}) - skipping")
-                    skipped += 1
-                    continue
-
-                hc = data.get("heesch_connected")
-
-                # Log all definitive results to JSONL (including Heesch = 0)
-                if hc is not None:
-                    coords_str = coords_to_string(coords)
                     jsonl_entry = {
                         "grid_type": grid_type,
                         "coordinates": coords_str,
                         "heesch": hc
                     }
                     jsonl_file.write(json.dumps(jsonl_entry) + '\n')
-                    jsonl_file.flush()  # Ensure it's written immediately
+                    jsonl_file.flush()
+                    skipped += 1
+                    continue
 
-                # Skip if Heesch is 0 or None
+                hc = data.get("heesch_connected")
+
+                # Log all definitive results to JSONL (including Heesch = 0)
+                jsonl_entry = {
+                    "grid_type": grid_type,
+                    "coordinates": coords_str,
+                    "heesch": hc
+                }
+                jsonl_file.write(json.dumps(jsonl_entry) + '\n')
+                jsonl_file.flush()
+
+                # Skip if Heesch is 0 or None for storage purposes
                 if hc is None or hc == 0:
                     continue
 
@@ -579,6 +598,15 @@ def search_for_heesch(grid_type: str, num_cells: int, max_to_store: int = 3) -> 
 
             except Exception as e:
                 print(f"  Error processing polyform {checked}: {e}")
+                # Log errors with null Heesch
+                coords_str = coords_to_string(coords)
+                jsonl_entry = {
+                    "grid_type": grid_type,
+                    "coordinates": coords_str,
+                    "heesch": None
+                }
+                jsonl_file.write(json.dumps(jsonl_entry) + '\n')
+                jsonl_file.flush()
                 errors += 1
                 continue
 

@@ -45,10 +45,12 @@ function App() {
     setRefreshing(true)
     setError(null)
     try {
-      const polyforms = await loadFromSource(
+      const response = await loadFromSource(
         'https://hloper--heesch-renderings-web.modal.run/list_full',
         false
       )
+      // Modal API returns {polyforms: [...]} not [...]
+      const polyforms = response.polyforms || []
       setWitnesses(polyforms)
     } catch (err) {
       setError(err.message)
