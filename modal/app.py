@@ -61,8 +61,10 @@ image = (
     .pip_install("fastapi", "psutil")
     .add_local_dir("../src", "/app/src", copy=True)
     .run_commands(
-        "cd /app/src && make render_witness gen",
-        "cp /app/src/render_witness /app/src/gen /usr/local/bin/",
+        "cd /app/src && make sat gen",
+        "cp /app/src/sat /app/src/gen /usr/local/bin/",
+        "chmod +x /app/src/render_witness.py",
+        "ln -s /app/src/render_witness.py /usr/local/bin/render_witness",
     )
 )
 
@@ -248,115 +250,103 @@ def list_all_polyforms(grid_type_filter: Optional[str] = None) -> List[dict]:
 
 
 def run_render_witness(grid_type: str, coords: List[Tuple[int, int]]) -> dict:
-    """Run the render_witness binary to compute Heesch data."""
-    import tempfile
+    """Run the render_witness Python script to compute Heesch data."""
     import threading
     import time
     import psutil
 
-    # Build command: render_witness -gridtype x1 y1 x2 y2 ...
-    cmd = ["render_witness", f"-{grid_type}"]
+    # Build command: render_witness.py -gridtype x1 y1 x2 y2 ...
+    cmd = ["python3", "/app/src/render_witness.py", f"-{grid_type}"]
     for x, y in coords:
         cmd.extend([str(x), str(y)])
 
     print(f"Starting render_witness for {len(coords)} {grid_type} cells...")
     print(f"Command: {' '.join(cmd)}")
 
-    # Create temp directory for output (render_witness writes to ../renderings/)
-    with tempfile.TemporaryDirectory() as tmpdir:
-        # Create the renderings subdir that render_witness expects
-        renderings_dir = os.path.join(tmpdir, "renderings")
-        os.makedirs(renderings_dir, exist_ok=True)
+    start_time = time.time()
 
-        # Run from a subdir so ../renderings points to our temp dir
-        workdir = os.path.join(tmpdir, "work")
-        os.makedirs(workdir, exist_ok=True)
+    # Use Popen to get PID for monitoring
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
 
-        start_time = time.time()
+    print(f"render_witness started with PID {proc.pid}")
 
-        # Use Popen to get PID for monitoring
-        proc = subprocess.Popen(
-            cmd,
-            cwd=workdir,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
+    # Resource monitoring for the specific process
+    stop_monitor = threading.Event()
+    process_handle = None
+    try:
+        process_handle = psutil.Process(proc.pid)
+    except psutil.NoSuchProcess:
+        print("Warning: Could not attach to process for monitoring")
 
-        print(f"render_witness started with PID {proc.pid}")
+    def monitor_process():
+        """Log CPU and RAM usage of the render_witness process every 10 seconds."""
+        log_start = time.time()
+        while not stop_monitor.is_set():
+            elapsed = time.time() - log_start
+            try:
+                if process_handle and process_handle.is_running():
+                    # Get process-specific stats
+                    cpu_pct = process_handle.cpu_percent(interval=1)
+                    mem_info = process_handle.memory_info()
+                    mem_rss_mb = mem_info.rss / (1024 * 1024)
+                    mem_vms_mb = mem_info.vms / (1024 * 1024)
 
-        # Resource monitoring for the specific process
-        stop_monitor = threading.Event()
-        process_handle = None
-        try:
-            process_handle = psutil.Process(proc.pid)
-        except psutil.NoSuchProcess:
-            print("Warning: Could not attach to process for monitoring")
+                    # Also check for children (sat subprocess)
+                    children = process_handle.children(recursive=True)
+                    child_info = ""
+                    if children:
+                        child_pids = [c.pid for c in children]
+                        child_cpu = sum(c.cpu_percent() for c in children)
+                        child_mem = sum(c.memory_info().rss for c in children) / (1024 * 1024)
+                        child_info = f" | Children: {len(children)} PIDs {child_pids}, CPU: {child_cpu:.1f}%, RSS: {child_mem:.0f}MB"
 
-        def monitor_process():
-            """Log CPU and RAM usage of the render_witness process every 10 seconds."""
-            log_start = time.time()
-            while not stop_monitor.is_set():
-                elapsed = time.time() - log_start
-                try:
-                    if process_handle and process_handle.is_running():
-                        # Get process-specific stats
-                        cpu_pct = process_handle.cpu_percent(interval=1)
-                        mem_info = process_handle.memory_info()
-                        mem_rss_mb = mem_info.rss / (1024 * 1024)
-                        mem_vms_mb = mem_info.vms / (1024 * 1024)
-
-                        # Also check for children (render_witness might spawn subprocesses)
-                        children = process_handle.children(recursive=True)
-                        child_info = ""
-                        if children:
-                            child_pids = [c.pid for c in children]
-                            child_cpu = sum(c.cpu_percent() for c in children)
-                            child_mem = sum(c.memory_info().rss for c in children) / (1024 * 1024)
-                            child_info = f" | Children: {len(children)} PIDs {child_pids}, CPU: {child_cpu:.1f}%, RSS: {child_mem:.0f}MB"
-
-                        print(f"[{elapsed:.0f}s] PID {proc.pid} - CPU: {cpu_pct:.1f}% | RSS: {mem_rss_mb:.0f}MB | VMS: {mem_vms_mb:.0f}MB{child_info}")
-                    else:
-                        print(f"[{elapsed:.0f}s] Process {proc.pid} no longer running")
-                        break
-                except psutil.NoSuchProcess:
-                    print(f"[{elapsed:.0f}s] Process {proc.pid} terminated")
+                    print(f"[{elapsed:.0f}s] PID {proc.pid} - CPU: {cpu_pct:.1f}% | RSS: {mem_rss_mb:.0f}MB | VMS: {mem_vms_mb:.0f}MB{child_info}")
+                else:
+                    print(f"[{elapsed:.0f}s] Process {proc.pid} no longer running")
                     break
-                except Exception as e:
-                    print(f"[{elapsed:.0f}s] Monitoring error: {e}")
+            except psutil.NoSuchProcess:
+                print(f"[{elapsed:.0f}s] Process {proc.pid} terminated")
+                break
+            except Exception as e:
+                print(f"[{elapsed:.0f}s] Monitoring error: {e}")
 
-                # Wait ~10 seconds between logs (accounting for cpu_percent interval)
-                stop_monitor.wait(timeout=9)
+            # Wait ~10 seconds between logs (accounting for cpu_percent interval)
+            stop_monitor.wait(timeout=9)
 
-        # Start resource monitor thread
-        monitor_thread = threading.Thread(target=monitor_process, daemon=True)
-        monitor_thread.start()
+    # Start resource monitor thread
+    monitor_thread = threading.Thread(target=monitor_process, daemon=True)
+    monitor_thread.start()
 
-        try:
-            # Wait for process with timeout
-            stdout, stderr = proc.communicate(timeout=300)
-            elapsed = time.time() - start_time
-            print(f"render_witness completed in {elapsed:.1f}s with return code {proc.returncode}")
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            stdout, stderr = proc.communicate()
-            raise RuntimeError("render_witness timed out after 5 minutes")
-        finally:
-            # Stop the monitor thread
-            stop_monitor.set()
-            monitor_thread.join(timeout=2)
+    try:
+        # Wait for process with timeout
+        stdout, stderr = proc.communicate(timeout=300)
+        elapsed = time.time() - start_time
+        print(f"render_witness completed in {elapsed:.1f}s with return code {proc.returncode}")
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        stdout, stderr = proc.communicate()
+        raise RuntimeError("render_witness timed out after 5 minutes")
+    finally:
+        # Stop the monitor thread
+        stop_monitor.set()
+        monitor_thread.join(timeout=2)
 
-        if proc.returncode != 0:
-            raise RuntimeError(f"render_witness failed: {stderr}")
+    if proc.returncode != 0:
+        raise RuntimeError(f"render_witness failed: {stderr}")
 
-        # Find the output JSON file
-        json_files = [f for f in os.listdir(renderings_dir) if f.endswith('.json')]
-        if not json_files:
-            raise RuntimeError(f"No output JSON found. stderr: {stderr}")
+    # Parse JSON from stdout (Python script prints JSON to stdout)
+    if not stdout.strip():
+        raise RuntimeError(f"No output from render_witness. stderr: {stderr}")
 
-        json_path = os.path.join(renderings_dir, json_files[0])
-        with open(json_path, 'r') as f:
-            return json.load(f)
+    try:
+        return json.loads(stdout)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"Invalid JSON from render_witness: {e}. Output: {stdout[:500]}")
 
 
 def run_gen(grid_type: str, num_cells: int, free: bool = True) -> List[List[Tuple[int, int]]]:

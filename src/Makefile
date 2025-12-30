@@ -20,10 +20,10 @@ else
     CAIROLIBS = $(shell pkg-config --libs cairo 2>/dev/null)
 endif
 
-OBJECTS = sat.o viz.o surrounds.o gen.o report.o render_witness.o
+OBJECTS = sat.o viz.o surrounds.o gen.o report.o
 DEPENDS = ${OBJECTS:.o=.d}
 
-all: sat viz gen surrounds report render_witness
+all: sat viz gen surrounds report
 
 sat: sat.o
 	$(CXX) -o sat sat.o $(LIBS)
@@ -40,8 +40,7 @@ surrounds: surrounds.o
 report: report.o
 	$(CXX) -o report report.o $(LIBS)
 
-render_witness: render_witness.o
-	$(CXX) -o render_witness render_witness.o $(LIBS)
+# render_witness is now a Python script (render_witness.py)
 
 # tile: tile.o
 #	$(CXX) $(LIBS) -o tile tile.o
@@ -51,4 +50,4 @@ render_witness: render_witness.o
 .PHONY: clean
 
 clean:
-	rm -f ${OBJECTS} ${DEPENDS} sat viz gen surrounds report render_witness
+	rm -f ${OBJECTS} ${DEPENDS} sat viz gen surrounds report
