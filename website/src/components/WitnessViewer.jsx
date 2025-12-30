@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import './WitnessViewer.css'
+import { generateGridLines } from '../utils/gridUtils'
 
 // Color palette for corona levels
 const CORONA_COLORS = [
@@ -15,6 +16,7 @@ const CORONA_COLORS = [
 
 function WitnessViewer({ witness, onClose }) {
   const [showHoles, setShowHoles] = useState(false)
+  const [showGrid, setShowGrid] = useState(false)
 
   const activeWitness = showHoles && witness.witness_with_holes
     ? witness.witness_with_holes
@@ -54,6 +56,7 @@ function WitnessViewer({ witness, onClose }) {
             <WitnessSVG
               witness={witness}
               patch={activeWitness}
+              showGrid={showGrid}
             />
           </div>
 
@@ -96,6 +99,17 @@ function WitnessViewer({ witness, onClose }) {
               </div>
             )}
 
+            <div className="toggle-row">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={showGrid}
+                  onChange={e => setShowGrid(e.target.checked)}
+                />
+                Show underlying grid
+              </label>
+            </div>
+
             <div className="corona-legend">
               <h4>Corona levels:</h4>
               {[...new Set(activeWitness?.map(t => t.corona) || [])].sort((a, b) => a - b).map(level => (
@@ -115,8 +129,8 @@ function WitnessViewer({ witness, onClose }) {
   )
 }
 
-function WitnessSVG({ witness, patch }) {
-  const { tile_boundary } = witness
+function WitnessSVG({ witness, patch, showGrid }) {
+  const { tile_boundary, grid_type } = witness
 
   if (!tile_boundary || tile_boundary.length === 0 || !patch) {
     return <div className="no-svg">No boundary data</div>
@@ -168,6 +182,11 @@ function WitnessSVG({ witness, patch }) {
   const getSvgTransform = ([a, b, c, d, e, f]) =>
     `matrix(${a} ${d} ${b} ${e} ${c} ${f})`
 
+  // Generate grid lines if showGrid is enabled
+  const gridLines = showGrid
+    ? generateGridLines(grid_type, minX - padding, maxX + padding, minY - padding, maxY + padding)
+    : []
+
   return (
     <svg
       viewBox={`${minX - padding} ${minY - padding} ${width} ${height}`}
@@ -176,6 +195,24 @@ function WitnessSVG({ witness, patch }) {
       <defs>
         <path id={`tile-${witness.hash}`} d={tilePath} />
       </defs>
+
+      {/* Grid lines (behind tiles) */}
+      {showGrid && (
+        <g className="grid-lines">
+          {gridLines.map(([[x1, y1], [x2, y2]], i) => (
+            <line
+              key={i}
+              x1={x1}
+              y1={y1}
+              x2={x2}
+              y2={y2}
+              stroke="#ccc"
+              strokeWidth={0.02}
+              strokeLinecap="round"
+            />
+          ))}
+        </g>
+      )}
 
       {patch.map((tile, i) => (
         <use
