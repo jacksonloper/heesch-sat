@@ -63,8 +63,24 @@
   border-radius: 4px;
 }
 
-.isohedral-badge {
+.plane-tiler-badge {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.plane-tiler-badge.periodic {
+  background: linear-gradient(135deg, #2ecc71 0%, #1abc9c 100%);
+}
+
+.inconclusive-badge {
+  background: linear-gradient(135deg, #e67e22 0%, #d35400 100%);
   color: white;
   padding: 0.25rem 0.75rem;
   border-radius: 20px;

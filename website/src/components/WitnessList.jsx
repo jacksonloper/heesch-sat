@@ -28,8 +28,10 @@ function WitnessList({ witnesses, selected, onSelect }) {
                 <TileThumbnail witness={witness} />
                 <div className="witness-info">
                   <span className="cell-count">{witness.cell_count} cells</span>
-                  {witness.tiles_isohedrally ? (
-                    <span className="heesch isohedral" title="Tiles the plane isohedrally">H=∞</span>
+                  {(witness.tiles_isohedrally || witness.tiles_periodically) ? (
+                    <span className="heesch plane-tiler" title={witness.tiles_isohedrally ? "Tiles the plane isohedrally" : "Tiles the plane periodically"}>H=∞</span>
+                  ) : witness.inconclusive ? (
+                    <span className="heesch inconclusive" title="Inconclusive - hit max search level">H≥{witness.heesch_connected}</span>
                   ) : (
                     <span className="heesch">H={witness.heesch_connected}</span>
                   )}
