@@ -260,56 +260,67 @@ function generateKiteGrid(minX, maxX, minY, maxY) {
 }
 
 // Generate grid lines for abolo grid (polyabolos - right triangles)
-// The abolo grid consists of diamonds (squares rotated 45°), each divided into 4 right triangles.
-// Each diamond has:
-// - A center vertex where all 4 triangles meet
-// - 4 outer vertices (top, right, bottom, left)
-// - 4 internal lines from center to each outer vertex
-// - 4 boundary edges forming the diamond outline
+// The abolo grid consists of diamonds, each divided into 4 right triangles.
+// Following the C++ implementation in src/abologrid.h:
+// - Grid cells are at integer coordinates (x, y)
+// - Each 2x2 block of cells forms a diamond structure
+// - Each cell contains one right triangle
+// - Triangle vertices are defined in vertex coordinates (2x the grid coordinates)
 function generateAboloGrid(minX, maxX, minY, maxY) {
   const lines = []
-  const padding = 3
+  const padding = 4
 
-  // Diamond centers are at (0.5 + 2k, 0.5 + 2m) in page coords
-  // The 4 outer vertices are 2 units away along the diagonal directions
-  const gMinX = Math.floor((minX - 0.5) / 2) - padding
-  const gMaxX = Math.ceil((maxX - 0.5) / 2) + padding
-  const gMinY = Math.floor((minY - 0.5) / 2) - padding
-  const gMaxY = Math.ceil((maxY - 0.5) / 2) + padding
+  // Grid coordinates are integers
+  const gMinX = Math.floor(minX) - padding
+  const gMaxX = Math.ceil(maxX) + padding
+  const gMinY = Math.floor(minY) - padding
+  const gMaxY = Math.ceil(maxY) + padding
 
   const edgeSet = new Set()
 
-  // For each diamond center at (0.5 + 2i, 0.5 + 2j)
-  for (let i = gMinX; i <= gMaxX; i++) {
-    for (let j = gMinY; j <= gMaxY; j++) {
-      const cx = 0.5 + 2 * i
-      const cy = 0.5 + 2 * j
+  // Determine tile type from grid coordinates (from C++ getTileType)
+  const getTileType = (x, y) => {
+    if (x % 2 === 0) {
+      return y % 2 === 0 ? 'UR' : 'LR'
+    } else {
+      return y % 2 === 0 ? 'UL' : 'LL'
+    }
+  }
 
-      // Outer vertices of the diamond (2 units from center along axes)
-      const top = [cx, cy + 2]
-      const right = [cx + 2, cy]
-      const bottom = [cx, cy - 2]
-      const left = [cx - 2, cy]
-      const center = [cx, cy]
+  // Triangle vertices relative to cell center (in vertex coordinates)
+  // From C++ abologrid.h lines 238-252
+  const triangleVertices = {
+    'UR': [[1, 1], [1, -3], [-3, 1]],
+    'UL': [[-1, 1], [3, 1], [-1, -3]],
+    'LL': [[-1, -1], [-1, 3], [3, -1]],
+    'LR': [[1, -1], [-3, -1], [1, 3]]
+  }
 
-      // 4 internal spokes from center to each outer vertex
-      const spokes = [
-        [center, top],
-        [center, right],
-        [center, bottom],
-        [center, left],
-      ]
+  // Convert vertex coords to grid coords (from C++ vertexToGrid)
+  const vertexToGrid = (vx, vy) => [vx / 2.0, vy / 2.0]
 
-      // 4 boundary edges of the diamond
-      const edges = [
-        [top, right],
-        [right, bottom],
-        [bottom, left],
-        [left, top],
-      ]
+  // For each cell in the grid
+  for (let cellX = gMinX; cellX <= gMaxX; cellX++) {
+    for (let cellY = gMinY; cellY <= gMaxY; cellY++) {
+      const tileType = getTileType(cellX, cellY)
+      const vertsVC = triangleVertices[tileType]
 
-      // Add all edges (spokes and boundary)
-      for (const [p1, p2] of [...spokes, ...edges]) {
+      // Get vertex center (from C++ getVertexCentre: return p + p)
+      const centerVX = 2 * cellX
+      const centerVY = 2 * cellY
+
+      // Compute absolute vertex positions in grid coords
+      const vertsGC = []
+      for (const [dx, dy] of vertsVC) {
+        const [gx, gy] = vertexToGrid(centerVX + dx, centerVY + dy)
+        vertsGC.push([gx, gy])
+      }
+
+      // Add edges between consecutive vertices (triangle edges)
+      for (let i = 0; i < vertsGC.length; i++) {
+        const p1 = vertsGC[i]
+        const p2 = vertsGC[(i + 1) % vertsGC.length]
+
         const key = makeEdgeKey(p1, p2)
 
         if (!edgeSet.has(key)) {
