@@ -19,7 +19,7 @@ on:
           - halfcairo
           - bevelhex
       coords:
-        description: 'Coordinates in format: 0,0_1,0_0,1 (underscore separated x,y pairs)'
+        description: 'Coordinates: "0,0_1,0_0,1" OR "-3,2 -3,4 -2,2" OR "-3 2 -3 4 -2 2" (space-separated pairs)'
         required: true
         type: string
       force:
@@ -37,12 +37,59 @@ jobs:
         run: |
           echo "Computing polyform..."
           echo "Grid type: ${{ inputs.grid_type }}"
-          echo "Coordinates: ${{ inputs.coords }}"
+          echo "Raw coordinates: ${{ inputs.coords }}"
           echo "Force: ${{ inputs.force }}"
+
+          # Normalize coordinates to underscore format (x,y_x,y_x,y)
+          # Accepts:
+          #   - Underscore format: 0,0_1,0_0,1
+          #   - Comma-space format: -3,2 -3,4 -2,2
+          #   - Pure space format: -3 2 -3 4 -2 2 (pairs of numbers)
+          normalize_coords() {
+            local input="$1"
+
+            # If already in underscore format, return as-is
+            if [[ "$input" == *"_"* ]]; then
+              echo "$input"
+              return
+            fi
+
+            # If comma-space format (e.g., "-3,2 -3,4 -2,2"), convert spaces to underscores
+            if [[ "$input" == *","* ]]; then
+              echo "$input" | tr ' ' '_'
+              return
+            fi
+
+            # Pure space format: pairs of numbers like "-3 2 -3 4 -2 2"
+            # Convert to "-3,2_-3,4_-2,2"
+            local numbers=($input)
+            local count=${#numbers[@]}
+
+            if (( count % 2 != 0 )); then
+              echo "Error: odd number of coordinates" >&2
+              return 1
+            fi
+
+            local result=""
+            for ((i=0; i<count; i+=2)); do
+              if [ -n "$result" ]; then
+                result="${result}_"
+              fi
+              result="${result}${numbers[i]},${numbers[i+1]}"
+            done
+            echo "$result"
+          }
+
+          COORDS=$(normalize_coords "${{ inputs.coords }}")
+          if [ $? -ne 0 ]; then
+            echo "::error::Failed to parse coordinates"
+            exit 1
+          fi
+          echo "Normalized coordinates: ${COORDS}"
 
           # Build the API URL
           API_URL="https://hloper--heesch-renderings-web.modal.run/compute"
-          PARAMS="grid_type=${{ inputs.grid_type }}&coords=${{ inputs.coords }}"
+          PARAMS="grid_type=${{ inputs.grid_type }}&coords=${COORDS}"
           if [ "${{ inputs.force }}" = "true" ]; then
             PARAMS="${PARAMS}&force=true"
           fi
@@ -69,11 +116,13 @@ jobs:
           fi
 
           echo "::notice::Computation status: ${STATUS}"
+          echo "coords=${COORDS}" >> $GITHUB_OUTPUT
 
       - name: Summary
         run: |
           echo "## Polyform Computation Result" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- **Grid Type:** ${{ inputs.grid_type }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Coordinates:** ${{ inputs.coords }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Input Coordinates:** \`${{ inputs.coords }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Normalized Coordinates:** \`${{ steps.compute.outputs.coords }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Status:** ${{ steps.compute.outputs.status }}" >> $GITHUB_STEP_SUMMARY
