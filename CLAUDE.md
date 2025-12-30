@@ -108,10 +108,10 @@ mkdir -p /etc/python3.11
 
 ### Step 3: Authenticate with Modal
 
-The credentials are in the `MODAL_COMMAND` environment variable:
+The credentials are in the `MODAL_COMMAND` environment variable. Extract and run it:
 ```bash
-# Extract and run the token command
-modal token set --token-id ak-qZUfljMpgcph8MVQ39KUT4 --token-secret as-0wkMnSHtZo1xHbZ6EhViD5
+# The MODAL_COMMAND env var contains the full token set command
+eval "$MODAL_COMMAND"
 ```
 
 ### Step 4: Deploy
