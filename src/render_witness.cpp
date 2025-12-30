@@ -203,86 +203,43 @@ int processShape(const vector<pair<typename grid::coord_t, typename grid::coord_
 	// Get the tile boundary segments
 	auto boundarySegments = getTileBoundarySegments(shape);
 
-	// Compute the witnesses
+	// Compute the witnesses using the modern solver.solve() pattern
 	cerr << "Computing witnesses..." << endl;
+
+	TileInfo<grid> info;
+	info.setShape(shape);
+
+	size_t maxLevel = 5;
 	HeeschSolver<grid> solver{shape, ALL, true};
 	solver.setCheckIsohedral(true);
+	solver.setCheckPeriodic(true);
+	solver.setCheckHoleCoronas(true);
+	solver.solve(true, maxLevel, info);
 
+	// Extract results from TileInfo
 	patch_t connectedPatch;
 	patch_t holesPatch;
-	size_t hc = 0;
-	size_t hh = 0;
-	bool hasHolesPatch = false;
-	bool tilesIsohedrally = false;
-	bool tilesPeriodically = false;  // For anisohedral tilers
-	bool inconclusive = false;
+	size_t hc = info.getHeeschConnected();
+	size_t hh = info.getHeeschHoles();
+	bool hasHolesPatch = (hh > hc) && (info.numPatches() > 1);
+	bool tilesIsohedrally = (info.getRecordType() == TileInfo<grid>::ISOHEDRAL);
+	bool tilesPeriodically = (info.getRecordType() == TileInfo<grid>::ANISOHEDRAL);
+	bool inconclusive = (info.getRecordType() == TileInfo<grid>::INCONCLUSIVE);
 
-	if (!solver.isSurroundable()) {
-		cerr << "Shape is not surroundable at all (Hc = 0)" << endl;
-		connectedPatch.push_back(make_pair(0, xform_t{}));
-	} else {
-		size_t maxLevel = 5;
-		solver.increaseLevel();
-
-		while (solver.getLevel() <= maxLevel) {
-			bool hasHoles;
-			patch_t curPatch;
-
-			if (solver.hasCorona(true, hasHoles, curPatch)) {
-				if (!hasHoles) {
-					hc = solver.getLevel();
-					connectedPatch = curPatch;
-					cerr << "Found hole-free corona at level " << hc << endl;
-					solver.increaseLevel();
-				} else {
-					hh = solver.getLevel();
-					holesPatch = curPatch;
-					hasHolesPatch = true;
-					cerr << "Found corona with holes at level " << hh << endl;
-
-					if (connectedPatch.empty()) {
-						// No hole-free patch found yet, use this one for connected too
-						connectedPatch = curPatch;
-					}
-					break;
-				}
-			} else if (solver.tilesIsohedrally()) {
-				// Shape tiles the plane isohedrally - infinite Heesch number
-				cerr << "Shape tiles isohedrally - infinite Heesch number!" << endl;
-				tilesIsohedrally = true;
-				break;
-			} else {
-				break;
-			}
-		}
-
-		// Check if we hit maxLevel without finding a failure or detecting isohedral tiling
-		// This means the result is inconclusive
-		if (!tilesIsohedrally && solver.getLevel() > maxLevel) {
-			cerr << "Reached max level " << maxLevel << " without failure - checking for periodic tiling..." << endl;
-
-			// Try the PeriodicSolver as a last-ditch check for anisohedral tilers
-			PeriodicSolver<grid> per {shape, 16, 16};
-			vector<xform_t> per_solution;
-			if (per.solve(&per_solution)) {
-				cerr << "Shape tiles periodically (anisohedral) - infinite Heesch number!" << endl;
-				tilesPeriodically = true;
-				// Convert periodic solution to patch format for the witness
-				connectedPatch.clear();
-				for (const auto& T : per_solution) {
-					connectedPatch.push_back(make_pair(0, T));
-				}
-			} else {
-				cerr << "Result is INCONCLUSIVE - Heesch >= " << hc << " (hit max level " << maxLevel << ")" << endl;
-				inconclusive = true;
-			}
-		}
-
-		if (connectedPatch.empty() && !tilesIsohedrally && !tilesPeriodically) {
-			connectedPatch.push_back(make_pair(0, xform_t{}));
-		}
+	// Extract patches from TileInfo
+	if (info.numPatches() > 0) {
+		connectedPatch = info.getPatch(0);
+	}
+	if (hasHolesPatch) {
+		holesPatch = info.getPatch(1);
 	}
 
+	// For non-tilers with hc=0 and no patch, create a trivial patch
+	if (connectedPatch.empty() && !tilesIsohedrally && !tilesPeriodically) {
+		connectedPatch.push_back(make_pair(0, xform_t{}));
+	}
+
+	// Log results
 	if (tilesIsohedrally) {
 		cerr << "Heesch number: infinity (tiles isohedrally)" << endl;
 	} else if (tilesPeriodically) {
