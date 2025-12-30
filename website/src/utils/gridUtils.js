@@ -176,11 +176,18 @@ function generateIamondGrid(minX, maxX, minY, maxY) {
 }
 
 // Generate grid lines for kite grid (polykites)
+// The kite grid consists of "hexagons" where each hexagon is divided into 6 kites.
+// Each "hexagon" is actually a 12-sided figure (dodecagon) with:
+// - A center vertex at (0,0)
+// - 6 "corner" vertices where adjacent kites meet: (1,1), (-1,2), (-2,1), (-1,-1), (1,-2), (2,-1)
+// - 6 "midpoint" vertices on the outer boundary: (2,0), (0,2), (-2,2), (-2,0), (0,-2), (2,-2)
+// - 6 internal spokes from center to corner vertices
+// - 12 outer boundary edges
 function generateKiteGrid(minX, maxX, minY, maxY) {
   const lines = []
   const toPage = gridToPage.kite
   const toGrid = pageToGrid.kite
-  const padding = 3
+  const padding = 4
 
   // Convert page bounds to approximate grid bounds
   const corners = [
@@ -197,28 +204,44 @@ function generateKiteGrid(minX, maxX, minY, maxY) {
 
   const edgeSet = new Set()
 
-  // Kite vertices for each of 6 orientations around a hexagon center
+  // Kite vertices for all 6 orientations (relative to hex center at 0,0)
+  // Each kite: center -> corner1 -> midpoint -> corner2 -> back to center
   const kiteVerts = [
-    [[0, 0], [2, -1], [2, 0], [1, 1]], // E
-    [[0, 0], [1, 1], [0, 2], [-1, 2]], // NE
-    [[0, 0], [-1, 2], [-2, 2], [-2, 1]], // NW
-    [[0, 0], [-2, 1], [-2, 0], [-1, -1]], // W
-    [[0, 0], [-1, -1], [0, -2], [1, -2]], // SW
-    [[0, 0], [1, -2], [2, -2], [2, -1]], // SE
+    [[0, 0], [2, -1], [2, 0], [1, 1]],     // E
+    [[0, 0], [1, 1], [0, 2], [-1, 2]],     // NE
+    [[0, 0], [-1, 2], [-2, 2], [-2, 1]],   // NW
+    [[0, 0], [-2, 1], [-2, 0], [-1, -1]],  // W
+    [[0, 0], [-1, -1], [0, -2], [1, -2]],  // SW
+    [[0, 0], [1, -2], [2, -2], [2, -1]],   // SE
   ]
 
-  // Iterate over hex grid positions (period is 2 in each direction)
-  for (let gx = gMinX; gx <= gMaxX; gx += 2) {
-    for (let gy = gMinY; gy <= gMaxY; gy += 2) {
-      // Draw all 6 kites around this center
+  // Translation vectors for hex centers (from C++ code: translationV1 {4, -2}, translationV2 {2, 2})
+  const t1 = [4, -2]
+  const t2 = [2, 2]
+
+  // Iterate over hex centers using the translation lattice
+  // We need to cover the bounding box, so iterate over i,j such that i*t1 + j*t2 covers the area
+  const maxIter = Math.ceil((gMaxX - gMinX + gMaxY - gMinY) / 2) + padding
+
+  for (let i = -maxIter; i <= maxIter; i++) {
+    for (let j = -maxIter; j <= maxIter; j++) {
+      // Compute hex center position: center = i * t1 + j * t2
+      const cx = i * t1[0] + j * t2[0]
+      const cy = i * t1[1] + j * t2[1]
+
+      // Skip if outside bounds
+      if (cx < gMinX - 4 || cx > gMaxX + 4 || cy < gMinY - 4 || cy > gMaxY + 4) continue
+
+      // Draw all 6 kites around this hex center
       for (const verts of kiteVerts) {
-        for (let i = 0; i < 4; i++) {
-          const [dx1, dy1] = verts[i]
-          const [dx2, dy2] = verts[(i + 1) % 4]
+        for (let k = 0; k < 4; k++) {
+          const [dx1, dy1] = verts[k]
+          const [dx2, dy2] = verts[(k + 1) % 4]
 
-          const p1 = toPage(gx + dx1, gy + dy1)
-          const p2 = toPage(gx + dx2, gy + dy2)
+          const p1 = toPage(cx + dx1, cy + dy1)
+          const p2 = toPage(cx + dx2, cy + dy2)
 
+          // Create unique key for edge deduplication
           const key = [
             Math.round(p1[0] * 1000), Math.round(p1[1] * 1000),
             Math.round(p2[0] * 1000), Math.round(p2[1] * 1000)
