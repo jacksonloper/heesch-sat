@@ -14,3 +14,4 @@ src/tile
 src/report
 src/render_witness
 renderings/*.json
+_codeql_detected_source_root
