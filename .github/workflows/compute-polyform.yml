@@ -27,10 +27,16 @@ on:
         required: false
         type: boolean
         default: false
+      timeout:
+        description: 'Computation timeout in seconds (default: 300, max: 14400 = 4 hours)'
+        required: false
+        type: number
+        default: 300
 
 jobs:
   compute:
     runs-on: ubuntu-latest
+    timeout-minutes: 250
     steps:
       - name: Compute polyform via Modal API
         id: compute
@@ -39,6 +45,7 @@ jobs:
           echo "Grid type: ${{ inputs.grid_type }}"
           echo "Raw coordinates: ${{ inputs.coords }}"
           echo "Force: ${{ inputs.force }}"
+          echo "Timeout: ${{ inputs.timeout }} seconds"
 
           # Normalize coordinates to underscore format (x,y_x,y_x,y)
           # Accepts:
@@ -89,15 +96,16 @@ jobs:
 
           # Build the API URL
           API_URL="https://hloper--heesch-renderings-web.modal.run/compute"
-          PARAMS="grid_type=${{ inputs.grid_type }}&coords=${COORDS}"
+          PARAMS="grid_type=${{ inputs.grid_type }}&coords=${COORDS}&timeout=${{ inputs.timeout }}"
           if [ "${{ inputs.force }}" = "true" ]; then
             PARAMS="${PARAMS}&force=true"
           fi
 
           echo "Calling: ${API_URL}?${PARAMS}"
 
-          # Make the API call
-          RESPONSE=$(curl -s -w "\n%{http_code}" "${API_URL}?${PARAMS}")
+          # Make the API call with extended timeout for long computations
+          CURL_TIMEOUT=$(( ${{ inputs.timeout }} + 60 ))
+          RESPONSE=$(curl -s -w "\n%{http_code}" --max-time ${CURL_TIMEOUT} "${API_URL}?${PARAMS}")
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
           BODY=$(echo "$RESPONSE" | sed '$d')
 
@@ -125,4 +133,5 @@ jobs:
           echo "- **Grid Type:** ${{ inputs.grid_type }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Input Coordinates:** \`${{ inputs.coords }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Normalized Coordinates:** \`${{ steps.compute.outputs.coords }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Timeout:** ${{ inputs.timeout }} seconds" >> $GITHUB_STEP_SUMMARY
           echo "- **Status:** ${{ steps.compute.outputs.status }}" >> $GITHUB_STEP_SUMMARY

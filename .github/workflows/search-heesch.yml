@@ -32,6 +32,16 @@ on:
         required: false
         type: boolean
         default: false
+      batch_size:
+        description: 'Number of polyforms to process in each batch (default: 10)'
+        required: false
+        type: number
+        default: 10
+      json_nup:
+        description: 'Minimum Heesch number to include in results (default: 1)'
+        required: false
+        type: number
+        default: 1
 
 jobs:
   search:
@@ -46,10 +56,13 @@ jobs:
           echo "Number of cells: ${{ inputs.num_cells }}"
           echo "Max results: ${{ inputs.max_results }}"
           echo "Force: ${{ inputs.force }}"
+          echo "Batch size: ${{ inputs.batch_size }}"
+          echo "json_nup: ${{ inputs.json_nup }}"
 
           # Build the API URL
           API_URL="https://hloper--heesch-renderings-web.modal.run/search_heesch"
           PARAMS="grid_type=${{ inputs.grid_type }}&num_cells=${{ inputs.num_cells }}&max_results=${{ inputs.max_results }}&wait=false"
+          PARAMS="${PARAMS}&batch_size=${{ inputs.batch_size }}&json_nup=${{ inputs.json_nup }}"
           if [ "${{ inputs.force }}" = "true" ]; then
             PARAMS="${PARAMS}&force=true"
           fi
@@ -72,7 +85,7 @@ jobs:
             # Results already exist
             RESULTS_FOUND=$(echo "$BODY" | jq -r '.results_found // 0')
             echo "results_found=${RESULTS_FOUND}" >> $GITHUB_OUTPUT
-            echo "::notice::Found ${RESULTS_FOUND} cached polyforms with Heesch >= 1"
+            echo "::notice::Found ${RESULTS_FOUND} cached polyforms with Heesch >= ${{ inputs.json_nup }}"
           elif [ "$STATUS" = "spawned" ]; then
             # Job launched successfully
             FUNCTION_CALL_ID=$(echo "$BODY" | jq -r '.function_call_id // "unknown"')
@@ -93,10 +106,12 @@ jobs:
           echo "- **Grid Type:** ${{ inputs.grid_type }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Number of Cells:** ${{ inputs.num_cells }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Max Results:** ${{ inputs.max_results }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Batch Size:** ${{ inputs.batch_size }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **json_nup:** ${{ inputs.json_nup }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Status:** ${{ steps.search.outputs.status }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           if [ "${{ steps.search.outputs.status }}" = "cached" ]; then
-            echo "Results were already cached. Found **${{ steps.search.outputs.results_found }}** polyforms with Heesch >= 1." >> $GITHUB_STEP_SUMMARY
+            echo "Results were already cached. Found **${{ steps.search.outputs.results_found }}** polyforms with Heesch >= ${{ inputs.json_nup }}." >> $GITHUB_STEP_SUMMARY
           elif [ "${{ steps.search.outputs.status }}" = "spawned" ]; then
             echo "Search job launched on Modal. Results will be stored to the volume when complete." >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
