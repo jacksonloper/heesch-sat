@@ -513,8 +513,10 @@ int main(int argc, char **argv)
 			}
 
 			// Process this polyform
+			cerr << "Processing polyform " << (processed + 1) << " with " << coords.size() << " cells..." << endl;
 			ProcessResult result = dispatchToGridType<ProcessShapeBatchWrapper>(gt, coords, true);
 			++processed;
+			cerr << "  Done (heesch=" << result.heesch_connected << ", tiles_plane=" << result.tiles_plane << ")" << endl;
 
 			if (!result.success) {
 				cerr << "Error: Failed to process polyform on line " << lineNum << endl;
@@ -535,8 +537,9 @@ int main(int argc, char **argv)
 				}
 			}
 
-			// Output the JSON (one line)
+			// Output the JSON (one line) - use flush to ensure immediate output
 			cout << result.json << endl;
+			cout.flush();
 			++outputted;
 		}
 
