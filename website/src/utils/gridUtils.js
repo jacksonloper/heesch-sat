@@ -320,7 +320,7 @@ function generateTrihexGrid(minX, maxX, minY, maxY) {
   const lines = []
   const toPage = gridToPage.trihex
   const toGrid = pageToGrid.trihex
-  const padding = 3
+  const padding = 6
 
   const corners = [
     toGrid(minX, minY),
@@ -341,18 +341,15 @@ function generateTrihexGrid(minX, maxX, minY, maxY) {
     [-0.5, -0.5], [-1, 0.5], [-0.5, 1], [0.5, 0.5], [1, -0.5], [0.5, -1]
   ]
 
-  // Triangle vertices
-  const triRightVerts = [[-0.5, 0.5], [0.5, 0], [0, -0.5]]
-  const triLeftVerts = [[-0.5, 0], [0, 0.5], [0.5, -0.5]]
-
   // Period is (1,1) and (-1,2) in trihex grid
   for (let i = gMinX; i <= gMaxX; i++) {
     for (let j = gMinY; j <= gMaxY; j++) {
       const gx = i + j
       const gy = -i + 2 * j
 
-      // Check if this is a hexagon position
-      if ((gx - gy) % 3 === 0) {
+      // Draw hexagons at two of the three lattice classes for doubled density
+      const residue = ((gx - gy) % 3 + 3) % 3
+      if (residue === 0 || residue === 1) {
         // Draw hexagon
         for (let k = 0; k < 6; k++) {
           const [dx1, dy1] = hexVerts[k]
