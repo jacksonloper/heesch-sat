@@ -655,7 +655,7 @@ def search_for_heesch(
                     }
                     jsonl_file.write(json.dumps(jsonl_entry) + '\n')
 
-                    # Skip if Heesch is None (shouldn't happen with json_nup filter)
+                    # Skip if Heesch is None (can happen for tilers that pass the filter)
                     if hc is None:
                         continue
 
@@ -675,11 +675,11 @@ def search_for_heesch(
             except Exception as e:
                 print(f"  Error processing batch {batch_start}-{batch_end}: {e}")
                 # Fall back to single processing for this batch
+                # Note: We already incremented checked above, so we need to track
+                # that we're now processing the batch in single mode
                 for coords in batch:
-                    checked_single = False
                     try:
                         data = run_render_witness(grid_type, coords)
-                        checked_single = True
                         coords_str = coords_to_string(coords)
 
                         # Log to JSONL based on result type
@@ -714,6 +714,7 @@ def search_for_heesch(
 
                         # Skip if Heesch < json_nup
                         if hc is None or hc < json_nup:
+                            skipped += 1
                             continue
 
                         print(f"  Found polyform with Heesch = {hc}!")
@@ -733,9 +734,6 @@ def search_for_heesch(
                         }
                         jsonl_file.write(json.dumps(jsonl_entry) + '\n')
                         errors += 1
-
-                    if not checked_single:
-                        checked += 1
 
                 jsonl_file.flush()
 

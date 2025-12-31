@@ -521,8 +521,9 @@ int processBatch(int jsonNup)
 					++skipped;
 					continue;
 				}
-				// Skip if Heesch < jsonNup (unless inconclusive)
-				if (!result.inconclusive && result.heeschConnected < (size_t)jsonNup) {
+				// Skip if Heesch < jsonNup
+				// For inconclusive results, heeschConnected is the lower bound, so we check it too
+				if (result.heeschConnected < (size_t)jsonNup) {
 					cerr << "  Skipping (Heesch " << result.heeschConnected << " < " << jsonNup << ")" << endl;
 					++skipped;
 					continue;
