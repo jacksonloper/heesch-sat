@@ -192,6 +192,9 @@ struct ProcessResult {
 	size_t heeschConnected;
 	size_t heeschHoles;
 	string jsonContent;  // The JSON string (without trailing newline)
+	string hash;         // 8-char hex hash for filename
+	string gridTypeName; // Grid type name (e.g., "drafter")
+	size_t cellCount;    // Number of cells
 };
 
 // Write JSON output for a polyform to an output stream
@@ -210,9 +213,11 @@ ProcessResult processShapeToJson(const vector<pair<typename grid::coord_t, typen
 	result.inconclusive = false;
 	result.heeschConnected = 0;
 	result.heeschHoles = 0;
+	result.cellCount = coords.size();
+	result.gridTypeName = getGridTypeName(grid::grid_type);
 
 	size_t numCells = coords.size();
-	cerr << "Processing " << numCells << "-" << getGridTypeName(grid::grid_type) << endl;
+	cerr << "Processing " << numCells << "-" << result.gridTypeName << endl;
 
 	// Build the shape
 	Shape<grid> shape;
@@ -230,6 +235,7 @@ ProcessResult processShapeToJson(const vector<pair<typename grid::coord_t, typen
 	stringstream hashStr;
 	hashStr << hex << setfill('0') << setw(8) << (setHash & 0xFFFFFFFF);
 	string hashSuffix = hashStr.str();
+	result.hash = hashSuffix;
 
 	// Get the tile boundary segments
 	auto boundarySegments = getTileBoundarySegments(shape);
@@ -425,7 +431,7 @@ struct ProcessShapeWrapper
 void printUsage(const char *prog)
 {
 	cerr << "Usage: " << prog << " -grid x1 y1 x2 y2 ... xN yN" << endl;
-	cerr << "       " << prog << " -batch [-json_nup N] < input.txt" << endl;
+	cerr << "       " << prog << " -batch -in input.txt -out outdir [-json_nup N]" << endl;
 	cerr << endl;
 	cerr << "Single mode (default):" << endl;
 	cerr << "  Generates a JSON witness file for a single polyform." << endl;
@@ -435,36 +441,51 @@ void printUsage(const char *prog)
 	cerr << "  Output files are saved to ../renderings/ directory." << endl;
 	cerr << endl;
 	cerr << "Batch mode (-batch):" << endl;
-	cerr << "  Reads polyforms from stdin, one per line in format:" << endl;
+	cerr << "  Reads polyforms from input file, one per line in format:" << endl;
 	cerr << "    GRIDTYPE x1 y1 x2 y2 ... (e.g., 'H 0 0 1 0 0 1')" << endl;
 	cerr << "  Grid type codes: O=omino, H=hex, I=iamond, o=octasquare," << endl;
 	cerr << "                   T=trihex, A=abolo, D=drafter, K=kite," << endl;
 	cerr << "                   h=halfcairo, B=bevelhex" << endl;
-	cerr << "  Outputs one JSON object per line to stdout (JSONL format)." << endl;
+	cerr << "  Writes individual JSON files to output directory." << endl;
 	cerr << endl;
+	cerr << "  -in FILE:    Input file with polyforms (one per line)" << endl;
+	cerr << "  -out DIR:    Output directory for JSON files" << endl;
 	cerr << "  -json_nup N: Only output polyforms with Heesch >= N and < infinity." << endl;
 	cerr << "               Skips tilers (isohedral/periodic) and Heesch < N." << endl;
 }
 
-// Wrapper for batch mode processing
+// Wrapper for batch mode processing (uses pretty-printed JSON for file output)
 template<typename grid>
 struct ProcessShapeBatchWrapper
 {
 	ProcessResult operator()(const vector<pair<int16_t, int16_t>>& coords)
 	{
-		return processShapeToJson<grid>(coords, true);
+		return processShapeToJson<grid>(coords, false);
 	}
 };
 
-// Process a batch of polyforms from stdin
-int processBatch(int jsonNup)
+// Process a batch of polyforms from input file, writing JSON files to output directory
+int processBatch(const string& inputFile, const string& outputDir, int jsonNup)
 {
+	// Open input file
+	ifstream inFile(inputFile);
+	if (!inFile.is_open()) {
+		cerr << "Error: Cannot open input file: " << inputFile << endl;
+		return 1;
+	}
+
+	// Create output directory if it doesn't exist
+	filesystem::path outPath(outputDir);
+	if (!filesystem::exists(outPath)) {
+		filesystem::create_directories(outPath);
+	}
+
 	string line;
 	int processed = 0;
 	int output = 0;
 	int skipped = 0;
 
-	while (getline(cin, line)) {
+	while (getline(inFile, line)) {
 		// Skip empty lines
 		if (line.empty() || line.find_first_not_of(" \t\r\n") == string::npos) {
 			continue;
@@ -534,14 +555,23 @@ int processBatch(int jsonNup)
 				}
 			}
 
-			// Output the JSON line
-			cout << result.jsonContent << endl;
+			// Write JSON file: {cellCount}{gridType}_{hash}.json
+			string baseName = to_string(result.cellCount) + result.gridTypeName + "_" + result.hash;
+			filesystem::path jsonPath = outPath / (baseName + ".json");
+
+			ofstream jsonFile(jsonPath);
+			jsonFile << result.jsonContent << "\n";
+			jsonFile.close();
+
+			cerr << "  Written: " << jsonPath.string() << endl;
 			++output;
 
 		} catch (const exception& e) {
 			cerr << "Error processing polyform: " << e.what() << endl;
 		}
 	}
+
+	inFile.close();
 
 	cerr << "Batch processing complete: " << processed << " polyforms processed, "
 	     << output << " output, " << skipped << " skipped" << endl;
@@ -554,18 +584,29 @@ int main(int argc, char **argv)
 	// Check for batch mode
 	bool batchMode = false;
 	int jsonNup = -1;  // -1 means no filter
+	string inputFile;
+	string outputDir;
 
-	// Parse arguments to find -batch and -json_nup
+	// Parse arguments to find -batch, -in, -out, and -json_nup
 	for (int i = 1; i < argc; ++i) {
 		if (strcmp(argv[i], "-batch") == 0) {
 			batchMode = true;
+		} else if (strcmp(argv[i], "-in") == 0 && i + 1 < argc) {
+			inputFile = argv[++i];
+		} else if (strcmp(argv[i], "-out") == 0 && i + 1 < argc) {
+			outputDir = argv[++i];
 		} else if (strcmp(argv[i], "-json_nup") == 0 && i + 1 < argc) {
 			jsonNup = atoi(argv[++i]);
 		}
 	}
 
 	if (batchMode) {
-		return processBatch(jsonNup);
+		if (inputFile.empty() || outputDir.empty()) {
+			cerr << "Error: Batch mode requires -in and -out arguments" << endl;
+			printUsage(argv[0]);
+			return 1;
+		}
+		return processBatch(inputFile, outputDir, jsonNup);
 	}
 
 	// Single mode: original behavior

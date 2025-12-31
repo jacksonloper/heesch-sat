@@ -390,6 +390,7 @@ def run_render_witness_batch(
 
     Returns a list of polyform JSON data dicts.
     """
+    import tempfile
     import time
 
     if not polyforms:
@@ -398,68 +399,73 @@ def run_render_witness_batch(
     # Get grid type abbreviation for input format
     abbrev = GRID_ABBREVS.get(grid_type, 'O')
 
-    # Build input lines for batch mode
-    input_lines = []
-    for coords in polyforms:
-        coord_str = ' '.join(f"{x} {y}" for x, y in coords)
-        input_lines.append(f"{abbrev} {coord_str}")
-    input_text = '\n'.join(input_lines) + '\n'
+    # Create temp directory for input and output
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Write input file
+        input_file = os.path.join(tmpdir, "input.txt")
+        output_dir = os.path.join(tmpdir, "output")
 
-    # Build command
-    cmd = ["render_witness", "-batch"]
-    if json_nup is not None:
-        cmd.extend(["-json_nup", str(json_nup)])
+        with open(input_file, 'w') as f:
+            for coords in polyforms:
+                coord_str = ' '.join(f"{x} {y}" for x, y in coords)
+                f.write(f"{abbrev} {coord_str}\n")
 
-    total_timeout = len(polyforms) * timeout_per_polyform
-    print(f"Starting batch render_witness for {len(polyforms)} {grid_type} polyforms...")
-    print(f"Command: {' '.join(cmd)}")
-    print(f"Total timeout: {total_timeout}s ({total_timeout/60:.1f} min)")
+        # Build command
+        cmd = ["render_witness", "-batch", "-in", input_file, "-out", output_dir]
+        if json_nup is not None:
+            cmd.extend(["-json_nup", str(json_nup)])
 
-    start_time = time.time()
+        total_timeout = len(polyforms) * timeout_per_polyform
+        print(f"Starting batch render_witness for {len(polyforms)} {grid_type} polyforms...")
+        print(f"Command: {' '.join(cmd)}")
+        print(f"Total timeout: {total_timeout}s ({total_timeout/60:.1f} min)")
 
-    proc = subprocess.Popen(
-        cmd,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True
-    )
+        start_time = time.time()
 
-    try:
-        stdout, stderr = proc.communicate(input=input_text, timeout=total_timeout)
-        elapsed = time.time() - start_time
-        print(f"Batch render_witness completed in {elapsed:.1f}s with return code {proc.returncode}")
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.communicate()
-        raise RuntimeError(f"Batch render_witness timed out after {total_timeout}s")
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
 
-    if proc.returncode != 0:
-        raise RuntimeError(f"Batch render_witness failed: {stderr}")
-
-    # Parse JSONL output
-    results = []
-    for line in stdout.strip().split('\n'):
-        if not line:
-            continue
         try:
-            data = json.loads(line)
-            results.append(data)
-        except json.JSONDecodeError as e:
-            print(f"Warning: Failed to parse JSON line: {e}")
-            continue
+            stdout, stderr = proc.communicate(timeout=total_timeout)
+            elapsed = time.time() - start_time
+            print(f"Batch render_witness completed in {elapsed:.1f}s with return code {proc.returncode}")
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.communicate()
+            raise RuntimeError(f"Batch render_witness timed out after {total_timeout}s")
 
-    print(f"Batch processed {len(polyforms)} polyforms, got {len(results)} results")
-    if stderr:
-        # Print last few lines of stderr for context
-        stderr_lines = stderr.strip().split('\n')
-        if len(stderr_lines) > 5:
-            print(f"... (truncated {len(stderr_lines) - 5} lines)")
-            stderr_lines = stderr_lines[-5:]
-        for line in stderr_lines:
-            print(f"  {line}")
+        if proc.returncode != 0:
+            raise RuntimeError(f"Batch render_witness failed: {stderr}")
 
-    return results
+        # Read JSON files from output directory
+        results = []
+        if os.path.exists(output_dir):
+            for filename in os.listdir(output_dir):
+                if filename.endswith('.json'):
+                    filepath = os.path.join(output_dir, filename)
+                    try:
+                        with open(filepath, 'r') as f:
+                            data = json.load(f)
+                            results.append(data)
+                    except (json.JSONDecodeError, IOError) as e:
+                        print(f"Warning: Failed to read {filename}: {e}")
+                        continue
+
+        print(f"Batch processed {len(polyforms)} polyforms, got {len(results)} results")
+        if stderr:
+            # Print last few lines of stderr for context
+            stderr_lines = stderr.strip().split('\n')
+            if len(stderr_lines) > 5:
+                print(f"... (truncated {len(stderr_lines) - 5} lines)")
+                stderr_lines = stderr_lines[-5:]
+            for line in stderr_lines:
+                print(f"  {line}")
+
+        return results
 
 
 def run_gen(grid_type: str, num_cells: int, free: bool = True) -> List[List[Tuple[int, int]]]:
