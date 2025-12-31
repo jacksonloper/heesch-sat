@@ -163,19 +163,23 @@ const char* getGridTypeName(GridType gt)
 }
 
 // Write a patch as JSON array, converting transforms to page coordinates
+// If singleLine is true, outputs compact JSON on one line
 template<typename grid, typename coord_t>
-void writePatchJson(ostream& os, const LabelledPatch<coord_t>& patch, const string& indent)
+void writePatchJson(ostream& os, const LabelledPatch<coord_t>& patch, const string& indent, bool singleLine)
 {
-	os << "[\n";
+	string nl = singleLine ? "" : "\n";
+	string inner_indent = singleLine ? "" : (indent + "  ");
+
+	os << "[" << nl;
 	for (size_t i = 0; i < patch.size(); ++i) {
 		const auto& tile = patch[i];
 		// Convert grid-space transform to page-space transform
 		xform<double> pageT = gridToPageTransform<grid>(tile.second);
-		os << indent << "  {\"corona\": " << tile.first << ", \"transform\": ["
+		os << inner_indent << "{\"corona\": " << tile.first << ", \"transform\": ["
 		   << pageT.a_ << ", " << pageT.b_ << ", " << pageT.c_ << ", "
 		   << pageT.d_ << ", " << pageT.e_ << ", " << pageT.f_ << "]}";
 		if (i + 1 < patch.size()) os << ",";
-		os << "\n";
+		os << nl;
 	}
 	os << indent << "]";
 }
@@ -354,14 +358,14 @@ ProcessResult processShapeToJson(const vector<pair<typename grid::coord_t, typen
 		// Isohedral tilers don't need a witness (any single tile suffices)
 		json << "null";
 	} else {
-		writePatchJson<grid>(json, connectedPatch, indent);
+		writePatchJson<grid>(json, connectedPatch, indent, singleLine);
 	}
 	json << "," << nl;
 
 	// Holes witness (or null)
 	json << indent << "\"witness_with_holes\": ";
 	if (!tilesPlane && !inconclusive && hasHolesPatch && hh > hc) {
-		writePatchJson<grid>(json, holesPatch, indent);
+		writePatchJson<grid>(json, holesPatch, indent, singleLine);
 	} else {
 		json << "null";
 	}
