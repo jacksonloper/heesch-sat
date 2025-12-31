@@ -554,7 +554,8 @@ def search_for_heesch(
     start_time = time.time()
 
     # Create JSONL file for logging all findings
-    jsonl_filename = f"{num_cells}{grid_type}.jsonl"
+    # Include json_nup in filename to make filter level clear
+    jsonl_filename = f"{num_cells}{grid_type}_nup{json_nup}.jsonl"
     jsonl_path = os.path.join(VOLUME_PATH, jsonl_filename)
     print(f"Logging all findings to: {jsonl_path}")
 
