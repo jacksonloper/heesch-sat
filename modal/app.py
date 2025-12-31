@@ -1,13 +1,19 @@
 """
 Modal app with HTTP endpoints for polyform Heesch data.
 
+All interaction with this app should go through the web endpoint:
+https://hloper--heesch-renderings-web.modal.run/
+
 Endpoints:
+- GET / - List all available endpoints
+- GET /grid_types - List all supported grid types
 - GET /polyform?hash=abc123 - Get polyform data by hash
 - GET /polyform?grid_type=hex&coords=0,0_1,0_0,1 - Get polyform data by grid type and coordinates
 - POST /polyform - Store new polyform data
 - GET /compute?grid_type=hex&coords=0,0_1,0_0,1 - Compute Heesch data for a polyform
 - GET /list?grid_type=hex - List available polyforms for a grid type
-- GET /grid_types - List all supported grid types
+- GET /list_full?grid_type=hex - List polyforms with full data including witnesses
+- GET /search_heesch?grid_type=hex&num_cells=6 - Search for polyforms with Heesch >= 1
 """
 
 import modal
@@ -806,15 +812,11 @@ def search_heesch_workflow(
     json_nup: int = 1
 ) -> dict:
     """
-    Modal workflow function to search for polyforms with Heesch number >= json_nup.
+    Internal Modal function to search for polyforms with Heesch number >= json_nup.
 
-    This function can be called programmatically via:
-        modal run modal/app.py::search_heesch_workflow --grid-type hex --num-cells 6
-
-    Or from Python:
-        from modal import App
-        app = App.lookup("heesch-renderings")
-        result = app.search_heesch_workflow.remote(grid_type="hex", num_cells=6)
+    This function is spawned by the /search_heesch web endpoint and should not be
+    called directly. Use the web endpoint instead:
+        GET /search_heesch?grid_type=hex&num_cells=6
 
     Parameters:
     - grid_type: Grid type (e.g., 'hex', 'iamond', or abbreviation like 'H', 'I')
@@ -876,57 +878,6 @@ def search_heesch_workflow(
         return result
     except Exception as e:
         return {"status": "error", "message": f"Search failed: {str(e)}"}
-
-
-@app.local_entrypoint()
-def main(
-    grid_type: str = "hex",
-    num_cells: int = 6,
-    max_results: int = 3,
-    force: bool = False,
-    batch_size: int = 10,
-    json_nup: int = 1
-):
-    """
-    Local entrypoint for running the Heesch search workflow.
-
-    Usage:
-        modal run modal/app.py --grid-type hex --num-cells 6
-        modal run modal/app.py --grid-type iamond --num-cells 8 --max-results 5
-        modal run modal/app.py --grid-type hex --num-cells 6 --force
-        modal run modal/app.py --grid-type hex --num-cells 6 --batch-size 20 --json-nup 2
-    """
-    import json as json_module
-
-    print(f"Starting Heesch search for {num_cells}-cell {grid_type} polyforms...")
-    print(f"Max results: {max_results}, Force: {force}, Batch size: {batch_size}, json_nup: {json_nup}")
-
-    result = search_heesch_workflow.remote(
-        grid_type=grid_type,
-        num_cells=num_cells,
-        max_results=max_results,
-        force=force,
-        batch_size=batch_size,
-        json_nup=json_nup
-    )
-
-    print("\n" + "=" * 60)
-    print("RESULTS")
-    print("=" * 60)
-    print(json_module.dumps(result, indent=2, default=str))
-
-    if result.get("status") == "completed":
-        print(f"\nSearch completed!")
-        print(f"  Polyforms checked: {result.get('polyforms_checked', 0)}")
-        print(f"  Skipped (plane tilers/inconclusive): {result.get('polyforms_skipped', result.get('polyforms_skipped_isohedral', 0))}")
-        print(f"  Results found: {result.get('results_found', 0)}")
-        print(f"  Elapsed time: {result.get('elapsed_seconds', 0):.1f}s")
-    elif result.get("status") == "cached":
-        print(f"\nReturned cached results: {result.get('results_found', 0)} polyform(s)")
-    else:
-        print(f"\nStatus: {result.get('status')}")
-        if result.get("message"):
-            print(f"Message: {result.get('message')}")
 
 
 @app.function(image=image, volumes={VOLUME_PATH: volume}, timeout=7200)
