@@ -68,7 +68,7 @@ image = (
     .pip_install("fastapi", "psutil")
     .add_local_dir("../src", "/app/src", copy=True)
     .run_commands(
-        "echo 'Build: 2025-12-31T20:05:00Z' && cd /app/src && make clean render_witness gen",
+        "echo 'Build: 2025-12-31T20:15:00Z' && cd /app/src && make clean render_witness gen",
         "cp /app/src/render_witness /app/src/gen /usr/local/bin/",
     )
 )
@@ -254,13 +254,13 @@ def list_all_polyforms(grid_type_filter: Optional[str] = None) -> List[dict]:
     return result
 
 
-def run_render_witness(grid_type: str, coords: List[Tuple[int, int]], timeout: int = 300) -> dict:
+def run_render_witness(grid_type: str, coords: List[Tuple[int, int]], timeout: int = 14400) -> dict:
     """Run the render_witness binary to compute Heesch data.
-    
+
     Parameters:
     - grid_type: Full grid type name (hex, iamond, omino, etc.)
     - coords: List of (x, y) coordinates
-    - timeout: Timeout in seconds (default 300 = 5 minutes)
+    - timeout: Timeout in seconds (default 14400 = 4 hours)
     """
     import tempfile
     import threading
@@ -377,7 +377,7 @@ def run_render_witness_batch(
     grid_type: str,
     polyforms: List[List[Tuple[int, int]]],
     json_nup: Optional[int] = None,
-    timeout_per_polyform: int = 60
+    timeout_per_polyform: int = 14400
 ) -> Tuple[List[dict], Optional[dict]]:
     """
     Run the render_witness binary in batch mode to compute Heesch data for multiple polyforms.
@@ -386,7 +386,7 @@ def run_render_witness_batch(
     - grid_type: Full grid type name (hex, iamond, omino, etc.)
     - polyforms: List of polyforms, each is a list of (x, y) coordinates
     - json_nup: If specified, only return polyforms with Heesch >= json_nup and < infinity
-    - timeout_per_polyform: Timeout per polyform in seconds (default 60)
+    - timeout_per_polyform: Timeout per polyform in seconds (default 14400 = 4 hours)
 
     Returns a tuple of (results list, summary dict or None).
     """
@@ -507,13 +507,13 @@ def run_gen(grid_type: str, num_cells: int, free: bool = True) -> List[List[Tupl
     )
 
     try:
-        stdout, stderr = proc.communicate(timeout=600)  # 10 minute timeout
+        stdout, stderr = proc.communicate(timeout=14400)  # 4 hour timeout
         elapsed = time.time() - start_time
         print(f"gen completed in {elapsed:.1f}s")
     except subprocess.TimeoutExpired:
         proc.kill()
         proc.communicate()
-        raise RuntimeError("gen timed out after 10 minutes")
+        raise RuntimeError("gen timed out after 4 hours")
 
     if proc.returncode != 0:
         raise RuntimeError(f"gen failed: {stderr}")
@@ -666,7 +666,7 @@ def search_for_heesch(
                 grid_type,
                 batch,
                 json_nup=json_nup,
-                timeout_per_polyform=60
+                timeout_per_polyform=14400
             )
             batch_succeeded = True
 
@@ -809,7 +809,7 @@ def search_for_heesch(
     }
 
 
-@app.function(image=image, volumes={VOLUME_PATH: volume}, timeout=7200)
+@app.function(image=image, volumes={VOLUME_PATH: volume}, timeout=14400)
 def search_heesch_workflow(
     grid_type: str,
     num_cells: int,
@@ -887,7 +887,7 @@ def search_heesch_workflow(
         return {"status": "error", "message": f"Search failed: {str(e)}"}
 
 
-@app.function(image=image, volumes={VOLUME_PATH: volume}, timeout=7200)
+@app.function(image=image, volumes={VOLUME_PATH: volume}, timeout=14400)
 @modal.asgi_app()
 def web():
     """Single FastAPI app with all endpoints."""
@@ -915,7 +915,7 @@ def web():
                 "/polyform?hash=abc123",
                 "/polyform?grid_type=hex&coords=0,0_1,0_0,1",
                 "/compute?grid_type=hex&coords=0,0_1,0_0,1",
-                "/search_heesch?grid_type=hex&num_cells=6 - Search for polyforms with Heesch >= 1 (2hr timeout)",
+                "/search_heesch?grid_type=hex&num_cells=6 - Search for polyforms with Heesch >= 1 (4hr timeout)",
                 "/search_heesch?grid_type=hex&num_cells=6&wait=false - Spawn search and return immediately",
                 "/search_heesch?grid_type=hex&num_cells=6&batch_size=20&json_nup=2 - Batch processing with filters",
                 "/list?grid_type=hex",
@@ -988,14 +988,14 @@ def web():
         }
 
     @web_app.get("/compute")
-    def compute_polyform(grid_type: str, coords: str, force: bool = False, timeout: int = 300):
+    def compute_polyform(grid_type: str, coords: str, force: bool = False, timeout: int = 14400):
         """
         Compute Heesch data for a polyform using the render_witness binary.
         Returns the computed data and stores it in the database.
-        
+
         Parameters:
         - force: If True, recompute even if already exists (useful for updating old computations)
-        - timeout: Computation timeout in seconds (default 300 = 5 minutes, max 14400 = 4 hours)
+        - timeout: Computation timeout in seconds (default 14400 = 4 hours)
         """
         # Clamp timeout to reasonable range (10 seconds to 4 hours)
         timeout = max(10, min(timeout, 14400))
@@ -1197,7 +1197,7 @@ def web():
         If results already exist in the volume for this grid type and cell count,
         they will be returned immediately (unless force=True).
 
-        The search runs as a spawned Modal function with a 2-hour timeout that
+        The search runs as a spawned Modal function with a 4-hour timeout that
         continues running even if the HTTP connection is closed.
         """
         # Normalize grid_type (accept both abbreviation and full name)
@@ -1251,7 +1251,7 @@ def web():
                 }
 
         # Spawn the search as a separate Modal function so it survives HTTP disconnection
-        # The spawned function has a 2-hour timeout and will store results to the volume
+        # The spawned function has a 4-hour timeout and will store results to the volume
         try:
             function_call = search_heesch_workflow.spawn(
                 grid_type=gt,
