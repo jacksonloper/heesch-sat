@@ -68,7 +68,7 @@ image = (
     .pip_install("fastapi", "psutil")
     .add_local_dir("../src", "/app/src", copy=True)
     .run_commands(
-        "echo 'Build: 2025-12-31T19:45:00Z' && cd /app/src && make clean render_witness gen",
+        "echo 'Build: 2025-12-31T20:00:00Z' && cd /app/src && make clean render_witness gen",
         "cp /app/src/render_witness /app/src/gen /usr/local/bin/",
     )
 )
@@ -652,6 +652,12 @@ def search_for_heesch(
 
             last_log_time = current_time
 
+        # Use try-except-else to avoid double-counting if batch succeeds but
+        # result processing fails
+        batch_results = None
+        batch_summary = None
+        batch_succeeded = False
+
         try:
             # Use batch processing - json_nup filter is applied in C++
             batch_results, batch_summary = run_render_witness_batch(
@@ -660,40 +666,10 @@ def search_for_heesch(
                 json_nup=json_nup,
                 timeout_per_polyform=60
             )
-
-            checked += len(batch)
-
-            # Aggregate summary data from batch
-            if batch_summary:
-                # Merge category counts
-                for cat, count in batch_summary.get("category_counts", {}).items():
-                    category_counts[cat] = category_counts.get(cat, 0) + count
-                # Collect slow polyforms
-                for slow in batch_summary.get("slow_polyforms", []):
-                    slow_polyforms.append(slow)
-
-            # Process results from batch
-            # Note: Only polyforms passing json_nup filter are in batch_results
-            for data in batch_results:
-                hc = data.get("heesch_connected")
-
-                # Skip if Heesch is None (can happen for tilers that pass the filter)
-                if hc is None:
-                    continue
-
-                print(f"  Found polyform with Heesch = {hc}!")
-
-                # Add to results, keeping only top max_to_store
-                if len(top_results) < max_to_store:
-                    heapq.heappush(top_results, (hc, data))
-                elif hc > top_results[0][0]:
-                    heapq.heapreplace(top_results, (hc, data))
-
-            # The skipped count includes those filtered by json_nup in C++
-            skipped += len(batch) - len(batch_results)
+            batch_succeeded = True
 
         except Exception as e:
-            print(f"  Error processing batch {batch_start}-{batch_end}: {e}")
+            print(f"  Error in batch processing {batch_start}-{batch_end}: {e}")
             # Fall back to single processing for this batch
             for coords in batch:
                 checked += 1
@@ -731,6 +707,39 @@ def search_for_heesch(
                 except Exception as e2:
                     print(f"  Error processing single polyform: {e2}")
                     errors += 1
+
+        # Process successful batch results (only runs if batch_succeeded)
+        if batch_succeeded:
+            checked += len(batch)
+
+            # Aggregate summary data from batch
+            if batch_summary:
+                # Merge category counts
+                for cat, count in batch_summary.get("category_counts", {}).items():
+                    category_counts[cat] = category_counts.get(cat, 0) + count
+                # Collect slow polyforms
+                for slow in batch_summary.get("slow_polyforms", []):
+                    slow_polyforms.append(slow)
+
+            # Process results from batch
+            # Note: Only polyforms passing json_nup filter are in batch_results
+            for data in batch_results:
+                hc = data.get("heesch_connected")
+
+                # Skip if Heesch is None (can happen for tilers that pass the filter)
+                if hc is None:
+                    continue
+
+                print(f"  Found polyform with Heesch = {hc}!")
+
+                # Add to results, keeping only top max_to_store
+                if len(top_results) < max_to_store:
+                    heapq.heappush(top_results, (hc, data))
+                elif hc > top_results[0][0]:
+                    heapq.heapreplace(top_results, (hc, data))
+
+            # The skipped count includes those filtered by json_nup in C++
+            skipped += len(batch) - len(batch_results)
 
     elapsed = time.time() - start_time
     rate = checked / elapsed if elapsed > 0 else 0
