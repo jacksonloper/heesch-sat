@@ -61,7 +61,7 @@ volume = modal.Volume.from_name("heesch-renderings-vol", create_if_missing=True)
 VOLUME_PATH = "/data"
 
 # Image with heesch-sat binaries compiled
-# Build timestamp: 2025-12-31T18:33:20Z - forces image rebuild
+# Build timestamp: 2025-12-31T19:15:00Z - forces image rebuild
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("build-essential", "libcryptominisat5-dev", "libboost-dev")
