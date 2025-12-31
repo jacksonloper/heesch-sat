@@ -479,19 +479,36 @@ function generateDrafterGrid(minX, maxX, minY, maxY) {
   // Step through grid in increments of 7
   for (let gx = gMinX; gx <= gMaxX; gx += 7) {
     for (let gy = gMinY; gy <= gMaxY; gy += 7) {
-      // Draw metahex edges
+      const center = toPage(gx, gy)
+
+      // Draw metahex edges and internal structure
       for (let i = 0; i < 6; i++) {
         const [dx1, dy1] = metahexVerts[i]
         const [dx2, dy2] = metahexVerts[(i + 1) % 6]
 
-        const p1 = toPage(gx + dx1, gy + dy1)
-        const p2 = toPage(gx + dx2, gy + dy2)
+        const v1 = toPage(gx + dx1, gy + dy1)
+        const v2 = toPage(gx + dx2, gy + dy2)
 
-        const key = makeEdgeKey(p1, p2)
+        // Edge of metahex
+        const edgeKey = makeEdgeKey(v1, v2)
+        if (!edgeSet.has(edgeKey)) {
+          edgeSet.add(edgeKey)
+          lines.push([v1, v2])
+        }
 
-        if (!edgeSet.has(key)) {
-          edgeSet.add(key)
-          lines.push([p1, p2])
+        // Spoke from center to vertex
+        const spokeKey = makeEdgeKey(center, v1)
+        if (!edgeSet.has(spokeKey)) {
+          edgeSet.add(spokeKey)
+          lines.push([center, v1])
+        }
+
+        // Spoke from center to edge midpoint
+        const midpoint = [(v1[0] + v2[0]) / 2, (v1[1] + v2[1]) / 2]
+        const midKey = makeEdgeKey(center, midpoint)
+        if (!edgeSet.has(midKey)) {
+          edgeSet.add(midKey)
+          lines.push([center, midpoint])
         }
       }
     }
