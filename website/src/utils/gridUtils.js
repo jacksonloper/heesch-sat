@@ -261,28 +261,31 @@ function generateKiteGrid(minX, maxX, minY, maxY) {
 
 // Generate grid lines for abolo grid (polyabolos - right triangles)
 // The abolo grid is a square grid with alternating diagonals.
-// Each unit square has one diagonal, alternating between / and \ based on position.
+// Each square is 2x2 in grid coordinates and has one diagonal.
 // This creates the diamond tiling pattern that polyabolos are built on.
 function generateAboloGrid(minX, maxX, minY, maxY) {
   const lines = []
   const padding = 2
 
-  // Grid coordinates are integers
-  const gMinX = Math.floor(minX) - padding
-  const gMaxX = Math.ceil(maxX) + padding
-  const gMinY = Math.floor(minY) - padding
-  const gMaxY = Math.ceil(maxY) + padding
+  // Grid coordinates are integers, but squares are 2x2
+  const gMinX = Math.floor(minX / 2) - padding
+  const gMaxX = Math.ceil(maxX / 2) + padding
+  const gMinY = Math.floor(minY / 2) - padding
+  const gMaxY = Math.ceil(maxY / 2) + padding
 
   const edgeSet = new Set()
 
-  // For each unit square in the grid
+  // For each 2x2 square in the grid
   for (let i = gMinX; i < gMaxX; i++) {
     for (let j = gMinY; j < gMaxY; j++) {
-      // Square corners
-      const bl = [i, j]           // bottom-left
-      const br = [i + 1, j]       // bottom-right
-      const tl = [i, j + 1]       // top-left
-      const tr = [i + 1, j + 1]   // top-right
+      // Square corners in grid coordinates (each square is 2x2)
+      const x = 2 * i
+      const y = 2 * j
+      
+      const bl = [x, y]           // bottom-left
+      const br = [x + 2, y]       // bottom-right
+      const tl = [x, y + 2]       // top-left
+      const tr = [x + 2, y + 2]   // top-right
 
       // Square boundaries (4 edges)
       const squareEdges = [
