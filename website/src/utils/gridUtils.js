@@ -263,7 +263,7 @@ function generateKiteGrid(minX, maxX, minY, maxY) {
 // The abolo grid is a square grid with alternating diagonals.
 // Each square is 2x2 in grid coordinates and has one diagonal.
 // This creates the diamond tiling pattern that polyabolos are built on.
-function generateAboloGrid(minX, maxX, minY, maxY) {
+function generateAboloGrid(minX, maxX, minY, maxY, offsetX = -0.875, offsetY = 0.875) {
   const lines = []
   const padding = 2
 
@@ -279,9 +279,9 @@ function generateAboloGrid(minX, maxX, minY, maxY) {
   for (let i = gMinX; i < gMaxX; i++) {
     for (let j = gMinY; j < gMaxY; j++) {
       // Square corners in grid coordinates (each square is 2x2)
-      // Apply offset: -0.875 horizontal (left), 0.875 up
-      const x = 2 * i - 0.875
-      const y = 2 * j + 0.875
+      // Apply configurable offset
+      const x = 2 * i + offsetX
+      const y = 2 * j + offsetY
       
       const bl = [x, y]           // bottom-left
       const br = [x + 2, y]       // bottom-right
@@ -590,7 +590,7 @@ function generateBevelhexGrid(minX, maxX, minY, maxY) {
 }
 
 // Main grid generation function
-export function generateGridLines(gridType, minX, maxX, minY, maxY) {
+export function generateGridLines(gridType, minX, maxX, minY, maxY, offsetX, offsetY) {
   const generators = {
     omino: generateOminoGrid,
     hex: generateHexGrid,
@@ -608,6 +608,11 @@ export function generateGridLines(gridType, minX, maxX, minY, maxY) {
   if (!generator) {
     console.warn(`Unknown grid type: ${gridType}`)
     return []
+  }
+
+  // Pass offset parameters only to abolo grid
+  if (gridType === 'abolo' && offsetX !== undefined && offsetY !== undefined) {
+    return generator(minX, maxX, minY, maxY, offsetX, offsetY)
   }
 
   return generator(minX, maxX, minY, maxY)

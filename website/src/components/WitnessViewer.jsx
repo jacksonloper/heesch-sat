@@ -17,6 +17,8 @@ const CORONA_COLORS = [
 function WitnessViewer({ witness, onClose }) {
   const [showHoles, setShowHoles] = useState(false)
   const [showGrid, setShowGrid] = useState(false)
+  const [gridOffsetX, setGridOffsetX] = useState(-0.875)
+  const [gridOffsetY, setGridOffsetY] = useState(0.875)
 
   const activeWitness = showHoles && witness.witness_with_holes
     ? witness.witness_with_holes
@@ -57,6 +59,8 @@ function WitnessViewer({ witness, onClose }) {
               witness={witness}
               patch={activeWitness}
               showGrid={showGrid}
+              gridOffsetX={gridOffsetX}
+              gridOffsetY={gridOffsetY}
             />
           </div>
 
@@ -110,6 +114,39 @@ function WitnessViewer({ witness, onClose }) {
               </label>
             </div>
 
+            {showGrid && witness.grid_type === 'abolo' && (
+              <>
+                <div className="slider-row">
+                  <label>
+                    Grid offset X: {gridOffsetX.toFixed(3)}
+                    <input
+                      type="range"
+                      min="-2"
+                      max="2"
+                      step="0.001"
+                      value={gridOffsetX}
+                      onChange={e => setGridOffsetX(parseFloat(e.target.value))}
+                      style={{ width: '100%' }}
+                    />
+                  </label>
+                </div>
+                <div className="slider-row">
+                  <label>
+                    Grid offset Y: {gridOffsetY.toFixed(3)}
+                    <input
+                      type="range"
+                      min="-2"
+                      max="2"
+                      step="0.001"
+                      value={gridOffsetY}
+                      onChange={e => setGridOffsetY(parseFloat(e.target.value))}
+                      style={{ width: '100%' }}
+                    />
+                  </label>
+                </div>
+              </>
+            )}
+
             <div className="corona-legend">
               <h4>Corona levels:</h4>
               {[...new Set(activeWitness?.map(t => t.corona) || [])].sort((a, b) => a - b).map(level => (
@@ -129,7 +166,7 @@ function WitnessViewer({ witness, onClose }) {
   )
 }
 
-function WitnessSVG({ witness, patch, showGrid }) {
+function WitnessSVG({ witness, patch, showGrid, gridOffsetX, gridOffsetY }) {
   const { tile_boundary, grid_type } = witness
 
   if (!tile_boundary || tile_boundary.length === 0 || !patch) {
@@ -184,7 +221,7 @@ function WitnessSVG({ witness, patch, showGrid }) {
 
   // Generate grid lines if showGrid is enabled
   const gridLines = showGrid
-    ? generateGridLines(grid_type, minX - padding, maxX + padding, minY - padding, maxY + padding)
+    ? generateGridLines(grid_type, minX - padding, maxX + padding, minY - padding, maxY + padding, gridOffsetX, gridOffsetY)
     : []
 
   return (
