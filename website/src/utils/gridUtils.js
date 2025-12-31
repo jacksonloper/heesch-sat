@@ -336,37 +336,52 @@ function generateTrihexGrid(minX, maxX, minY, maxY) {
 
   const edgeSet = new Set()
 
-  // Hexagon vertices (scaled by 0.5 from vertexToGrid)
+  // Hexagon vertices (from C++ trihexgrid.h, after vertexToGrid divides by 2)
+  // C++ vertices: {-1, -1}, {-2, 1}, {-1, 2}, {1, 1}, {2, -1}, {1, -2}
   const hexVerts = [
     [-0.5, -0.5], [-1, 0.5], [-0.5, 1], [0.5, 0.5], [1, -0.5], [0.5, -1]
   ]
 
-  // Triangle vertices
+  // Triangle vertices (from C++ trihexgrid.h, after vertexToGrid divides by 2)
+  // TRIANGLE_RIGHT (type 1): {-1, 1}, {1, 0}, {0, -1}
+  // TRIANGLE_LEFT (type 2): {-1, 0}, {0, 1}, {1, -1}
   const triRightVerts = [[-0.5, 0.5], [0.5, 0], [0, -0.5]]
   const triLeftVerts = [[-0.5, 0], [0, 0.5], [0.5, -0.5]]
 
-  // Period is (1,1) and (-1,2) in trihex grid
-  for (let i = gMinX; i <= gMaxX; i++) {
-    for (let j = gMinY; j <= gMaxY; j++) {
-      const gx = i + j
-      const gy = -i + 2 * j
+  // Helper for proper modulo (handles negative numbers)
+  const mod3 = (n) => ((n % 3) + 3) % 3
 
-      // Check if this is a hexagon position
-      if ((gx - gy) % 3 === 0) {
-        // Draw hexagon
-        for (let k = 0; k < 6; k++) {
-          const [dx1, dy1] = hexVerts[k]
-          const [dx2, dy2] = hexVerts[(k + 1) % 6]
+  // Iterate directly over grid coordinates
+  for (let gx = gMinX; gx <= gMaxX; gx++) {
+    for (let gy = gMinY; gy <= gMaxY; gy++) {
+      const tileType = mod3(gx - gy)
 
-          const p1 = toPage(gx + dx1, gy + dy1)
-          const p2 = toPage(gx + dx2, gy + dy2)
+      let verts
+      if (tileType === 0) {
+        // Hexagon at positions where (x - y) % 3 == 0
+        // e.g., (0,0), (3,0), (6,0), (-2,1), (1,1), (-3,3), (0,3), etc.
+        verts = hexVerts
+      } else if (tileType === 1) {
+        // Triangle right
+        verts = triRightVerts
+      } else {
+        // Triangle left (tileType === 2)
+        verts = triLeftVerts
+      }
 
-          const key = makeEdgeKey(p1, p2)
+      const numVerts = verts.length
+      for (let k = 0; k < numVerts; k++) {
+        const [dx1, dy1] = verts[k]
+        const [dx2, dy2] = verts[(k + 1) % numVerts]
 
-          if (!edgeSet.has(key)) {
-            edgeSet.add(key)
-            lines.push([p1, p2])
-          }
+        const p1 = toPage(gx + dx1, gy + dy1)
+        const p2 = toPage(gx + dx2, gy + dy2)
+
+        const key = makeEdgeKey(p1, p2)
+
+        if (!edgeSet.has(key)) {
+          edgeSet.add(key)
+          lines.push([p1, p2])
         }
       }
     }
