@@ -279,9 +279,9 @@ function generateAboloGrid(minX, maxX, minY, maxY) {
   for (let i = gMinX; i < gMaxX; i++) {
     for (let j = gMinY; j < gMaxY; j++) {
       // Square corners in grid coordinates (each square is 2x2)
-      // Apply offset: 0.25 right, 0.75 up
-      const x = 2 * i + 0.25
-      const y = 2 * j + 0.75
+      // Apply offset: -0.875 horizontal (left), 0.875 up
+      const x = 2 * i - 0.875
+      const y = 2 * j + 0.875
       
       const bl = [x, y]           // bottom-left
       const br = [x + 2, y]       // bottom-right
