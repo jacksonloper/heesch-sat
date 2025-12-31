@@ -248,8 +248,14 @@ def list_all_polyforms(grid_type_filter: Optional[str] = None) -> List[dict]:
     return result
 
 
-def run_render_witness(grid_type: str, coords: List[Tuple[int, int]]) -> dict:
-    """Run the render_witness binary to compute Heesch data."""
+def run_render_witness(grid_type: str, coords: List[Tuple[int, int]], timeout: int = 300) -> dict:
+    """Run the render_witness binary to compute Heesch data.
+    
+    Parameters:
+    - grid_type: Full grid type name (hex, iamond, omino, etc.)
+    - coords: List of (x, y) coordinates
+    - timeout: Timeout in seconds (default 300 = 5 minutes)
+    """
     import tempfile
     import threading
     import time
@@ -335,13 +341,14 @@ def run_render_witness(grid_type: str, coords: List[Tuple[int, int]]) -> dict:
 
         try:
             # Wait for process with timeout
-            stdout, stderr = proc.communicate(timeout=300)
+            stdout, stderr = proc.communicate(timeout=timeout)
             elapsed = time.time() - start_time
             print(f"render_witness completed in {elapsed:.1f}s with return code {proc.returncode}")
         except subprocess.TimeoutExpired:
             proc.kill()
             stdout, stderr = proc.communicate()
-            raise RuntimeError("render_witness timed out after 5 minutes")
+            timeout_mins = timeout / 60
+            raise RuntimeError(f"render_witness timed out after {timeout_mins:.1f} minutes")
         finally:
             # Stop the monitor thread
             stop_monitor.set()
@@ -1023,14 +1030,18 @@ def web():
         }
 
     @web_app.get("/compute")
-    def compute_polyform(grid_type: str, coords: str, force: bool = False):
+    def compute_polyform(grid_type: str, coords: str, force: bool = False, timeout: int = 300):
         """
         Compute Heesch data for a polyform using the render_witness binary.
         Returns the computed data and stores it in the database.
         
         Parameters:
         - force: If True, recompute even if already exists (useful for updating old computations)
+        - timeout: Computation timeout in seconds (default 300 = 5 minutes, max 14400 = 4 hours)
         """
+        # Clamp timeout to reasonable range (10 seconds to 4 hours)
+        timeout = max(10, min(timeout, 14400))
+        
         # Normalize grid_type (accept both abbreviation and full name)
         gt = grid_type
         if grid_type in GRID_TYPES:
@@ -1069,7 +1080,7 @@ def web():
 
         # Compute using render_witness
         try:
-            data = run_render_witness(gt, parsed)
+            data = run_render_witness(gt, parsed, timeout=timeout)
         except Exception as e:
             return {
                 "status": "error",
