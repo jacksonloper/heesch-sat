@@ -585,11 +585,59 @@ function generateHalfcairoGrid(minX, maxX, minY, maxY) {
   return lines
 }
 
-// Generate grid lines for bevelhex grid
+// Generate grid lines for bevelhex grid (4.6.12 Archimedean tiling)
+// Shows the dodecahedra (12-sided tiles) that define the periodic structure
+// Dodecahedra are 5 minihexes wide and tile with period 6 in grid coordinates
 function generateBevelhexGrid(minX, maxX, minY, maxY) {
-  // Similar to hex grid but with beveled hexagons
-  // For now, use hex grid as approximation
-  return generateHexGrid(minX, maxX, minY, maxY)
+  const lines = []
+  const toPage = gridToPage.bevelhex
+  const toGrid = pageToGrid.bevelhex
+  const padding = 12 // Larger padding for bigger dodecahedra
+
+  // Convert page bounds to approximate grid bounds
+  const corners = [
+    toGrid(minX, minY),
+    toGrid(maxX, minY),
+    toGrid(minX, maxY),
+    toGrid(maxX, maxY),
+  ]
+
+  const gMinX = Math.floor(Math.min(...corners.map(c => c[0])) / 6) * 6 - padding
+  const gMaxX = Math.ceil(Math.max(...corners.map(c => c[0])) / 6) * 6 + padding
+  const gMinY = Math.floor(Math.min(...corners.map(c => c[1])) / 6) * 6 - padding
+  const gMaxY = Math.ceil(Math.max(...corners.map(c => c[1])) / 6) * 6 + padding
+
+  // Dodecagon vertices from bevelhexgrid.h cell_vertices[5] (DODECAGON)
+  // These are the 12 vertices of the dodecagon centered at (0, 0)
+  const dodecagonVerts = [
+    [2, 1], [1, 2], [-1, 3], [-2, 3], [-3, 2], [-3, 1],
+    [-2, -1], [-1, -2], [1, -3], [2, -3], [3, -2], [3, -1]
+  ]
+
+  const edgeSet = new Set()
+
+  // Step through grid in increments of 6 (dodecagons are at positions (6i, 6j))
+  for (let gx = gMinX; gx <= gMaxX; gx += 6) {
+    for (let gy = gMinY; gy <= gMaxY; gy += 6) {
+      // Draw dodecagon edges
+      for (let i = 0; i < 12; i++) {
+        const [dx1, dy1] = dodecagonVerts[i]
+        const [dx2, dy2] = dodecagonVerts[(i + 1) % 12]
+
+        const p1 = toPage(gx + dx1, gy + dy1)
+        const p2 = toPage(gx + dx2, gy + dy2)
+
+        const key = makeEdgeKey(p1, p2)
+
+        if (!edgeSet.has(key)) {
+          edgeSet.add(key)
+          lines.push([p1, p2])
+        }
+      }
+    }
+  }
+
+  return lines
 }
 
 // Main grid generation function
