@@ -7,6 +7,8 @@
 #include <filesystem>
 #include <cmath>
 #include <cstring>
+#include <chrono>
+#include <map>
 
 #include "grid.h"
 #include "heesch.h"
@@ -195,6 +197,13 @@ struct ProcessResult {
 	string hash;         // 8-char hex hash for filename
 	string gridTypeName; // Grid type name (e.g., "drafter")
 	size_t cellCount;    // Number of cells
+};
+
+// Structure to track a slow polyform (> 2 minutes processing time)
+struct SlowPolyform {
+	vector<pair<int16_t, int16_t>> coords;
+	double seconds;
+	string category;  // "0", "1", "2", ..., "infinity", "inconclusive"
 };
 
 // Write JSON output for a polyform to an output stream
@@ -465,8 +474,12 @@ struct ProcessShapeBatchWrapper
 };
 
 // Process a batch of polyforms from input file, writing JSON files to output directory
-int processBatch(const string& inputFile, const string& outputDir, int jsonNup)
+// Also writes a summary JSON file if summaryFile is non-empty
+int processBatch(const string& inputFile, const string& outputDir, int jsonNup, const string& summaryFile)
 {
+	using namespace chrono;
+	auto batchStart = steady_clock::now();
+
 	// Open input file
 	ifstream inFile(inputFile);
 	if (!inFile.is_open()) {
@@ -484,6 +497,12 @@ int processBatch(const string& inputFile, const string& outputDir, int jsonNup)
 	int processed = 0;
 	int output = 0;
 	int skipped = 0;
+
+	// Category counts: key is "0", "1", "2", ..., "infinity", "inconclusive"
+	map<string, int> categoryCounts;
+	// Slow polyforms (> 120 seconds)
+	vector<SlowPolyform> slowPolyforms;
+	const double SLOW_THRESHOLD = 120.0;  // 2 minutes
 
 	while (getline(inFile, line)) {
 		// Skip empty lines
@@ -534,9 +553,37 @@ int processBatch(const string& inputFile, const string& outputDir, int jsonNup)
 
 		++processed;
 
+		// Time this polyform
+		auto polyStart = steady_clock::now();
+
 		// Process the polyform
 		try {
 			ProcessResult result = dispatchToGridType<ProcessShapeBatchWrapper>(gt, coords);
+
+			auto polyEnd = steady_clock::now();
+			double polySeconds = duration<double>(polyEnd - polyStart).count();
+
+			// Determine category
+			string category;
+			if (result.tilesIsohedrally || result.tilesPeriodically) {
+				category = "infinity";
+			} else if (result.inconclusive) {
+				category = "inconclusive";
+			} else {
+				category = to_string(result.heeschConnected);
+			}
+
+			// Update category count
+			categoryCounts[category]++;
+
+			// Track slow polyforms
+			if (polySeconds > SLOW_THRESHOLD) {
+				SlowPolyform slow;
+				slow.coords = coords;
+				slow.seconds = polySeconds;
+				slow.category = category;
+				slowPolyforms.push_back(slow);
+			}
 
 			// Apply json_nup filter if specified
 			if (jsonNup >= 0) {
@@ -563,7 +610,7 @@ int processBatch(const string& inputFile, const string& outputDir, int jsonNup)
 			jsonFile << result.jsonContent << "\n";
 			jsonFile.close();
 
-			cerr << "  Written: " << jsonPath.string() << endl;
+			cerr << "  Written: " << jsonPath.string() << " (" << fixed << setprecision(1) << polySeconds << "s)" << endl;
 			++output;
 
 		} catch (const exception& e) {
@@ -573,8 +620,55 @@ int processBatch(const string& inputFile, const string& outputDir, int jsonNup)
 
 	inFile.close();
 
+	auto batchEnd = steady_clock::now();
+	double totalSeconds = duration<double>(batchEnd - batchStart).count();
+
 	cerr << "Batch processing complete: " << processed << " polyforms processed, "
-	     << output << " output, " << skipped << " skipped" << endl;
+	     << output << " output, " << skipped << " skipped in "
+	     << fixed << setprecision(1) << totalSeconds << "s" << endl;
+
+	// Write summary file if requested
+	if (!summaryFile.empty()) {
+		ofstream summary(summaryFile);
+		summary << "{\n";
+		summary << "  \"total_polyforms\": " << processed << ",\n";
+		summary << "  \"output_count\": " << output << ",\n";
+		summary << "  \"skipped_count\": " << skipped << ",\n";
+		summary << "  \"total_seconds\": " << fixed << setprecision(2) << totalSeconds << ",\n";
+
+		// Category counts
+		summary << "  \"category_counts\": {\n";
+		bool first = true;
+		for (const auto& kv : categoryCounts) {
+			if (!first) summary << ",\n";
+			summary << "    \"" << kv.first << "\": " << kv.second;
+			first = false;
+		}
+		summary << "\n  },\n";
+
+		// Slow polyforms
+		summary << "  \"slow_polyforms\": [\n";
+		for (size_t i = 0; i < slowPolyforms.size(); ++i) {
+			const auto& slow = slowPolyforms[i];
+			summary << "    {\n";
+			summary << "      \"coords\": [";
+			for (size_t j = 0; j < slow.coords.size(); ++j) {
+				if (j > 0) summary << ", ";
+				summary << "[" << slow.coords[j].first << ", " << slow.coords[j].second << "]";
+			}
+			summary << "],\n";
+			summary << "      \"seconds\": " << fixed << setprecision(2) << slow.seconds << ",\n";
+			summary << "      \"category\": \"" << slow.category << "\"\n";
+			summary << "    }";
+			if (i + 1 < slowPolyforms.size()) summary << ",";
+			summary << "\n";
+		}
+		summary << "  ]\n";
+		summary << "}\n";
+		summary.close();
+
+		cerr << "Summary written to: " << summaryFile << endl;
+	}
 
 	return 0;
 }
@@ -586,8 +680,9 @@ int main(int argc, char **argv)
 	int jsonNup = -1;  // -1 means no filter
 	string inputFile;
 	string outputDir;
+	string summaryFile;
 
-	// Parse arguments to find -batch, -in, -out, and -json_nup
+	// Parse arguments to find -batch, -in, -out, -json_nup, and -summary
 	for (int i = 1; i < argc; ++i) {
 		if (strcmp(argv[i], "-batch") == 0) {
 			batchMode = true;
@@ -597,6 +692,8 @@ int main(int argc, char **argv)
 			outputDir = argv[++i];
 		} else if (strcmp(argv[i], "-json_nup") == 0 && i + 1 < argc) {
 			jsonNup = atoi(argv[++i]);
+		} else if (strcmp(argv[i], "-summary") == 0 && i + 1 < argc) {
+			summaryFile = argv[++i];
 		}
 	}
 
@@ -606,7 +703,7 @@ int main(int argc, char **argv)
 			printUsage(argv[0]);
 			return 1;
 		}
-		return processBatch(inputFile, outputDir, jsonNup);
+		return processBatch(inputFile, outputDir, jsonNup, summaryFile);
 	}
 
 	// Single mode: original behavior
