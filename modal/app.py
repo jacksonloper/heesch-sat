@@ -68,7 +68,7 @@ image = (
     .pip_install("fastapi", "psutil")
     .add_local_dir("../src", "/app/src", copy=True)
     .run_commands(
-        "echo 'Build: 2025-12-31T20:00:00Z' && cd /app/src && make clean render_witness gen",
+        "echo 'Build: 2025-12-31T20:05:00Z' && cd /app/src && make clean render_witness gen",
         "cp /app/src/render_witness /app/src/gen /usr/local/bin/",
     )
 )
@@ -600,8 +600,10 @@ def search_for_heesch(
     gen_elapsed = time.time() - start_time
     print(f"Generated {len(polyforms)} polyforms in {gen_elapsed:.1f}s - starting Heesch computation...")
 
-    # Track top results: use a min-heap of (heesch_number, data)
-    top_results = []  # List of (heesch_connected, data)
+    # Track top results: use a min-heap of (heesch_number, counter, data)
+    # Counter is needed as tiebreaker to avoid comparing dict objects
+    top_results = []  # List of (heesch_connected, counter, data)
+    result_counter = 0
 
     checked = 0
     skipped = 0
@@ -700,9 +702,11 @@ def search_for_heesch(
                     print(f"  Found polyform with Heesch = {hc}!")
 
                     if len(top_results) < max_to_store:
-                        heapq.heappush(top_results, (hc, data))
+                        heapq.heappush(top_results, (hc, result_counter, data))
+                        result_counter += 1
                     elif hc > top_results[0][0]:
-                        heapq.heapreplace(top_results, (hc, data))
+                        heapq.heapreplace(top_results, (hc, result_counter, data))
+                        result_counter += 1
 
                 except Exception as e2:
                     print(f"  Error processing single polyform: {e2}")
@@ -734,9 +738,11 @@ def search_for_heesch(
 
                 # Add to results, keeping only top max_to_store
                 if len(top_results) < max_to_store:
-                    heapq.heappush(top_results, (hc, data))
+                    heapq.heappush(top_results, (hc, result_counter, data))
+                    result_counter += 1
                 elif hc > top_results[0][0]:
-                    heapq.heapreplace(top_results, (hc, data))
+                    heapq.heapreplace(top_results, (hc, result_counter, data))
+                    result_counter += 1
 
             # The skipped count includes those filtered by json_nup in C++
             skipped += len(batch) - len(batch_results)
@@ -758,7 +764,7 @@ def search_for_heesch(
 
     # Store the results to the volume
     stored = []
-    for hc, data in results:
+    for hc, _, data in results:
         hash_value = data.get("hash", compute_hash(grid_type, [(c[0], c[1]) for c in data.get("coordinates", [])]))
         cell_count = data.get("cell_count", num_cells)
         file_path = get_polyform_path(grid_type, cell_count, hash_value)
@@ -798,7 +804,7 @@ def search_for_heesch(
         "results_found": len(results),
         "stored": stored,
         "elapsed_seconds": elapsed,
-        "results": [data for _, data in results],
+        "results": [data for _, _, data in results],
         "summary_path": summary_path
     }
 
