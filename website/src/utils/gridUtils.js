@@ -279,13 +279,14 @@ function generateAboloGrid(minX, maxX, minY, maxY) {
   for (let i = gMinX; i < gMaxX; i++) {
     for (let j = gMinY; j < gMaxY; j++) {
       // Square corners in grid coordinates (each square is 2x2)
-      const x = 2 * i
-      const y = 2 * j
+      // Offset by 1 unit in both directions to align with polyabolo cells
+      const x = 2 * i + 1
+      const y = 2 * j + 1
       
-      const bl = [x, y]           // bottom-left
-      const br = [x + 2, y]       // bottom-right
-      const tl = [x, y + 2]       // top-left
-      const tr = [x + 2, y + 2]   // top-right
+      const bl = [x - 1, y - 1]   // bottom-left
+      const br = [x + 1, y - 1]   // bottom-right
+      const tl = [x - 1, y + 1]   // top-left
+      const tr = [x + 1, y + 1]   // top-right
 
       // Square boundaries (4 edges)
       const squareEdges = [
