@@ -260,61 +260,53 @@ function generateKiteGrid(minX, maxX, minY, maxY) {
 }
 
 // Generate grid lines for abolo grid (polyabolos - right triangles)
-// The abolo grid consists of diamonds (squares rotated 45°), each divided into 4 right triangles.
-// Each diamond has:
-// - A center vertex where all 4 triangles meet
-// - 4 outer vertices (top, right, bottom, left)
-// - 4 internal lines from center to each outer vertex
-// - 4 boundary edges forming the diamond outline
-function generateAboloGrid(minX, maxX, minY, maxY) {
+// The abolo grid is a square grid with alternating diagonals.
+// Each square is 2x2 in grid coordinates and has one diagonal.
+// This creates the diamond tiling pattern that polyabolos are built on.
+function generateAboloGrid(minX, maxX, minY, maxY, offsetX = -1.5, offsetY = 0.5) {
   const lines = []
-  const padding = 3
+  const padding = 2
 
-  // Diamond centers are at (0.5 + 2k, 0.5 + 2m) in page coords
-  // The 4 outer vertices are 2 units away along the diagonal directions
-  const gMinX = Math.floor((minX - 0.5) / 2) - padding
-  const gMaxX = Math.ceil((maxX - 0.5) / 2) + padding
-  const gMinY = Math.floor((minY - 0.5) / 2) - padding
-  const gMaxY = Math.ceil((maxY - 0.5) / 2) + padding
+  // Grid coordinates are integers, but squares are 2x2
+  const gMinX = Math.floor(minX / 2) - padding
+  const gMaxX = Math.ceil(maxX / 2) + padding
+  const gMinY = Math.floor(minY / 2) - padding
+  const gMaxY = Math.ceil(maxY / 2) + padding
 
   const edgeSet = new Set()
 
-  // For each diamond center at (0.5 + 2i, 0.5 + 2j)
-  for (let i = gMinX; i <= gMaxX; i++) {
-    for (let j = gMinY; j <= gMaxY; j++) {
-      const cx = 0.5 + 2 * i
-      const cy = 0.5 + 2 * j
+  // For each 2x2 square in the grid
+  for (let i = gMinX; i < gMaxX; i++) {
+    for (let j = gMinY; j < gMaxY; j++) {
+      // Square corners in grid coordinates (each square is 2x2)
+      // Apply configurable offset
+      const x = 2 * i + offsetX
+      const y = 2 * j + offsetY
+      
+      const bl = [x, y]           // bottom-left
+      const br = [x + 2, y]       // bottom-right
+      const tl = [x, y + 2]       // top-left
+      const tr = [x + 2, y + 2]   // top-right
 
-      // Outer vertices of the diamond (2 units from center along axes)
-      const top = [cx, cy + 2]
-      const right = [cx + 2, cy]
-      const bottom = [cx, cy - 2]
-      const left = [cx - 2, cy]
-      const center = [cx, cy]
-
-      // 4 internal spokes from center to each outer vertex
-      const spokes = [
-        [center, top],
-        [center, right],
-        [center, bottom],
-        [center, left],
+      // Square boundaries (4 edges)
+      const squareEdges = [
+        [bl, br],  // bottom
+        [br, tr],  // right
+        [tr, tl],  // top
+        [tl, bl],  // left
       ]
 
-      // 4 boundary edges of the diamond
-      const edges = [
-        [top, right],
-        [right, bottom],
-        [bottom, left],
-        [left, top],
-      ]
+      // Diagonal - alternates based on (i + j) parity
+      // When (i + j) is even: / diagonal (bottom-left to top-right)
+      // When (i + j) is odd: \ diagonal (top-left to bottom-right)
+      const diagonal = (i + j) % 2 === 0 ? [bl, tr] : [tl, br]
 
-      // Add all edges (spokes and boundary)
-      for (const [p1, p2] of [...spokes, ...edges]) {
-        const key = makeEdgeKey(p1, p2)
-
+      // Add all edges (square boundaries + diagonal)
+      for (const edge of [...squareEdges, diagonal]) {
+        const key = makeEdgeKey(edge[0], edge[1])
         if (!edgeSet.has(key)) {
           edgeSet.add(key)
-          lines.push([p1, p2])
+          lines.push(edge)
         }
       }
     }
@@ -598,7 +590,7 @@ function generateBevelhexGrid(minX, maxX, minY, maxY) {
 }
 
 // Main grid generation function
-export function generateGridLines(gridType, minX, maxX, minY, maxY) {
+export function generateGridLines(gridType, minX, maxX, minY, maxY, offsetX, offsetY) {
   const generators = {
     omino: generateOminoGrid,
     hex: generateHexGrid,
@@ -616,6 +608,11 @@ export function generateGridLines(gridType, minX, maxX, minY, maxY) {
   if (!generator) {
     console.warn(`Unknown grid type: ${gridType}`)
     return []
+  }
+
+  // Pass offset parameters only to abolo grid
+  if (gridType === 'abolo' && offsetX !== undefined && offsetY !== undefined) {
+    return generator(minX, maxX, minY, maxY, offsetX, offsetY)
   }
 
   return generator(minX, maxX, minY, maxY)

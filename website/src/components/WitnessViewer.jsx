@@ -17,6 +17,8 @@ const CORONA_COLORS = [
 function WitnessViewer({ witness, onClose }) {
   const [showHoles, setShowHoles] = useState(false)
   const [showGrid, setShowGrid] = useState(false)
+  const [gridOffsetX] = useState(-1.5)
+  const [gridOffsetY] = useState(0.5)
 
   const activeWitness = showHoles && witness.witness_with_holes
     ? witness.witness_with_holes
@@ -57,6 +59,8 @@ function WitnessViewer({ witness, onClose }) {
               witness={witness}
               patch={activeWitness}
               showGrid={showGrid}
+              gridOffsetX={gridOffsetX}
+              gridOffsetY={gridOffsetY}
             />
           </div>
 
@@ -129,7 +133,7 @@ function WitnessViewer({ witness, onClose }) {
   )
 }
 
-function WitnessSVG({ witness, patch, showGrid }) {
+function WitnessSVG({ witness, patch, showGrid, gridOffsetX, gridOffsetY }) {
   const { tile_boundary, grid_type } = witness
 
   if (!tile_boundary || tile_boundary.length === 0 || !patch) {
@@ -184,7 +188,7 @@ function WitnessSVG({ witness, patch, showGrid }) {
 
   // Generate grid lines if showGrid is enabled
   const gridLines = showGrid
-    ? generateGridLines(grid_type, minX - padding, maxX + padding, minY - padding, maxY + padding)
+    ? generateGridLines(grid_type, minX - padding, maxX + padding, minY - padding, maxY + padding, gridOffsetX, gridOffsetY)
     : []
 
   return (
