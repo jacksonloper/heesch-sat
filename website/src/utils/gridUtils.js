@@ -446,87 +446,10 @@ function generateOctasquareGrid(minX, maxX, minY, maxY) {
 }
 
 // Generate grid lines for drafter grid (30-60-90 triangles)
+// TODO: Implement proper drafter grid with 12 triangle types in 7x7 period
+// For now, use hex grid as the underlying lattice
 function generateDrafterGrid(minX, maxX, minY, maxY) {
-  const lines = []
-  const toPage = gridToPage.drafter
-  const toGrid = pageToGrid.drafter
-  const padding = 4
-
-  const corners = [
-    toGrid(minX, minY),
-    toGrid(maxX, minY),
-    toGrid(minX, maxY),
-    toGrid(maxX, maxY),
-  ]
-
-  const gMinX = Math.floor(Math.min(...corners.map(c => c[0]))) - padding
-  const gMaxX = Math.ceil(Math.max(...corners.map(c => c[0]))) + padding
-  const gMinY = Math.floor(Math.min(...corners.map(c => c[1]))) - padding
-  const gMaxY = Math.ceil(Math.max(...corners.map(c => c[1]))) + padding
-
-  const edgeSet = new Set()
-
-  // Drafter vertices for triangle 0 (at origin {2,1})
-  // Vertices are scaled: vertexToGrid returns pt / 6.0 * 3.5
-  const scale = 3.5 / 6.0
-
-  // All 12 triangle types with their vertex offsets
-  const triangleVerts = [
-    [[0, 0], [6, 0], [4, 4]],     // {2,1}
-    [[4, 4], [0, 6], [0, 0]],     // {1,2}
-    [[0, 0], [0, 6], [-4, 8]],    // {6,3}
-    [[0, 0], [-4, 8], [-6, 6]],   // {5,3}
-    [[0, 0], [-6, 6], [-8, 4]],   // {4,2}
-    [[0, 0], [-8, 4], [-6, 0]],   // {4,1}
-    [[0, 0], [-6, 0], [-4, -4]],  // {5,6}
-    [[0, 0], [-4, -4], [0, -6]],  // {6,5}
-    [[0, 0], [0, -6], [4, -8]],   // {1,4}
-    [[0, 0], [4, -8], [6, -6]],   // {2,4}
-    [[0, 0], [6, -6], [8, -4]],   // {3,5}
-    [[0, 0], [8, -4], [6, 0]],    // {3,6}
-  ]
-
-  const origins = [
-    [2, 1], [1, 2], [6, 3], [5, 3], [4, 2], [4, 1],
-    [5, 6], [6, 5], [1, 4], [2, 4], [3, 5], [3, 6]
-  ]
-
-  // Iterate over the period-7 grid
-  for (let bx = gMinX; bx <= gMaxX; bx += 7) {
-    for (let by = gMinY; by <= gMaxY; by += 7) {
-      // Draw each of 12 triangle types
-      for (let t = 0; t < 12; t++) {
-        const [ox, oy] = origins[t]
-        const gx = bx + ox
-        const gy = by + oy
-
-        const verts = triangleVerts[t]
-
-        for (let i = 0; i < 3; i++) {
-          const [dx1, dy1] = verts[i]
-          const [dx2, dy2] = verts[(i + 1) % 3]
-
-          const p1 = toPage((gx + dx1 * scale / 3.5 * 6 / 12 * 7) * scale,
-                           (gy + dy1 * scale / 3.5 * 6 / 12 * 7) * scale)
-          const p2 = toPage((gx + dx2 * scale / 3.5 * 6 / 12 * 7) * scale,
-                           (gy + dy2 * scale / 3.5 * 6 / 12 * 7) * scale)
-
-          // Simplified: just use the vertex offsets directly scaled
-          const px1 = toPage(gx * scale + dx1 * scale / 6, gy * scale + dy1 * scale / 6)
-          const px2 = toPage(gx * scale + dx2 * scale / 6, gy * scale + dy2 * scale / 6)
-
-          const key = makeEdgeKey(px1, px2)
-
-          if (!edgeSet.has(key)) {
-            edgeSet.add(key)
-            lines.push([px1, px2])
-          }
-        }
-      }
-    }
-  }
-
-  return lines
+  return generateHexGrid(minX, maxX, minY, maxY)
 }
 
 // Generate grid lines for halfcairo grid (Cairo tiling with kites and triangles)
