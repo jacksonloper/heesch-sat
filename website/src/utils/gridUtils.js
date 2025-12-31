@@ -446,10 +446,58 @@ function generateOctasquareGrid(minX, maxX, minY, maxY) {
 }
 
 // Generate grid lines for drafter grid (30-60-90 triangles)
-// TODO: Implement proper drafter grid with 12 triangle types in 7x7 period
-// For now, use hex grid as the underlying lattice
+// Uses the coarser "metahex" grid - hexagons that are 7 units wide,
+// which defines the periodic structure of the drafter tiling
 function generateDrafterGrid(minX, maxX, minY, maxY) {
-  return generateHexGrid(minX, maxX, minY, maxY)
+  const lines = []
+  const toPage = gridToPage.drafter
+  const toGrid = pageToGrid.drafter
+  const padding = 14 // Need larger padding for the bigger hexes
+
+  // Convert page bounds to approximate grid bounds
+  const corners = [
+    toGrid(minX, minY),
+    toGrid(maxX, minY),
+    toGrid(minX, maxY),
+    toGrid(maxX, maxY),
+  ]
+
+  const gMinX = Math.floor(Math.min(...corners.map(c => c[0])) / 7) * 7 - padding
+  const gMaxX = Math.ceil(Math.max(...corners.map(c => c[0])) / 7) * 7 + padding
+  const gMinY = Math.floor(Math.min(...corners.map(c => c[1])) / 7) * 7 - padding
+  const gMaxY = Math.ceil(Math.max(...corners.map(c => c[1])) / 7) * 7 + padding
+
+  // Metahex vertices - 7x larger than normal hex vertices
+  // Normal hex verts are at 1/3 scale, so metahex verts are at 7/3 scale
+  const metahexVerts = [
+    [7/3, 7/3], [-7/3, 14/3], [-14/3, 7/3],
+    [-7/3, -7/3], [7/3, -14/3], [14/3, -7/3]
+  ]
+
+  const edgeSet = new Set()
+
+  // Step through grid in increments of 7
+  for (let gx = gMinX; gx <= gMaxX; gx += 7) {
+    for (let gy = gMinY; gy <= gMaxY; gy += 7) {
+      // Draw metahex edges
+      for (let i = 0; i < 6; i++) {
+        const [dx1, dy1] = metahexVerts[i]
+        const [dx2, dy2] = metahexVerts[(i + 1) % 6]
+
+        const p1 = toPage(gx + dx1, gy + dy1)
+        const p2 = toPage(gx + dx2, gy + dy2)
+
+        const key = makeEdgeKey(p1, p2)
+
+        if (!edgeSet.has(key)) {
+          edgeSet.add(key)
+          lines.push([p1, p2])
+        }
+      }
+    }
+  }
+
+  return lines
 }
 
 // Generate grid lines for halfcairo grid (Cairo tiling with kites and triangles)
