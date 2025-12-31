@@ -263,7 +263,7 @@ function generateKiteGrid(minX, maxX, minY, maxY) {
 // The abolo grid is a square grid with alternating diagonals.
 // Each square is 2x2 in grid coordinates and has one diagonal.
 // This creates the diamond tiling pattern that polyabolos are built on.
-function generateAboloGrid(minX, maxX, minY, maxY, offsetX = -0.875, offsetY = 0.875) {
+function generateAboloGrid(minX, maxX, minY, maxY, offsetX = -1.5, offsetY = 0.5) {
   const lines = []
   const padding = 2
 

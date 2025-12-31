@@ -17,8 +17,8 @@ const CORONA_COLORS = [
 function WitnessViewer({ witness, onClose }) {
   const [showHoles, setShowHoles] = useState(false)
   const [showGrid, setShowGrid] = useState(false)
-  const [gridOffsetX, setGridOffsetX] = useState(-0.875)
-  const [gridOffsetY, setGridOffsetY] = useState(0.875)
+  const [gridOffsetX] = useState(-1.5)
+  const [gridOffsetY] = useState(0.5)
 
   const activeWitness = showHoles && witness.witness_with_holes
     ? witness.witness_with_holes
@@ -113,39 +113,6 @@ function WitnessViewer({ witness, onClose }) {
                 Show underlying grid
               </label>
             </div>
-
-            {showGrid && witness.grid_type === 'abolo' && (
-              <>
-                <div className="slider-row">
-                  <label>
-                    Grid offset X: {gridOffsetX.toFixed(3)}
-                    <input
-                      type="range"
-                      min="-2"
-                      max="2"
-                      step="0.001"
-                      value={gridOffsetX}
-                      onChange={e => setGridOffsetX(parseFloat(e.target.value))}
-                      style={{ width: '100%' }}
-                    />
-                  </label>
-                </div>
-                <div className="slider-row">
-                  <label>
-                    Grid offset Y: {gridOffsetY.toFixed(3)}
-                    <input
-                      type="range"
-                      min="-2"
-                      max="2"
-                      step="0.001"
-                      value={gridOffsetY}
-                      onChange={e => setGridOffsetY(parseFloat(e.target.value))}
-                      style={{ width: '100%' }}
-                    />
-                  </label>
-                </div>
-              </>
-            )}
 
             <div className="corona-legend">
               <h4>Corona levels:</h4>
