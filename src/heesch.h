@@ -10,6 +10,7 @@
 #include "tileio.h"
 #include "sat.h"
 #include "periodic.h"
+#include "verbose.h"
 
 // The core of the whole system: a class that understands how to compute
 // Heesch numbers of polyforms.  As of 2023, also includes the ability
@@ -307,8 +308,12 @@ HeeschSolver<grid>::HeeschSolver( const Shape<grid>& shape, Orientations ori, bo
 	, tiles_isohedrally_ { false }
 	, reduce_ {reduce}
 {
+	VLOG("HeeschSolver constructed");
+	VLOG("  Surroundable: " << (cloud_.surroundable_ ? "yes" : "no"));
+	VLOG("  Reduced surroundable: " << (cloud_.reduced_surroundable_ ? "yes" : "no"));
 	// Create the 0th corona.
 	getShapeVariable( grid::orientations[0], 0 );
+	VLOG("  Initial tiles: " << tiles_.size() << ", cells: " << cells_.size() << ", vars: " << next_var_);
 }
 
 template<typename grid>
@@ -490,12 +495,19 @@ template<typename grid>
 void HeeschSolver<grid>::increaseLevel()
 {
 	++level_;
+	VLOG("=== Increasing to level " << level_ << " ===");
+	ManualTimer levelTimer;
 
 	// Don't bother doing any adjacency-related computations if the shape
 	// can't be surrounded. We know for a fact that we won't find anything.
 	if (!cloud_.surroundable_) {
+		VLOG("  (skipped - not surroundable)");
 		return;
 	}
+
+	size_t tiles_before = tiles_.size();
+	size_t cells_before = cells_.size();
+	size_t vars_before = next_var_;
 
 	if (level_ == 1) {
 		for (auto& T : cloud_.adjacent_) {
@@ -504,6 +516,11 @@ void HeeschSolver<grid>::increaseLevel()
 	} else {
 		extendLevelWithTransforms(level_ - 1, cloud_.adjacent_);
 	}
+
+	VLOG("  New tiles: " << (tiles_.size() - tiles_before) << " (total: " << tiles_.size() << ")");
+	VLOG("  New cells: " << (cells_.size() - cells_before) << " (total: " << cells_.size() << ")");
+	VLOG("  New vars: " << (next_var_ - vars_before) << " (total: " << next_var_ << ")");
+	VLOG("  increaseLevel took " << std::fixed << std::setprecision(4) << levelTimer.elapsed() << "s");
 }
 
 template<typename grid>
@@ -676,29 +693,39 @@ void HeeschSolver<grid>::getSolution(
 }
 
 template<typename grid>
-bool HeeschSolver<grid>::hasCorona( 
-	bool get_solution, bool& has_holes, patch_t& soln ) 
+bool HeeschSolver<grid>::hasCorona(
+	bool get_solution, bool& has_holes, patch_t& soln )
 {
+	VLOG("hasCorona(level=" << level_ << ")");
+	ManualTimer coronaTimer;
+
 	if (level_ == 0) {
 		// A hole-free 0-corona always exists.
 		has_holes = false;
 		if (get_solution) {
 			soln.push_back(std::make_pair(0, grid::orientations[0]));
 		}
+		VLOG("  Level 0: trivial success");
 		return true;
 	}
 
 	if (!cloud_.surroundable_) {
-		// std::cout << "Not surroundable at all" << std::endl;
+		VLOG("  Not surroundable, returning false");
 		return false;
 	}
 
+	ManualTimer satTimer;
 	CMSat::SATSolver solver;
 	solver.new_vars(next_var_);
+	VLOG("  SAT solver: " << next_var_ << " variables");
 
 	getClauses(solver, false);
+	VLOG("  getClauses took " << std::fixed << std::setprecision(4) << satTimer.elapsed() << "s");
+	satTimer.reset();
 
+	VLOG("  Calling SAT solver (first solve, no holes allowed)...");
 	if (solver.solve() == CMSat::l_True) {
+		VLOG("  SAT solve returned TRUE in " << std::fixed << std::setprecision(4) << satTimer.elapsed() << "s");
 		// Got a solution, but it may have large holes.  Need to find
 		// them and iterate until they're gone.
 
@@ -708,18 +735,25 @@ bool HeeschSolver<grid>::hasCorona(
 			// debugSolution( std::cout, shape_, soln );
 		}
 
+		size_t hole_iterations = 0;
 		while( true ) {
+			++hole_iterations;
+			satTimer.reset();
+
 			const std::vector<CMSat::lbool>& model = solver.get_model();
 			HoleFinder<grid> finder { shape_ };
 
+			size_t tiles_in_solution = 0;
 			for( auto& ti : tiles_ ) {
 				for (auto v: ti) {
 					if (model[v.second] == CMSat::l_True) {
 						finder.addCopy(ti.index_, ti.T_);
+						++tiles_in_solution;
 						break;
 					}
 				}
 			}
+			VLOG("  Hole iteration " << hole_iterations << ": " << tiles_in_solution << " tiles in solution");
 
 			std::vector<std::vector<tile_index>> holes;
 			if( !finder.getHoles( holes ) ) {
@@ -729,23 +763,34 @@ bool HeeschSolver<grid>::hasCorona(
 					getSolution( solver, soln );
 				}
 
+				VLOG("  Found hole-free solution after " << hole_iterations << " iterations");
+				VLOG("  hasCorona total: " << std::fixed << std::setprecision(4) << coronaTimer.elapsed() << "s");
+
 				// If the client has asked for checking isohedral tiling,
 				// this is the place to do it -- after constructing the
 				// clauses for level-1 surroundability, finding a surround
 				// with no holes.
 				if( (level_ == 1) && check_isohedral_ ) {
+					VLOG("  Checking isohedral tiling...");
 					if( checkIsohedralTiling( solver ) ) {
+						VLOG("  Tiles isohedrally!");
 						return false;
 					}
+					VLOG("  Does not tile isohedrally");
 				}
 
 				return true;
 			}
 
+			VLOG("  Found " << holes.size() << " holes (tiles involved: " << [&]() {
+				size_t total = 0;
+				for (auto& h : holes) total += h.size();
+				return total;
+			}() << ")");
+
 			std::vector<CMSat::Lit> cl;
 			for( auto& hole : holes ) {
 				cl.clear();
-				// std::cout << "Forbidding a hole:";
 				for(auto& index : hole) {
 					// We know that there's a variable at the top level,
 					// otherwise we wouldn't have found a hole in the
@@ -755,46 +800,63 @@ bool HeeschSolver<grid>::hasCorona(
 				solver.add_clause( cl );
 			}
 
+			VLOG("  Re-solving after adding hole constraints...");
+			satTimer.reset();
 			if( solver.solve() == CMSat::l_False ) {
-				// Ran out of options; revert to the already captured 
+				// Ran out of options; revert to the already captured
 				// solution with holes.
-				// std::cout << "No longer solvable" << std::endl;
+				VLOG("  SAT solve returned FALSE in " << std::fixed << std::setprecision(4) << satTimer.elapsed() << "s");
+				VLOG("  No hole-free solution exists, returning with holes after " << hole_iterations << " iterations");
+				VLOG("  hasCorona total: " << std::fixed << std::setprecision(4) << coronaTimer.elapsed() << "s");
 				return true;
 			}
+			VLOG("  SAT solve returned TRUE in " << std::fixed << std::setprecision(4) << satTimer.elapsed() << "s");
 		}
 	} else if( check_hh_ ) {
-		// No solution found yet.  If requested, try a larger solution by 
+		VLOG("  SAT solve returned FALSE in " << std::fixed << std::setprecision(4) << satTimer.elapsed() << "s");
+		VLOG("  No solution without holes, trying with holes allowed...");
+		// No solution found yet.  If requested, try a larger solution by
 		// allowing holes in the outer corona.
-		// std::cout << "Adding holes to level" << std::endl;
 
-		// It turns out that this never did anything, and I'm kind of 
+		// It turns out that this never did anything, and I'm kind of
 		// embarrassed that it stuck around in the code as long as it did.
 		// The offending method has already been removed.
 		// addHolesToLevel();
 
+		satTimer.reset();
 		CMSat::SATSolver solver;
 		solver.new_vars( next_var_ );
 		getClauses( solver, true );
+		VLOG("  getClauses (allow_holes) took " << std::fixed << std::setprecision(4) << satTimer.elapsed() << "s");
+		satTimer.reset();
+
 		if( solver.solve() == CMSat::l_True ) {
+			VLOG("  SAT solve (with holes) returned TRUE in " << std::fixed << std::setprecision(4) << satTimer.elapsed() << "s");
 			has_holes = true;
 			if( get_solution ) {
 				getSolution( solver, soln );
 			}
-			// std::cerr << "Found solution with holes" << std::endl;
+			VLOG("  hasCorona total: " << std::fixed << std::setprecision(4) << coronaTimer.elapsed() << "s");
 			return true;
 		} else {
-			// std::cout << "No solution with holes" << std::endl;
+			VLOG("  SAT solve (with holes) returned FALSE in " << std::fixed << std::setprecision(4) << satTimer.elapsed() << "s");
+			VLOG("  hasCorona total: " << std::fixed << std::setprecision(4) << coronaTimer.elapsed() << "s");
 			return false;
 		}
 	} else {
+		VLOG("  SAT solve returned FALSE in " << std::fixed << std::setprecision(4) << satTimer.elapsed() << "s");
+		VLOG("  hasCorona total: " << std::fixed << std::setprecision(4) << coronaTimer.elapsed() << "s");
 		return false;
 	}
 }
 
 template<typename grid>
-bool HeeschSolver<grid>::iterateUntilSimplyConnected( 
+bool HeeschSolver<grid>::iterateUntilSimplyConnected(
 	size_t lev, CMSat::SATSolver& solver)
 {
+	VLOG("  iterateUntilSimplyConnected(level=" << lev << ")");
+	ManualTimer iterTimer;
+
 	// To begin, ban all pairwise holes in the outermost corona,
 	// using information from the cloud.  These are cheap to forbid
 	// outright, rather than discovering them after the fact.
@@ -802,7 +864,7 @@ bool HeeschSolver<grid>::iterateUntilSimplyConnected(
 	std::vector<CMSat::Lit> cl;
 	cl.resize(2);
 
-	// std::cerr << "Forbidding pairwise holes" << std::endl;
+	size_t pairwise_clauses = 0;
 	for (auto& ti: tiles_) {
 		if (ti.hasLevel(lev)) {
 			cl[0] = neg(ti[lev]);
@@ -817,68 +879,75 @@ bool HeeschSolver<grid>::iterateUntilSimplyConnected(
 				if (tj.hasLevel(lev)) {
 					cl[1] = neg(tj[lev]);
 					solver.add_clause( cl );
+					++pairwise_clauses;
 				}
 			}
 		}
 	}
+	VLOG("    Added " << pairwise_clauses << " pairwise hole clauses");
 
 	// Now iterate, as long as solutions are found.
-	while (solver.solve() == CMSat::l_True) {
-		// This solution may or may not have holes.  If it has holes, 
+	size_t iteration = 0;
+	while (true) {
+		++iteration;
+		ManualTimer solveTimer;
+		auto result = solver.solve();
+		VLOG("    Iteration " << iteration << ": SAT solve took " << std::fixed << std::setprecision(4) << solveTimer.elapsed() << "s");
+
+		if (result != CMSat::l_True) {
+			VLOG("    SAT returned FALSE - no simply connected patch exists");
+			VLOG("    iterateUntilSimplyConnected total: " << std::fixed << std::setprecision(4) << iterTimer.elapsed() << "s");
+			return false;
+		}
+
+		// This solution may or may not have holes.  If it has holes,
 		// ban them and continue.  If it doesn't have holes, report
 		// success.
 
 		const std::vector<CMSat::lbool>& model = solver.get_model();
 		HoleFinder<grid> finder { shape_ };
 
+		size_t tiles_in_solution = 0;
 		for (auto& ti: tiles_) {
-			// Need to make sure we don't accidentally ask about 
+			// Need to make sure we don't accidentally ask about
 			// variables in "future" coronas.
 			for (auto v: ti.levelRange(0, lev + 1)) {
 				if (model[v.second] == CMSat::l_True) {
 					finder.addCopy(ti.index_, ti.T_);
+					++tiles_in_solution;
 					break;
 				}
 			}
 		}
+		VLOG("    Solution has " << tiles_in_solution << " tiles");
 
 		std::vector<std::vector<tile_index>> holes;
 		if (!finder.getHoles(holes)) {
-			// std::cerr << "Found a simply connected patch" << std::endl;
+			VLOG("    Found simply connected patch!");
+			VLOG("    iterateUntilSimplyConnected total: " << std::fixed << std::setprecision(4) << iterTimer.elapsed() << "s (" << iteration << " iterations)");
 			return true;
 		}
 
+		VLOG("    Found " << holes.size() << " holes, adding constraints...");
 		for (auto& hole: holes) {
-			// std::cerr << "Forbidding a larger hole" << std::endl;
 			cl.clear();
 			for (auto& index: hole) {
-				// We know that there's a variable at the top level,
-				// otherwise we wouldn't have found a hole in the
-				// first place.
-				/*
-				if (!tiles_[index].hasLevel(lev)) {
-					std::cerr << "Weirdness";
-					for (const auto v: tiles_[index].vars_) {
-						std::cerr << " " << v.first;
-					}
-					std::cerr << std::endl;
-				}
-				*/
 				cl.push_back(neg(tiles_[index][lev]));
 			}
 			solver.add_clause(cl);
 		}
 	}
-
-	// If you end up here, you weren't able to ban all holes.  Report
-	// failure.
-	return false;
 }
 
 template<typename grid>
 void HeeschSolver<grid>::solve(
 	bool get_solution, size_t maxlevel, TileInfo<grid>& info )
 {
+	VTIMER("HeeschSolver::solve total");
+	VLOG("========================================");
+	VLOG("HeeschSolver::solve starting (maxlevel=" << maxlevel << ")");
+	VLOG("========================================");
+
 	if (level_ != 0) {
 		std::cerr << "Attempting to use solve() on non-zero level"
 			<< std::endl;
@@ -886,9 +955,10 @@ void HeeschSolver<grid>::solve(
 	}
 
 	if (!cloud_.surroundable_) {
-		// The shape is utterly unsurroundable, because there's a 
+		// The shape is utterly unsurroundable, because there's a
 		// halo cell that couldn't be filled by any neighbour.  You
 		// can definitely report Hc = 0, Hh = 0.
+		VLOG("Shape is not surroundable -> Heesch = 0");
 		info.setNonTiler(0, nullptr, 0, nullptr);
 		return;
 	}
@@ -900,6 +970,7 @@ void HeeschSolver<grid>::solve(
 		// generous set of neighbours, now stored in cloud_.adjacent_culled_.
 		// So run a quick check of that in the special case that we were
 		// asked to compute Hh.
+		VLOG("Reduced surroundable is false -> Heesch = 0 (checking Hh with culled adjacents)");
 
 		info.setNonTiler(0, nullptr, 0, nullptr);
 
@@ -910,6 +981,7 @@ void HeeschSolver<grid>::solve(
 			final_solver.new_vars(next_var_);
 			getClauses(final_solver, true);
 			if (final_solver.solve() == CMSat::l_True) {
+				VLOG("Found Hh=1 solution with culled adjacents");
 				if (get_solution) {
 					patch_t hh_solution;
 					getSolution(final_solver, hh_solution, 1);
@@ -935,18 +1007,28 @@ void HeeschSolver<grid>::solve(
 
 	while (level_ < maxlevel) {
 		increaseLevel();
-		// std::cerr << "Now checking level " << level_ << std::endl;
+
+		ManualTimer levelSolveTimer;
+		VLOG("--- Level " << level_ << " SAT solve ---");
 
 		std::unique_ptr<CMSat::SATSolver> cur_solver {new CMSat::SATSolver};
 		cur_solver->new_vars(next_var_);
+
+		ManualTimer clauseTimer;
 		getClauses(*cur_solver, true);
+		VLOG("  getClauses took " << std::fixed << std::setprecision(4) << clauseTimer.elapsed() << "s");
 
 		// debug(std::cerr);
 
+		VLOG("  Calling SAT solver...");
+		ManualTimer satTimer;
 		if (cur_solver->solve() != CMSat::l_True) {
+			VLOG("  SAT solve returned FALSE in " << std::fixed << std::setprecision(4) << satTimer.elapsed() << "s");
+			VLOG("  Level " << level_ << " has no solution -> Heesch found");
 			// We've hit the limit, so hard stop here.
 
 			if (check_hh_ && reduce_) {
+				VLOG("  Trying last-ditch Hh check with culled adjacents...");
 				// As a last-ditch test, if you want to calculate Hh
 				// and you're working with a reduced list of adjacencies,
 				// you should try adding in the culled adjacencies and
@@ -955,29 +1037,29 @@ void HeeschSolver<grid>::solve(
 				CMSat::SATSolver final_solver;
 				final_solver.new_vars(next_var_);
 				getClauses(final_solver, true);
+				satTimer.reset();
 				if (final_solver.solve() == CMSat::l_True) {
+					VLOG("  Last-ditch Hh succeeded in " << std::fixed << std::setprecision(4) << satTimer.elapsed() << "s");
 					got_hh = true;
 					hh = level_;
 					if (get_solution) {
 						getSolution(final_solver, hh_solution, hh);
 					}
-					
-					/*
-					std::cerr << "Final solver got hh = " << hh << std::endl;
 				} else {
-					std::cerr << "Final solver failed" << std::endl;
-					
-					*/
+					VLOG("  Last-ditch Hh failed in " << std::fixed << std::setprecision(4) << satTimer.elapsed() << "s");
 				}
 			}
 
 			break;
 		}
 
+		VLOG("  SAT solve returned TRUE in " << std::fixed << std::setprecision(4) << satTimer.elapsed() << "s");
+		VLOG("  Level " << level_ << " solve total: " << std::fixed << std::setprecision(4) << levelSolveTimer.elapsed() << "s");
+
 		if (check_isohedral_ && (level_ == 1)) {
-			// std::cerr << "Checking isohedral" << level_ << std::endl;
+			VLOG("  Checking isohedral tiling...");
 			// Need special case here to check for isohedral tiling.
-			// FIXME -- But this is problematic, since it modifies the 
+			// FIXME -- But this is problematic, since it modifies the
 			// solver, which we need to save.  Find a way to avoid this
 			// duplication.
 
@@ -986,6 +1068,7 @@ void HeeschSolver<grid>::solve(
 			getClauses(iso_solver, true);
 
 			if (checkIsohedralTiling(iso_solver)) {
+				VLOG("  TILES ISOHEDRALLY! Returning.");
 				if (get_solution) {
 					patch_t iso_solution;
 					getSolution(iso_solver, iso_solution, 1);
@@ -995,6 +1078,7 @@ void HeeschSolver<grid>::solve(
 				}
 				return;
 			}
+			VLOG("  Does not tile isohedrally, continuing...");
 		}
 
 		// There was a solution, so prepare for another round
@@ -1002,20 +1086,24 @@ void HeeschSolver<grid>::solve(
 	}
 
 	// FIXME: I believe there's a minor bug here in the case that
-	// you happen to set maxlevel to be exactly one more than a 
+	// you happen to set maxlevel to be exactly one more than a
 	// shape's actual Heesch number.  In that case it'll iterate
 	// without failure and stop naturally above.
 	if (level_ == maxlevel) {
+		VLOG("Reached maxlevel=" << maxlevel << " -> result is INCONCLUSIVE");
 		// We iterated above to failure.  First, we might have blown past
 		// maxlevel.  If so, the tile is inconclusive.
 
 		// Last ditch check for anisohedral
 		if (check_periodic_) {
+			VLOG("Checking periodic tiling...");
+			ManualTimer perTimer;
 			PeriodicSolver<grid> per {shape_, 16, 16};
 
 			if (get_solution) {
 				std::vector<xform_t> per_solution;
 				if (per.solve(&per_solution)) {
+					VLOG("TILES PERIODICALLY in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
 					patch_t demo;
 					for (const auto& T: per_solution) {
 						demo.push_back(std::make_pair(0, T));
@@ -1025,11 +1113,13 @@ void HeeschSolver<grid>::solve(
 				}
 			} else {
 				if (per.solve()) {
+					VLOG("TILES PERIODICALLY in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
 					// FIXME -- get the actual transitivity
 					info.setPeriodic(2);
 					return;
 				}
 			}
+			VLOG("Does not tile periodically (" << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s)");
 		}
 
 		if (get_solution) {
@@ -1040,11 +1130,12 @@ void HeeschSolver<grid>::solve(
 			info.setInconclusive();
 		}
 	} else {
-		// Not inconclusive.  So we step back down to prev_solver, which 
+		VLOG("Heesch number found at level " << (level_ - 1) << ", beginning walkback for hole-free patch");
+		// Not inconclusive.  So we step back down to prev_solver, which
 		// had previously found a solution with holes.  We try to eliminate
 		// those holes.  If we succeed, then Hh = Hc = (level_-1).  If we
 		// can't eliminate all holes, then Hh = (level_-1) and Hc < (level_-1).
-		// It's tempting to declare that Hc = (level_-2), but that's not 
+		// It's tempting to declare that Hc = (level_-2), but that's not
 		// entirely clear.  How far back might we have to go in order to find
 		// a hole-free patch?
 
@@ -1056,9 +1147,8 @@ void HeeschSolver<grid>::solve(
 				getSolution(*past_solvers.back(), hh_solution, hh);
 			}
 			got_hh = true;
+			VLOG("  Hh (with holes) = " << hh);
 		}
-
-		// std::cerr << "beginning walkback" << std::endl;
 
 		// Now find the best possible hole-free patch.  In full generality,
 		// this requires walking backwards through all computed levels,
@@ -1068,13 +1158,15 @@ void HeeschSolver<grid>::solve(
 
 		hc = 0;
 
+		VLOG("  Walking back through " << past_solvers.size() << " levels to find hole-free patch");
 		for (size_t lev = past_solvers.size(); lev > 0; --lev) {
-			// std::cerr << "  ... lev = " << lev << std::endl;
+			VLOG("  Trying level " << lev << "...");
+			ManualTimer walkbackTimer;
 
 			auto& solver = past_solvers[lev - 1];
 			if (iterateUntilSimplyConnected(lev, *solver)) {
 				hc = lev;
-				// std::cerr << "Hc = " << hc << std::endl;
+				VLOG("  Found hole-free patch at level " << hc << " in " << std::fixed << std::setprecision(4) << walkbackTimer.elapsed() << "s");
 				if (get_solution && (hc > 0)) {
 					getSolution(*solver, hc_solution, hc);
 
@@ -1086,6 +1178,7 @@ void HeeschSolver<grid>::solve(
 				}
 				break;
 			}
+			VLOG("  Level " << lev << " has no hole-free solution (" << std::fixed << std::setprecision(4) << walkbackTimer.elapsed() << "s)");
 		}
 
 		if (!got_hh) {
@@ -1093,14 +1186,20 @@ void HeeschSolver<grid>::solve(
 			got_hh = true;
 		}
 
+		VLOG("  Final result: Hc=" << hc << ", Hh=" << hh);
+
 		if (get_solution) {
-			info.setNonTiler( 
+			info.setNonTiler(
 				hc, (hc > 0) ? &hc_solution : nullptr,
 				hh, (hh > hc) ? &hh_solution : nullptr);
 		} else {
 			info.setNonTiler(hc, nullptr, hh, nullptr);
 		}
 	}
+
+	VLOG("========================================");
+	VLOG("HeeschSolver::solve complete");
+	VLOG("========================================");
 }
 
 template<typename grid>

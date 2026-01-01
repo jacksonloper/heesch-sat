@@ -15,6 +15,7 @@
 #include "tileio.h"
 #include "boundary.h"
 #include "periodic.h"
+#include "verbose.h"
 
 // Render witness data for a polyform to JSON format.
 //
@@ -461,6 +462,9 @@ void printUsage(const char *prog)
 	cerr << "  -out DIR:    Output directory for JSON files" << endl;
 	cerr << "  -json_nup N: Only output polyforms with Heesch >= N and < infinity." << endl;
 	cerr << "               Skips tilers (isohedral/periodic) and Heesch < N." << endl;
+	cerr << endl;
+	cerr << "  -verbose:    Enable detailed timing and progress logging to stderr." << endl;
+	cerr << "               Useful for debugging slow polyforms." << endl;
 }
 
 // Wrapper for batch mode processing (uses pretty-printed JSON for file output)
@@ -682,7 +686,7 @@ int main(int argc, char **argv)
 	string outputDir;
 	string summaryFile;
 
-	// Parse arguments to find -batch, -in, -out, -json_nup, and -summary
+	// Parse arguments to find -batch, -in, -out, -json_nup, -summary, and -verbose
 	for (int i = 1; i < argc; ++i) {
 		if (strcmp(argv[i], "-batch") == 0) {
 			batchMode = true;
@@ -694,6 +698,8 @@ int main(int argc, char **argv)
 			jsonNup = atoi(argv[++i]);
 		} else if (strcmp(argv[i], "-summary") == 0 && i + 1 < argc) {
 			summaryFile = argv[++i];
+		} else if (strcmp(argv[i], "-verbose") == 0) {
+			g_verbose = true;
 		}
 	}
 
@@ -707,6 +713,18 @@ int main(int argc, char **argv)
 	}
 
 	// Single mode: original behavior
+	// First remove -verbose from the argument list if present
+	for (int i = 1; i < argc; ++i) {
+		if (strcmp(argv[i], "-verbose") == 0) {
+			// Splice out -verbose
+			for (int j = i; j < argc - 1; ++j) {
+				argv[j] = argv[j + 1];
+			}
+			--argc;
+			--i;  // Check this position again
+		}
+	}
+
 	if (argc < 4) {
 		printUsage(argv[0]);
 		return 1;
