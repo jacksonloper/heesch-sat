@@ -6,6 +6,7 @@
 #include "heesch.h"
 #include "grid.h"
 #include "tileio.h"
+#include "verbose.h"
 
 // Use a SAT solver to compute Heesch numbers of polyforms.
 
@@ -184,6 +185,8 @@ int main( int argc, char **argv )
 			failsafe = true;
 		} else if (!strcmp(argv[idx], "-new")) {
 			failsafe = false;
+		} else if (!strcmp(argv[idx], "-verbose")) {
+			g_verbose = true;
 		} else {
 			// Maybe an input filename?
 			if (filesystem::exists(argv[idx])) {

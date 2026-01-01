@@ -6,6 +6,7 @@
 
 #include "shape.h"
 #include "bitmap.h"
+#include "verbose.h"
 
 enum Orientations
 {
@@ -114,7 +115,7 @@ public:
 };
 
 template<typename grid>
-Cloud<grid>::Cloud( const Shape<grid>& shape, Orientations ori, 
+Cloud<grid>::Cloud( const Shape<grid>& shape, Orientations ori,
 	bool filterSymmetries, bool reduce )
 	: shape_ { shape }
 	, adjacent_ {}
@@ -124,13 +125,23 @@ Cloud<grid>::Cloud( const Shape<grid>& shape, Orientations ori,
 	, surroundable_ { true }
 	, reduced_surroundable_ { true }
 {
+	VTIMER("Cloud::Cloud total");
+	ManualTimer phaseTimer;
+
+	VLOG("Cloud construction starting...");
+	VLOG("  Shape size: " << shape.size() << " cells");
+
 	shape.getHaloAndBorder(halo_, border_);
+	VLOG("  Halo size: " << halo_.size() << ", Border size: " << border_.size());
 
 	if (!filterSymmetries) {
 		calcOrientations(ori);
 	} else {
 		calcUniqueOrientations(ori);
 	}
+	VLOG("  Orientations: " << orientations_.size());
+	VLOG("  Phase: orientations took " << std::fixed << std::setprecision(4) << phaseTimer.elapsed() << "s");
+	phaseTimer.reset();
 
 	// Overlaps are easy to detect -- there must be a cell that's covered
 	// by a border cell of both transformed copies of the shape.  This
@@ -138,11 +149,13 @@ Cloud<grid>::Cloud( const Shape<grid>& shape, Orientations ori,
 	// checking faster by avoiding explicit intersection tests.
 
 	// NOTE -- is there an cheaper way to do this?  Is it possible that
-	// the space of overlaps for a fixed orientation can be generated 
+	// the space of overlaps for a fixed orientation can be generated
 	// from some kind of DFS?
+	size_t overlap_checks = 0;
 	for( auto& bp : border_ ) {
 		for( auto& ori : orientations_ ) {
 			for( auto& obp : ori.border_ ) {
+				++overlap_checks;
 				if( grid::translatable( obp, bp ) ) {
 					xform_t Tnew = ori.T_.translate( bp - obp );
 					// Avoid storing the identity matrix.
@@ -153,6 +166,9 @@ Cloud<grid>::Cloud( const Shape<grid>& shape, Orientations ori,
 			}
 		}
 	}
+	VLOG("  Overlapping transforms: " << overlapping_.size() << " (checked " << overlap_checks << " pairs)");
+	VLOG("  Phase: overlaps took " << std::fixed << std::setprecision(4) << phaseTimer.elapsed() << "s");
+	phaseTimer.reset();
 
 	bitgrid_t bits;
 
@@ -163,11 +179,14 @@ Cloud<grid>::Cloud( const Shape<grid>& shape, Orientations ori,
 
 	// Now try to construct all adjacencies by translating a border
 	// point of an oriented shape to a halo point of the main shape.
+	size_t adj_checks = 0;
+	size_t sc_checks = 0;
 	for( auto hp : halo_ ) {
 		bool found = false;
 
 		for( auto& ori : orientations_ ) {
 			for( auto& tbp : ori.border_ ) {
+				++adj_checks;
 				if( !grid::translatable( hp, tbp ) ) {
 					continue;
 				}
@@ -190,6 +209,7 @@ Cloud<grid>::Cloud( const Shape<grid>& shape, Orientations ori,
 				// so we know this new tile is adjacent.  But the adjacency
 				// might not be simply connected.
 
+				++sc_checks;
 				bool sc = checkSimplyConnected( bits, Tnew );
 
 /*
@@ -206,7 +226,7 @@ Cloud<grid>::Cloud( const Shape<grid>& shape, Orientations ori,
 					adjacent_.insert( Tnew );
 					// It's convenient to throw T inverse into the
 					// list of adjacents as well, so that we don't
-					// waste computation on it later when it comes 
+					// waste computation on it later when it comes
 					// up during iteration.  But that doesn't work
 					// when you're using unique orientations (i.e.,
 					// factoring out symmetry), because T inverse
@@ -225,17 +245,28 @@ Cloud<grid>::Cloud( const Shape<grid>& shape, Orientations ori,
 		}
 
 		// If there's a halo cell with no legal adjacency, Heesch numbers
-		// definitely don't work.  So don't bother doing any more work, 
+		// definitely don't work.  So don't bother doing any more work,
 		// just stop here.
 		if( !found ) {
+			VLOG("  NOT SURROUNDABLE: halo cell has no legal adjacency");
 			surroundable_ = false;
 			return;
 		}
 	}
+	VLOG("  Adjacent transforms: " << adjacent_.size());
+	VLOG("  Hole-adjacent transforms: " << adjacent_hole_.size());
+	VLOG("  Adjacency checks: " << adj_checks << ", Simply-connected checks: " << sc_checks);
+	VLOG("  Phase: adjacencies took " << std::fixed << std::setprecision(4) << phaseTimer.elapsed() << "s");
+	phaseTimer.reset();
 
 	if( reduce ) {
 		reduceAdjacents();
+		VLOG("  After reduction: " << adjacent_.size() << " adjacents, " << adjacent_culled_.size() << " culled");
+		VLOG("  Reduced surroundable: " << (reduced_surroundable_ ? "yes" : "no"));
+		VLOG("  Phase: reduction took " << std::fixed << std::setprecision(4) << phaseTimer.elapsed() << "s");
 	}
+
+	VLOG("Cloud construction complete.");
 }
 
 // Check naively whether the base tile and a copy transformed
