@@ -1081,6 +1081,34 @@ void HeeschSolver<grid>::solve(
 			VLOG("  Does not tile isohedrally, continuing...");
 		}
 
+		// Check for periodic tiling after each level (not just at maxlevel)
+		// This can detect tiling shapes early and avoid expensive SAT solves
+		if (check_periodic_ && (level_ >= 2)) {
+			VLOG("  Checking periodic tiling at level " << level_ << "...");
+			ManualTimer perTimer;
+			PeriodicSolver<grid> per {shape_, 16, 16};
+
+			if (get_solution) {
+				std::vector<xform_t> per_solution;
+				if (per.solve(&per_solution)) {
+					VLOG("  TILES PERIODICALLY (detected at level " << level_ << ") in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
+					patch_t demo;
+					for (const auto& T: per_solution) {
+						demo.push_back(std::make_pair(0, T));
+					}
+					info.setPeriodic(2, &demo);
+					return;
+				}
+			} else {
+				if (per.solve()) {
+					VLOG("  TILES PERIODICALLY (detected at level " << level_ << ") in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
+					info.setPeriodic(2);
+					return;
+				}
+			}
+			VLOG("  Does not tile periodically at level " << level_ << " (" << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s)");
+		}
+
 		// There was a solution, so prepare for another round
 		past_solvers.push_back(std::move(cur_solver));
 	}
