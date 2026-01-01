@@ -61,14 +61,14 @@ volume = modal.Volume.from_name("heesch-renderings-vol", create_if_missing=True)
 VOLUME_PATH = "/data"
 
 # Image with heesch-sat binaries compiled
-# Build timestamp: 2025-12-31T18:33:20Z - forces image rebuild
+# Build timestamp: 2025-12-31T19:45:00Z - forces image rebuild
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("build-essential", "libcryptominisat5-dev", "libboost-dev")
     .pip_install("fastapi", "psutil")
     .add_local_dir("../src", "/app/src", copy=True)
     .run_commands(
-        "cd /app/src && make clean render_witness gen",
+        "echo 'Build: 2025-12-31T20:15:00Z' && cd /app/src && make clean render_witness gen",
         "cp /app/src/render_witness /app/src/gen /usr/local/bin/",
     )
 )
@@ -254,13 +254,13 @@ def list_all_polyforms(grid_type_filter: Optional[str] = None) -> List[dict]:
     return result
 
 
-def run_render_witness(grid_type: str, coords: List[Tuple[int, int]], timeout: int = 300) -> dict:
+def run_render_witness(grid_type: str, coords: List[Tuple[int, int]], timeout: int = 14400) -> dict:
     """Run the render_witness binary to compute Heesch data.
-    
+
     Parameters:
     - grid_type: Full grid type name (hex, iamond, omino, etc.)
     - coords: List of (x, y) coordinates
-    - timeout: Timeout in seconds (default 300 = 5 minutes)
+    - timeout: Timeout in seconds (default 14400 = 4 hours)
     """
     import tempfile
     import threading
@@ -377,8 +377,8 @@ def run_render_witness_batch(
     grid_type: str,
     polyforms: List[List[Tuple[int, int]]],
     json_nup: Optional[int] = None,
-    timeout_per_polyform: int = 60
-) -> List[dict]:
+    timeout_per_polyform: int = 14400
+) -> Tuple[List[dict], Optional[dict]]:
     """
     Run the render_witness binary in batch mode to compute Heesch data for multiple polyforms.
 
@@ -386,80 +386,96 @@ def run_render_witness_batch(
     - grid_type: Full grid type name (hex, iamond, omino, etc.)
     - polyforms: List of polyforms, each is a list of (x, y) coordinates
     - json_nup: If specified, only return polyforms with Heesch >= json_nup and < infinity
-    - timeout_per_polyform: Timeout per polyform in seconds (default 60)
+    - timeout_per_polyform: Timeout per polyform in seconds (default 14400 = 4 hours)
 
-    Returns a list of polyform JSON data dicts.
+    Returns a tuple of (results list, summary dict or None).
     """
+    import tempfile
     import time
 
     if not polyforms:
-        return []
+        return [], None
 
     # Get grid type abbreviation for input format
     abbrev = GRID_ABBREVS.get(grid_type, 'O')
 
-    # Build input lines for batch mode
-    input_lines = []
-    for coords in polyforms:
-        coord_str = ' '.join(f"{x} {y}" for x, y in coords)
-        input_lines.append(f"{abbrev} {coord_str}")
-    input_text = '\n'.join(input_lines) + '\n'
+    # Create temp directory for input and output
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Write input file
+        input_file = os.path.join(tmpdir, "input.txt")
+        output_dir = os.path.join(tmpdir, "output")
+        summary_file = os.path.join(tmpdir, "summary.json")
 
-    # Build command
-    cmd = ["render_witness", "-batch"]
-    if json_nup is not None:
-        cmd.extend(["-json_nup", str(json_nup)])
+        with open(input_file, 'w') as f:
+            for coords in polyforms:
+                coord_str = ' '.join(f"{x} {y}" for x, y in coords)
+                f.write(f"{abbrev} {coord_str}\n")
 
-    total_timeout = len(polyforms) * timeout_per_polyform
-    print(f"Starting batch render_witness for {len(polyforms)} {grid_type} polyforms...")
-    print(f"Command: {' '.join(cmd)}")
-    print(f"Total timeout: {total_timeout}s ({total_timeout/60:.1f} min)")
+        # Build command
+        cmd = ["render_witness", "-batch", "-in", input_file, "-out", output_dir, "-summary", summary_file]
+        if json_nup is not None:
+            cmd.extend(["-json_nup", str(json_nup)])
 
-    start_time = time.time()
+        total_timeout = len(polyforms) * timeout_per_polyform
+        print(f"Starting batch render_witness for {len(polyforms)} {grid_type} polyforms...")
+        print(f"Command: {' '.join(cmd)}")
+        print(f"Total timeout: {total_timeout}s ({total_timeout/60:.1f} min)")
 
-    proc = subprocess.Popen(
-        cmd,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True
-    )
+        start_time = time.time()
 
-    try:
-        stdout, stderr = proc.communicate(input=input_text, timeout=total_timeout)
-        elapsed = time.time() - start_time
-        print(f"Batch render_witness completed in {elapsed:.1f}s with return code {proc.returncode}")
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.communicate()
-        raise RuntimeError(f"Batch render_witness timed out after {total_timeout}s")
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
 
-    if proc.returncode != 0:
-        raise RuntimeError(f"Batch render_witness failed: {stderr}")
-
-    # Parse JSONL output
-    results = []
-    for line in stdout.strip().split('\n'):
-        if not line:
-            continue
         try:
-            data = json.loads(line)
-            results.append(data)
-        except json.JSONDecodeError as e:
-            print(f"Warning: Failed to parse JSON line: {e}")
-            continue
+            stdout, stderr = proc.communicate(timeout=total_timeout)
+            elapsed = time.time() - start_time
+            print(f"Batch render_witness completed in {elapsed:.1f}s with return code {proc.returncode}")
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.communicate()
+            raise RuntimeError(f"Batch render_witness timed out after {total_timeout}s")
 
-    print(f"Batch processed {len(polyforms)} polyforms, got {len(results)} results")
-    if stderr:
-        # Print last few lines of stderr for context
-        stderr_lines = stderr.strip().split('\n')
-        if len(stderr_lines) > 5:
-            print(f"... (truncated {len(stderr_lines) - 5} lines)")
-            stderr_lines = stderr_lines[-5:]
-        for line in stderr_lines:
-            print(f"  {line}")
+        if proc.returncode != 0:
+            raise RuntimeError(f"Batch render_witness failed: {stderr}")
 
-    return results
+        # Read JSON files from output directory
+        results = []
+        if os.path.exists(output_dir):
+            for filename in os.listdir(output_dir):
+                if filename.endswith('.json'):
+                    filepath = os.path.join(output_dir, filename)
+                    try:
+                        with open(filepath, 'r') as f:
+                            data = json.load(f)
+                            results.append(data)
+                    except (json.JSONDecodeError, IOError) as e:
+                        print(f"Warning: Failed to read {filename}: {e}")
+                        continue
+
+        # Read summary file
+        summary = None
+        if os.path.exists(summary_file):
+            try:
+                with open(summary_file, 'r') as f:
+                    summary = json.load(f)
+            except (json.JSONDecodeError, IOError) as e:
+                print(f"Warning: Failed to read summary: {e}")
+
+        print(f"Batch processed {len(polyforms)} polyforms, got {len(results)} results")
+        if stderr:
+            # Print last few lines of stderr for context
+            stderr_lines = stderr.strip().split('\n')
+            if len(stderr_lines) > 5:
+                print(f"... (truncated {len(stderr_lines) - 5} lines)")
+                stderr_lines = stderr_lines[-5:]
+            for line in stderr_lines:
+                print(f"  {line}")
+
+        return results, summary
 
 
 def run_gen(grid_type: str, num_cells: int, free: bool = True) -> List[List[Tuple[int, int]]]:
@@ -491,13 +507,13 @@ def run_gen(grid_type: str, num_cells: int, free: bool = True) -> List[List[Tupl
     )
 
     try:
-        stdout, stderr = proc.communicate(timeout=600)  # 10 minute timeout
+        stdout, stderr = proc.communicate(timeout=14400)  # 4 hour timeout
         elapsed = time.time() - start_time
         print(f"gen completed in {elapsed:.1f}s")
     except subprocess.TimeoutExpired:
         proc.kill()
         proc.communicate()
-        raise RuntimeError("gen timed out after 10 minutes")
+        raise RuntimeError("gen timed out after 4 hours")
 
     if proc.returncode != 0:
         raise RuntimeError(f"gen failed: {stderr}")
@@ -567,19 +583,10 @@ def search_for_heesch(
     print(f"  Batch size: {batch_size}, json_nup: {json_nup}")
     start_time = time.time()
 
-    # Create JSONL file for logging all findings
-    # Include json_nup in filename to make filter level clear
-    jsonl_filename = f"{num_cells}{grid_type}_nup{json_nup}.jsonl"
-    jsonl_path = os.path.join(VOLUME_PATH, jsonl_filename)
-    print(f"Logging all findings to: {jsonl_path}")
-
     # Generate all polyforms
     polyforms = run_gen(grid_type, num_cells, free=True)
 
     if not polyforms:
-        # Create empty JSONL file
-        with open(jsonl_path, 'w') as f:
-            pass
         return {
             "status": "completed",
             "grid_type": grid_type,
@@ -587,170 +594,126 @@ def search_for_heesch(
             "polyforms_checked": 0,
             "results_found": 0,
             "stored": [],
-            "elapsed_seconds": time.time() - start_time,
-            "jsonl_path": jsonl_path
+            "elapsed_seconds": time.time() - start_time
         }
 
     gen_elapsed = time.time() - start_time
     print(f"Generated {len(polyforms)} polyforms in {gen_elapsed:.1f}s - starting Heesch computation...")
 
-    # Track top results: use a min-heap of (heesch_number, data)
-    # We want to keep the highest Heesch numbers, so we use negative values
-    top_results = []  # List of (heesch_connected, data)
+    # Track top results: use a min-heap of (heesch_number, counter, data)
+    # Counter is needed as tiebreaker to avoid comparing dict objects
+    top_results = []  # List of (heesch_connected, counter, data)
+    result_counter = 0
 
     checked = 0
     skipped = 0
-    errors = 0
+
+    # Aggregate summary data across batches
+    category_counts = {}  # "0", "1", "2", ..., "infinity", "inconclusive"
+    slow_polyforms = []   # polyforms that took > 2 minutes
+    batch_errors = []     # errors from failed batches
 
     total_polyforms = len(polyforms)
     last_log_time = start_time
 
-    with open(jsonl_path, 'w') as jsonl_file:
-        # Process polyforms in batches
-        for batch_start in range(0, total_polyforms, batch_size):
-            batch_end = min(batch_start + batch_size, total_polyforms)
-            batch = polyforms[batch_start:batch_end]
+    # Process polyforms in batches
+    for batch_start in range(0, total_polyforms, batch_size):
+        batch_end = min(batch_start + batch_size, total_polyforms)
+        batch = polyforms[batch_start:batch_end]
 
-            current_time = time.time()
-            elapsed = current_time - start_time
-            remaining = total_polyforms - batch_start
+        current_time = time.time()
+        elapsed = current_time - start_time
+        remaining = total_polyforms - batch_start
 
-            # Log progress at batch boundaries
-            if batch_start > 0 or (current_time - last_log_time) >= 30:
-                if checked > 0:
-                    avg_time_per_polyform = elapsed / checked
-                    eta_seconds = remaining * avg_time_per_polyform
+        # Log progress at batch boundaries
+        if batch_start > 0 or (current_time - last_log_time) >= 30:
+            if checked > 0:
+                avg_time_per_polyform = elapsed / checked
+                eta_seconds = remaining * avg_time_per_polyform
 
-                    # Format ETA nicely
-                    if eta_seconds < 60:
-                        eta_str = f"{eta_seconds:.0f}s"
-                    elif eta_seconds < 3600:
-                        eta_str = f"{eta_seconds/60:.1f}min"
-                    else:
-                        eta_str = f"{eta_seconds/3600:.1f}hr"
+                # Format ETA nicely
+                if eta_seconds < 60:
+                    eta_str = f"{eta_seconds:.0f}s"
+                elif eta_seconds < 3600:
+                    eta_str = f"{eta_seconds/60:.1f}min"
+                else:
+                    eta_str = f"{eta_seconds/3600:.1f}hr"
 
-                    # Format elapsed time
-                    if elapsed < 60:
-                        elapsed_str = f"{elapsed:.0f}s"
-                    elif elapsed < 3600:
-                        elapsed_str = f"{elapsed/60:.1f}min"
-                    else:
-                        elapsed_str = f"{elapsed/3600:.1f}hr"
+                # Format elapsed time
+                if elapsed < 60:
+                    elapsed_str = f"{elapsed:.0f}s"
+                elif elapsed < 3600:
+                    elapsed_str = f"{elapsed/60:.1f}min"
+                else:
+                    elapsed_str = f"{elapsed/3600:.1f}hr"
 
-                    pct = (checked / total_polyforms) * 100
-                    print(f"Progress: {checked}/{total_polyforms} ({pct:.1f}%) | "
-                          f"Elapsed: {elapsed_str} | ETA: {eta_str} | "
-                          f"Found: {len(top_results)} with Heesch >= {json_nup}")
+                pct = (checked / total_polyforms) * 100
+                print(f"Progress: {checked}/{total_polyforms} ({pct:.1f}%) | "
+                      f"Elapsed: {elapsed_str} | ETA: {eta_str} | "
+                      f"Found: {len(top_results)} with Heesch >= {json_nup}")
 
-                last_log_time = current_time
+            last_log_time = current_time
 
-            try:
-                # Use batch processing - json_nup filter is applied in C++
-                batch_results = run_render_witness_batch(
-                    grid_type,
-                    batch,
-                    json_nup=json_nup,
-                    timeout_per_polyform=60
-                )
+        # Use try-except-else to avoid double-counting if batch succeeds but
+        # result processing fails
+        batch_results = None
+        batch_summary = None
+        batch_succeeded = False
 
-                checked += len(batch)
+        try:
+            # Use batch processing - json_nup filter is applied in C++
+            batch_results, batch_summary = run_render_witness_batch(
+                grid_type,
+                batch,
+                json_nup=json_nup,
+                timeout_per_polyform=14400
+            )
+            batch_succeeded = True
 
-                # Process results from batch
-                # Note: Only polyforms passing json_nup filter are in batch_results
-                for data in batch_results:
-                    coords = [(c[0], c[1]) for c in data.get("coordinates", [])]
-                    coords_str = coords_to_string(coords)
+        except Exception as e:
+            error_msg = f"Batch {batch_start}-{batch_end}: {str(e)}"
+            print(f"  Error in batch processing: {error_msg}")
+            batch_errors.append({
+                "batch_start": batch_start,
+                "batch_end": batch_end,
+                "error": str(e),
+                "polyforms_lost": len(batch)
+            })
 
-                    # Log to JSONL
-                    hc = data.get("heesch_connected")
-                    jsonl_entry = {
-                        "grid_type": grid_type,
-                        "coordinates": coords_str,
-                        "heesch": hc
-                    }
-                    jsonl_file.write(json.dumps(jsonl_entry) + '\n')
+        # Process successful batch results (only runs if batch_succeeded)
+        if batch_succeeded:
+            checked += len(batch)
 
-                    # Skip if Heesch is None (can happen for tilers that pass the filter)
-                    if hc is None:
-                        continue
+            # Aggregate summary data from batch
+            if batch_summary:
+                # Merge category counts
+                for cat, count in batch_summary.get("category_counts", {}).items():
+                    category_counts[cat] = category_counts.get(cat, 0) + count
+                # Collect slow polyforms
+                for slow in batch_summary.get("slow_polyforms", []):
+                    slow_polyforms.append(slow)
 
-                    print(f"  Found polyform with Heesch = {hc}!")
+            # Process results from batch
+            # Note: Only polyforms passing json_nup filter are in batch_results
+            for data in batch_results:
+                hc = data.get("heesch_connected")
 
-                    # Add to results, keeping only top max_to_store
-                    if len(top_results) < max_to_store:
-                        heapq.heappush(top_results, (hc, data))
-                    elif hc > top_results[0][0]:
-                        heapq.heapreplace(top_results, (hc, data))
+                # Skip if Heesch is None (can happen for tilers that pass the filter)
+                if hc is None:
+                    continue
 
-                jsonl_file.flush()
+                print(f"  Found polyform with Heesch = {hc}!")
 
-                # The skipped count includes those filtered by json_nup in C++
-                skipped += len(batch) - len(batch_results)
+                # Add to results, keeping only top max_to_store
+                if len(top_results) < max_to_store:
+                    heapq.heappush(top_results, (hc, result_counter, data))
+                    result_counter += 1
+                elif hc > top_results[0][0]:
+                    heapq.heapreplace(top_results, (hc, result_counter, data))
+                    result_counter += 1
 
-            except Exception as e:
-                print(f"  Error processing batch {batch_start}-{batch_end}: {e}")
-                # Fall back to single processing for this batch
-                # Note: We already incremented checked above, so we need to track
-                # that we're now processing the batch in single mode
-                for coords in batch:
-                    try:
-                        data = run_render_witness(grid_type, coords)
-                        coords_str = coords_to_string(coords)
-
-                        # Log to JSONL based on result type
-                        if data.get("tiles_isohedrally", False) or data.get("tiles_periodically", False):
-                            jsonl_entry = {
-                                "grid_type": grid_type,
-                                "coordinates": coords_str,
-                                "heesch": None
-                            }
-                            jsonl_file.write(json.dumps(jsonl_entry) + '\n')
-                            skipped += 1
-                            continue
-
-                        if data.get("inconclusive", False):
-                            hc = data.get("heesch_connected", 0)
-                            jsonl_entry = {
-                                "grid_type": grid_type,
-                                "coordinates": coords_str,
-                                "heesch": hc
-                            }
-                            jsonl_file.write(json.dumps(jsonl_entry) + '\n')
-                            skipped += 1
-                            continue
-
-                        hc = data.get("heesch_connected")
-                        jsonl_entry = {
-                            "grid_type": grid_type,
-                            "coordinates": coords_str,
-                            "heesch": hc
-                        }
-                        jsonl_file.write(json.dumps(jsonl_entry) + '\n')
-
-                        # Skip if Heesch < json_nup
-                        if hc is None or hc < json_nup:
-                            skipped += 1
-                            continue
-
-                        print(f"  Found polyform with Heesch = {hc}!")
-
-                        if len(top_results) < max_to_store:
-                            heapq.heappush(top_results, (hc, data))
-                        elif hc > top_results[0][0]:
-                            heapq.heapreplace(top_results, (hc, data))
-
-                    except Exception as e2:
-                        print(f"  Error processing single polyform: {e2}")
-                        coords_str = coords_to_string(coords)
-                        jsonl_entry = {
-                            "grid_type": grid_type,
-                            "coordinates": coords_str,
-                            "heesch": None
-                        }
-                        jsonl_file.write(json.dumps(jsonl_entry) + '\n')
-                        errors += 1
-
-                jsonl_file.flush()
+            # The skipped count includes those filtered by json_nup in C++
+            skipped += len(batch) - len(batch_results)
 
     elapsed = time.time() - start_time
     rate = checked / elapsed if elapsed > 0 else 0
@@ -760,7 +723,7 @@ def search_for_heesch(
     print(f"  Polyforms checked: {checked}/{total_polyforms}")
     print(f"  Average rate: {rate:.2f} polyforms/sec")
     print(f"  Skipped (plane tilers/inconclusive/Heesch < {json_nup}): {skipped}")
-    print(f"  Errors: {errors}")
+    print(f"  Batch errors: {len(batch_errors)}")
     print(f"  Found with Heesch >= {json_nup}: {len(top_results)}")
     print(f"=" * 60)
 
@@ -769,7 +732,7 @@ def search_for_heesch(
 
     # Store the results to the volume
     stored = []
-    for hc, data in results:
+    for hc, _, data in results:
         hash_value = data.get("hash", compute_hash(grid_type, [(c[0], c[1]) for c in data.get("coordinates", [])]))
         cell_count = data.get("cell_count", num_cells)
         file_path = get_polyform_path(grid_type, cell_count, hash_value)
@@ -784,8 +747,21 @@ def search_for_heesch(
         })
         print(f"Stored: {file_path} (Heesch = {hc})")
 
-    # JSONL file is automatically closed by the with statement
-    print(f"JSONL summary saved to: {jsonl_path}")
+    # Write summary file to volume
+    summary_filename = f"search_{num_cells}{grid_type}_summary.json"
+    summary_path = os.path.join(VOLUME_PATH, summary_filename)
+    summary_data = {
+        "grid_type": grid_type,
+        "num_cells": num_cells,
+        "total_polyforms": total_polyforms,
+        "total_seconds": round(elapsed, 2),
+        "category_counts": category_counts,
+        "slow_polyforms": slow_polyforms,
+        "batch_errors": batch_errors
+    }
+    with open(summary_path, 'w') as f:
+        json.dump(summary_data, f, indent=2)
+    print(f"Summary saved to: {summary_path}")
 
     return {
         "status": "completed",
@@ -793,16 +769,16 @@ def search_for_heesch(
         "num_cells": num_cells,
         "polyforms_checked": checked,
         "polyforms_skipped": skipped,  # Includes isohedral, periodic, and inconclusive
-        "errors": errors,
+        "batch_errors": len(batch_errors),
         "results_found": len(results),
         "stored": stored,
         "elapsed_seconds": elapsed,
-        "results": [data for _, data in results],
-        "jsonl_path": jsonl_path
+        "results": [data for _, _, data in results],
+        "summary_path": summary_path
     }
 
 
-@app.function(image=image, volumes={VOLUME_PATH: volume}, timeout=7200)
+@app.function(image=image, volumes={VOLUME_PATH: volume}, timeout=14400)
 def search_heesch_workflow(
     grid_type: str,
     num_cells: int,
@@ -880,7 +856,7 @@ def search_heesch_workflow(
         return {"status": "error", "message": f"Search failed: {str(e)}"}
 
 
-@app.function(image=image, volumes={VOLUME_PATH: volume}, timeout=7200)
+@app.function(image=image, volumes={VOLUME_PATH: volume}, timeout=14400)
 @modal.asgi_app()
 def web():
     """Single FastAPI app with all endpoints."""
@@ -908,7 +884,7 @@ def web():
                 "/polyform?hash=abc123",
                 "/polyform?grid_type=hex&coords=0,0_1,0_0,1",
                 "/compute?grid_type=hex&coords=0,0_1,0_0,1",
-                "/search_heesch?grid_type=hex&num_cells=6 - Search for polyforms with Heesch >= 1 (2hr timeout)",
+                "/search_heesch?grid_type=hex&num_cells=6 - Search for polyforms with Heesch >= 1 (4hr timeout)",
                 "/search_heesch?grid_type=hex&num_cells=6&wait=false - Spawn search and return immediately",
                 "/search_heesch?grid_type=hex&num_cells=6&batch_size=20&json_nup=2 - Batch processing with filters",
                 "/list?grid_type=hex",
@@ -981,14 +957,14 @@ def web():
         }
 
     @web_app.get("/compute")
-    def compute_polyform(grid_type: str, coords: str, force: bool = False, timeout: int = 300):
+    def compute_polyform(grid_type: str, coords: str, force: bool = False, timeout: int = 14400):
         """
         Compute Heesch data for a polyform using the render_witness binary.
         Returns the computed data and stores it in the database.
-        
+
         Parameters:
         - force: If True, recompute even if already exists (useful for updating old computations)
-        - timeout: Computation timeout in seconds (default 300 = 5 minutes, max 14400 = 4 hours)
+        - timeout: Computation timeout in seconds (default 14400 = 4 hours)
         """
         # Clamp timeout to reasonable range (10 seconds to 4 hours)
         timeout = max(10, min(timeout, 14400))
@@ -1190,7 +1166,7 @@ def web():
         If results already exist in the volume for this grid type and cell count,
         they will be returned immediately (unless force=True).
 
-        The search runs as a spawned Modal function with a 2-hour timeout that
+        The search runs as a spawned Modal function with a 4-hour timeout that
         continues running even if the HTTP connection is closed.
         """
         # Normalize grid_type (accept both abbreviation and full name)
@@ -1244,7 +1220,7 @@ def web():
                 }
 
         # Spawn the search as a separate Modal function so it survives HTTP disconnection
-        # The spawned function has a 2-hour timeout and will store results to the volume
+        # The spawned function has a 4-hour timeout and will store results to the volume
         try:
             function_call = search_heesch_workflow.spawn(
                 grid_type=gt,
