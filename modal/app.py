@@ -607,11 +607,11 @@ def search_for_heesch(
 
     checked = 0
     skipped = 0
-    errors = 0
 
     # Aggregate summary data across batches
     category_counts = {}  # "0", "1", "2", ..., "infinity", "inconclusive"
     slow_polyforms = []   # polyforms that took > 2 minutes
+    batch_errors = []     # errors from failed batches
 
     total_polyforms = len(polyforms)
     last_log_time = start_time
@@ -671,46 +671,14 @@ def search_for_heesch(
             batch_succeeded = True
 
         except Exception as e:
-            print(f"  Error in batch processing {batch_start}-{batch_end}: {e}")
-            # Fall back to single processing for this batch
-            for coords in batch:
-                checked += 1
-                try:
-                    data = run_render_witness(grid_type, coords)
-
-                    # Determine category for summary
-                    if data.get("tiles_isohedrally", False) or data.get("tiles_periodically", False):
-                        category_counts["infinity"] = category_counts.get("infinity", 0) + 1
-                        skipped += 1
-                        continue
-
-                    if data.get("inconclusive", False):
-                        category_counts["inconclusive"] = category_counts.get("inconclusive", 0) + 1
-                        skipped += 1
-                        continue
-
-                    hc = data.get("heesch_connected")
-                    if hc is not None:
-                        cat = str(hc)
-                        category_counts[cat] = category_counts.get(cat, 0) + 1
-
-                    # Skip if Heesch < json_nup
-                    if hc is None or hc < json_nup:
-                        skipped += 1
-                        continue
-
-                    print(f"  Found polyform with Heesch = {hc}!")
-
-                    if len(top_results) < max_to_store:
-                        heapq.heappush(top_results, (hc, result_counter, data))
-                        result_counter += 1
-                    elif hc > top_results[0][0]:
-                        heapq.heapreplace(top_results, (hc, result_counter, data))
-                        result_counter += 1
-
-                except Exception as e2:
-                    print(f"  Error processing single polyform: {e2}")
-                    errors += 1
+            error_msg = f"Batch {batch_start}-{batch_end}: {str(e)}"
+            print(f"  Error in batch processing: {error_msg}")
+            batch_errors.append({
+                "batch_start": batch_start,
+                "batch_end": batch_end,
+                "error": str(e),
+                "polyforms_lost": len(batch)
+            })
 
         # Process successful batch results (only runs if batch_succeeded)
         if batch_succeeded:
@@ -755,7 +723,7 @@ def search_for_heesch(
     print(f"  Polyforms checked: {checked}/{total_polyforms}")
     print(f"  Average rate: {rate:.2f} polyforms/sec")
     print(f"  Skipped (plane tilers/inconclusive/Heesch < {json_nup}): {skipped}")
-    print(f"  Errors: {errors}")
+    print(f"  Batch errors: {len(batch_errors)}")
     print(f"  Found with Heesch >= {json_nup}: {len(top_results)}")
     print(f"=" * 60)
 
@@ -788,7 +756,8 @@ def search_for_heesch(
         "total_polyforms": total_polyforms,
         "total_seconds": round(elapsed, 2),
         "category_counts": category_counts,
-        "slow_polyforms": slow_polyforms
+        "slow_polyforms": slow_polyforms,
+        "batch_errors": batch_errors
     }
     with open(summary_path, 'w') as f:
         json.dump(summary_data, f, indent=2)
@@ -800,7 +769,7 @@ def search_for_heesch(
         "num_cells": num_cells,
         "polyforms_checked": checked,
         "polyforms_skipped": skipped,  # Includes isohedral, periodic, and inconclusive
-        "errors": errors,
+        "batch_errors": len(batch_errors),
         "results_found": len(results),
         "stored": stored,
         "elapsed_seconds": elapsed,
