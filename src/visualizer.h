@@ -305,135 +305,17 @@ void Visualizer<grid>::drawPatch( const patch_t& patch, bool cbyo ) const
 template<typename grid>
 void Visualizer<grid>::drawPeriodic() const
 {
-	// For periodic tilings, replicate the fundamental domain to fill
-	// a more square-shaped region for better visualization.
+	// For periodic tilings, just draw the fundamental domain directly.
+	// The periodic solver returns a fundamental domain that tiles the plane
+	// when repeated, but the domain itself already contains enough tiles
+	// to see the pattern clearly.
 	if( tile_.numPatches() == 0 ) {
 		drawShape( false );
 		return;
 	}
 
-	const patch_t& original_patch = tile_.getPatch( 0 );
-	
-	// First, compute bounds of the original patch in page coordinates
-	std::vector<std::vector<point<double>>> outlines {};
-	for( const auto& p : original_patch ) {
-		xform<double> Td { p.second };
-		std::vector<point<double>> pts;
-		for( const auto& pt : grid_outline_ ) {
-			point<double> tpt = grid::gridToPage( Td * pt );
-			pts.push_back( tpt );
-		}
-		outlines.push_back( std::move( pts ) );
-	}
-
-	double xmin = 0.0, xmax = 0.0, ymin = 0.0, ymax = 0.0;
-	computeBounds( outlines, xmin, xmax, ymin, ymax );
-	
-	double width = xmax - xmin;
-	double height = ymax - ymin;
-	
-	// If the patch is reasonably square (aspect ratio < 3), just draw it
-	double aspect = std::max(width, height) / std::max(0.001, std::min(width, height));
-	if( aspect < 3.0 ) {
-		drawPatch( original_patch, colour_by_orientation_ );
-		return;
-	}
-	
-	// The patch is too elongated. We need to replicate it using the grid's
-	// translation vectors to fill a more square region.
-	// 
-	// Strategy: Use linear combinations of the two translation vectors
-	// to create translations that are more perpendicular to the elongation.
-	
-	// Get translation vectors in grid coordinates
-	coord_t tv1_x = grid::translationV1.x_;
-	coord_t tv1_y = grid::translationV1.y_;
-	coord_t tv2_x = grid::translationV2.x_;
-	coord_t tv2_y = grid::translationV2.y_;
-	
-	// Compute their page-space representations
-	point<double> pv1 = grid::gridToPage( point<double>{ 
-		(double)tv1_x, (double)tv1_y } );
-	point<double> pv2 = grid::gridToPage( point<double>{ 
-		(double)tv2_x, (double)tv2_y } );
-	
-	// Find the direction of elongation (approximate as line from min to max corner)
-	double cx = (xmin + xmax) / 2.0;
-	double cy = (ymin + ymax) / 2.0;
-	
-	// Direction perpendicular to elongation
-	double perp_x, perp_y;
-	if( width > height ) {
-		// Elongated horizontally, need vertical copies
-		perp_x = 0.0;
-		perp_y = 1.0;
-	} else {
-		// Elongated vertically, need horizontal copies
-		perp_x = 1.0;
-		perp_y = 0.0;
-	}
-	
-	// Find the linear combination of v1 and v2 that best aligns with perp direction
-	// We want a*v1 + b*v2 ≈ k*(perp_x, perp_y) for some k
-	// This is a least-squares problem, but we'll just try small integer combinations
-	
-	double best_perp_component = 0.0;
-	int best_a = 0, best_b = 0;
-	
-	for( int a = -3; a <= 3; ++a ) {
-		for( int b = -3; b <= 3; ++b ) {
-			if( a == 0 && b == 0 ) continue;
-			
-			double vx = a * pv1.x_ + b * pv2.x_;
-			double vy = a * pv1.y_ + b * pv2.y_;
-			double len = std::sqrt(vx*vx + vy*vy);
-			if( len < 0.001 ) continue;
-			
-			// Component in perpendicular direction
-			double perp_comp = std::abs(vx * perp_x + vy * perp_y) / len;
-			
-			if( perp_comp > best_perp_component ) {
-				best_perp_component = perp_comp;
-				best_a = a;
-				best_b = b;
-			}
-		}
-	}
-	
-	// Now replicate using both the original vectors and the perpendicular combination
-	patch_t expanded_patch;
-	
-	// Number of copies in the perpendicular direction
-	double perp_vec_x = best_a * pv1.x_ + best_b * pv2.x_;
-	double perp_vec_y = best_a * pv1.y_ + best_b * pv2.y_;
-	double perp_len = std::sqrt(perp_vec_x*perp_vec_x + perp_vec_y*perp_vec_y);
-	
-	int n_perp = std::max(1, (int)std::ceil(std::max(width, height) / std::max(1.0, perp_len)));
-	n_perp = std::min(n_perp, 10);  // Limit copies
-	
-	// Grid translation in perpendicular direction
-	coord_t perp_dx = best_a * tv1_x + best_b * tv2_x;
-	coord_t perp_dy = best_a * tv1_y + best_b * tv2_y;
-	
-	// Limit total tiles
-	size_t max_tiles = 2000;
-	while( (size_t)(2*n_perp+1) * original_patch.size() > max_tiles && n_perp > 1 ) {
-		n_perp--;
-	}
-	
-	for( int i = -n_perp; i <= n_perp; ++i ) {
-		coord_t dx = i * perp_dx;
-		coord_t dy = i * perp_dy;
-		
-		for( const auto& tile : original_patch ) {
-			xform_t translated = tile.second;
-			translated.c_ += dx;
-			translated.f_ += dy;
-			expanded_patch.emplace_back( tile.first, translated );
-		}
-	}
-	
-	drawPatch( expanded_patch, colour_by_orientation_ );
+	// Simply draw the patch as returned by the periodic solver
+	drawPatch( tile_.getPatch( 0 ), colour_by_orientation_ );
 }
 
 template<typename grid>
