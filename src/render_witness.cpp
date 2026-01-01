@@ -351,17 +351,19 @@ ProcessResult processShapeToJson(const vector<pair<typename grid::coord_t, typen
 	bool tilesPlane = tilesIsohedrally || tilesPeriodically;
 	json << indent << "\"inconclusive\": " << (inconclusive ? "true" : "false") << "," << nl;
 
-	// Heesch numbers (null for plane tilers or inconclusive)
+	// Heesch numbers:
+	// - "infinity" for proven tilers (isohedral or periodic)
+	// - "inconclusive" when we hit maxlevel without proving anything
+	// - actual number when we have a definitive Heesch number
 	if (tilesPlane) {
-		json << indent << "\"heesch_connected\": null," << nl;
-		json << indent << "\"heesch_with_holes\": null," << nl;
+		json << indent << "\"heesch_connected\": \"infinity\"," << nl;
+		json << indent << "\"heesch_with_holes\": \"infinity\"," << nl;
 	} else if (inconclusive) {
-		// For inconclusive, report the minimum known Heesch number
-		json << indent << "\"heesch_connected\": " << hc << "," << nl;
-		json << indent << "\"heesch_with_holes\": " << (hasHolesPatch ? to_string(hh) : "null") << "," << nl;
+		json << indent << "\"heesch_connected\": \"inconclusive\"," << nl;
+		json << indent << "\"heesch_with_holes\": \"inconclusive\"," << nl;
 	} else {
 		json << indent << "\"heesch_connected\": " << hc << "," << nl;
-		json << indent << "\"heesch_with_holes\": " << (hasHolesPatch ? to_string(hh) : "null") << "," << nl;
+		json << indent << "\"heesch_with_holes\": " << (hasHolesPatch ? to_string(hh) : to_string(hc)) << "," << nl;
 	}
 
 	// Tiling classification flags
