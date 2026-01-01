@@ -232,10 +232,16 @@ def list_all_polyforms(grid_type_filter: Optional[str] = None) -> List[dict]:
     for filename in os.listdir(VOLUME_PATH):
         if not filename.endswith('.json'):
             continue
+        # Skip summary files (e.g., search_6hex_summary.json)
+        if filename.startswith('search_') and '_summary.json' in filename:
+            continue
         file_path = os.path.join(VOLUME_PATH, filename)
         try:
             with open(file_path, 'r') as f:
                 data = json.load(f)
+            # Skip files that don't have required polyform fields
+            if 'coordinates' not in data or 'grid_type' not in data:
+                continue
             gt = data.get("grid_type", "")
             if grid_type_filter and gt != grid_type_filter:
                 continue
@@ -1124,10 +1130,16 @@ def web():
             for filename in os.listdir(VOLUME_PATH):
                 if not filename.endswith('.json'):
                     continue
+                # Skip summary files (e.g., search_6hex_summary.json)
+                if filename.startswith('search_') and '_summary.json' in filename:
+                    continue
                 file_path = os.path.join(VOLUME_PATH, filename)
                 try:
                     with open(file_path, 'r') as f:
                         data = json.load(f)
+                    # Skip files that don't have required polyform fields
+                    if 'coordinates' not in data or 'grid_type' not in data:
+                        continue
                     gt = data.get("grid_type", "")
                     if gt_filter and gt != gt_filter:
                         continue
