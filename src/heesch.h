@@ -1092,6 +1092,8 @@ void HeeschSolver<grid>::solve(
 				std::vector<xform_t> per_solution;
 				if (per.solve(&per_solution)) {
 					VLOG("  TILES PERIODICALLY (detected at level " << level_ << ") in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
+					VLOG("  Witness contains " << per_solution.size() << " tiles forming a fundamental domain that tiles the plane when repeated.");
+					VLOG("  The '0' prefix on each tile indicates no corona structure (all tiles are equivalent in a periodic tiling).");
 					patch_t demo;
 					for (const auto& T: per_solution) {
 						demo.push_back(std::make_pair(0, T));
@@ -1132,6 +1134,8 @@ void HeeschSolver<grid>::solve(
 				std::vector<xform_t> per_solution;
 				if (per.solve(&per_solution)) {
 					VLOG("TILES PERIODICALLY in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
+					VLOG("Witness contains " << per_solution.size() << " tiles forming a fundamental domain that tiles the plane when repeated.");
+					VLOG("The '0' prefix on each tile indicates no corona structure (all tiles are equivalent in a periodic tiling).");
 					patch_t demo;
 					for (const auto& T: per_solution) {
 						demo.push_back(std::make_pair(0, T));

@@ -47,10 +47,20 @@ The `sat` tool accepts the following command-line arguments.  Any other argument
  * `-translations`: Attempt to build patches using only translated copies of a tile
  * `-rotations`: Attempt to build patches using translated and rotated (but not reflected) copies of a tile
  * `-isohedral`: Include a check for isohedral tiling (this test is not run automatically by default)
+ * `-periodic`: Include a check for periodic (anisohedral) tiling at each level. This can detect shapes that tile periodically even if they don't tile isohedrally
  * `-noisohedral`: Explicitly disable isohedral checking (currently redundant)
  * `-update`: Perform the classification only on shapes in the input stream that are either unclassified or inconclusive; everything else is copied over unchanged
  * `-hh`: Include the computation of Heesch numbers where the outermost corona is permitted to have holes.  Disabled by default
+ * `-verbose`: Enable detailed progress output to stderr, useful for understanding the computation
  * `-o <fname.txt>`: Write output to the specified text file.  If no file name is given, output is written to standard out
+
+### Understanding witness patches
+
+Witness patches in the output represent different things depending on the classification:
+
+- **Non-tilers**: The witness shows coronas around a central tile. Each entry has a level (0 = central tile, 1 = first corona, etc.) and a transformation matrix.
+- **Isohedral tilers**: The witness shows tiles in a surround that demonstrates the isohedral tiling.
+- **Periodic (anisohedral) tilers**: The witness shows tile placements in the fundamental domain (repeating unit cell). All entries have level `0` because there are no coronas in a periodic tiling—instead, the witness represents a patch that tiles the plane when repeated.
 
 Continuing the example above, `./sat -isohedral -show 6hex.txt -o 6hex_out.txt` will process the free 6-hexes in `6hex.txt`, writing information about the classified shapes (including witness patches) into `6hex_out.txt`.
 
