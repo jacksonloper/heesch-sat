@@ -200,8 +200,16 @@ private:
 		for( size_t idx = 0; idx < sz; ++idx ) {
 			is.getline( buf, 1000 );
 			IntReader<coord_t> i { buf };
-			patch.emplace_back( *i++, 
-				xform_t { *i++, *i++, *i++, *i++, *i++, *i++ } );
+			// Must read into temporaries to avoid undefined behavior
+			// (order of evaluation of function arguments is unspecified)
+			size_t corona = *i++;
+			coord_t a = *i++;
+			coord_t b = *i++;
+			coord_t c = *i++;
+			coord_t d = *i++;
+			coord_t e = *i++;
+			coord_t f = *i++;
+			patch.emplace_back( corona, xform_t { a, b, c, d, e, f } );
 		}
 
 		// Move semantics.
@@ -234,7 +242,11 @@ TileInfo<grid>::TileInfo( std::istream& is )
 
 	auto iend = IntReader<coord_t> { buf + is.gcount() - 1 };
 	for( auto i = IntReader<coord_t> { buf }; i != iend; ) {
-		shape_.add( *i++, *i++ );
+		// Must read into temporaries to avoid undefined behavior
+		// (order of evaluation of function arguments is unspecified)
+		coord_t x = *i++;
+		coord_t y = *i++;
+		shape_.add( x, y );
 	}
 	shape_.complete();
 

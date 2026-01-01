@@ -113,7 +113,7 @@ static bool drawPatch( const TileInfo<grid>& tile )
 	} else if( tile.getRecordType() == TileInfo<grid>::ISOHEDRAL ) {
 		viz.drawInconclusive();
 	} else if( tile.getRecordType() == TileInfo<grid>::ANISOHEDRAL ) {
-		viz.drawInconclusive();
+		viz.drawPeriodic();
 	} else {
 		viz.drawShape( true );
 	}
