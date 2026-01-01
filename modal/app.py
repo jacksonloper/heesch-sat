@@ -383,7 +383,8 @@ def run_render_witness_batch(
     grid_type: str,
     polyforms: List[List[Tuple[int, int]]],
     json_nup: Optional[int] = None,
-    timeout_per_polyform: int = 14400
+    timeout_per_polyform: int = 14400,
+    max_batch_timeout: int = 14400
 ) -> Tuple[List[dict], Optional[dict]]:
     """
     Run the render_witness binary in batch mode to compute Heesch data for multiple polyforms.
@@ -393,6 +394,8 @@ def run_render_witness_batch(
     - polyforms: List of polyforms, each is a list of (x, y) coordinates
     - json_nup: If specified, only return polyforms with Heesch >= json_nup and < infinity
     - timeout_per_polyform: Timeout per polyform in seconds (default 14400 = 4 hours)
+    - max_batch_timeout: Maximum total timeout for the batch in seconds (default 14400 = 4 hours)
+                         This prevents timeout overflow when batch sizes are large.
 
     Returns a tuple of (results list, summary dict or None).
     """
@@ -422,10 +425,17 @@ def run_render_witness_batch(
         if json_nup is not None:
             cmd.extend(["-json_nup", str(json_nup)])
 
-        total_timeout = len(polyforms) * timeout_per_polyform
+        # Calculate total timeout, capped to prevent overflow issues
+        # Python's subprocess uses poll() which takes timeout in milliseconds as int32
+        # Max safe value: ~2.1 billion ms = ~24.8 days, but we cap much lower
+        uncapped_timeout = len(polyforms) * timeout_per_polyform
+        total_timeout = min(uncapped_timeout, max_batch_timeout)
         print(f"Starting batch render_witness for {len(polyforms)} {grid_type} polyforms...")
         print(f"Command: {' '.join(cmd)}")
-        print(f"Total timeout: {total_timeout}s ({total_timeout/60:.1f} min)")
+        if uncapped_timeout > max_batch_timeout:
+            print(f"Total timeout: {total_timeout}s ({total_timeout/60:.1f} min) [capped from {uncapped_timeout}s]")
+        else:
+            print(f"Total timeout: {total_timeout}s ({total_timeout/60:.1f} min)")
 
         start_time = time.time()
 
