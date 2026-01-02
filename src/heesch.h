@@ -265,7 +265,23 @@ Periodic::Result checkPeriodicAllOrientations(
 	// Track if we get at least one INCONCLUSIVE result
 	bool got_inconclusive = false;
 	
-	// Try the original shape first, then all non-identity orientations
+	// Helper lambda to transform solution back to original orientation and store results
+	auto store_result = [&](const xform_t& orientation, 
+	                        const std::vector<xform_t>& temp_solution,
+	                        const Periodic::SolutionInfo& temp_info) {
+		if (per_solution) {
+			xform_t inv_orientation = orientation.invert();
+			per_solution->clear();
+			for (const auto& T : temp_solution) {
+				per_solution->push_back(inv_orientation * T);
+			}
+		}
+		if (sol_info) {
+			*sol_info = temp_info;
+		}
+	};
+	
+	// Try all orientations (orientation 0 is identity, others are rotations/reflections)
 	for (size_t ori = 0; ori < grid::num_orientations; ++ori) {
 		Shape<grid> oriented_shape;
 		xform_t orientation = grid::orientations[ori];
@@ -283,17 +299,7 @@ Periodic::Result checkPeriodicAllOrientations(
 			
 			if (result == Periodic::Result::YES) {
 				VLOG("      16x16: YES");
-				if (per_solution) {
-					// Transform the solution back to the original orientation
-					xform_t inv_orientation = orientation.invert();
-					per_solution->clear();
-					for (const auto& T : temp_solution) {
-						per_solution->push_back(inv_orientation * T);
-					}
-				}
-				if (sol_info) {
-					*sol_info = temp_info;
-				}
+				store_result(orientation, temp_solution, temp_info);
 				return Periodic::Result::YES;
 			} else if (result == Periodic::Result::INCONCLUSIVE) {
 				got_inconclusive = true;
@@ -309,17 +315,7 @@ Periodic::Result checkPeriodicAllOrientations(
 			
 			if (result == Periodic::Result::YES) {
 				VLOG("      32x32: YES");
-				if (per_solution) {
-					// Transform the solution back to the original orientation
-					xform_t inv_orientation = orientation.invert();
-					per_solution->clear();
-					for (const auto& T : temp_solution) {
-						per_solution->push_back(inv_orientation * T);
-					}
-				}
-				if (sol_info) {
-					*sol_info = temp_info;
-				}
+				store_result(orientation, temp_solution, temp_info);
 				return Periodic::Result::YES;
 			} else if (result == Periodic::Result::INCONCLUSIVE) {
 				got_inconclusive = true;
