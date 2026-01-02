@@ -165,6 +165,90 @@ const char* getGridTypeName(GridType gt)
 	}
 }
 
+// Check if a point lies inside the active unit area for periodic tiling
+// The active unit area is the parallelogram defined by:
+// origin (0,0), trans_w * V1, trans_h * V2, and trans_w * V1 + trans_h * V2
+// A point is inside if, when expressed in the (V1, V2) basis, its coefficients
+// are in [0, trans_w) and [0, trans_h) respectively.
+template<typename grid>
+bool isPointInActiveUnitArea(const typename grid::point_t& p, size_t trans_w, size_t trans_h)
+{
+	using point_t = typename grid::point_t;
+
+	// Get translation vectors
+	const point_t& V1 = grid::translationV1;
+	const point_t& V2 = grid::translationV2;
+
+	// Compute the determinant of the change-of-basis matrix [V1 | V2]
+	// |V1.x  V2.x|
+	// |V1.y  V2.y|
+	int32_t det = (int32_t)V1.x_ * V2.y_ - (int32_t)V1.y_ * V2.x_;
+
+	if (det == 0) {
+		// Degenerate case (shouldn't happen for valid grids)
+		return false;
+	}
+
+	// To express p in the (V1, V2) basis, we need to solve:
+	// p = a * V1 + b * V2
+	// Using Cramer's rule:
+	// a = (p.x * V2.y - p.y * V2.x) / det
+	// b = (V1.x * p.y - V1.y * p.x) / det
+	int32_t a_num = (int32_t)p.x_ * V2.y_ - (int32_t)p.y_ * V2.x_;
+	int32_t b_num = (int32_t)V1.x_ * p.y_ - (int32_t)V1.y_ * p.x_;
+
+	// We need 0 <= a < trans_w and 0 <= b < trans_h
+	// Since we're working with integers and det might be positive or negative,
+	// we need to handle the sign carefully.
+	// If det > 0: a = a_num / det, so we need 0 <= a_num < trans_w * det
+	// If det < 0: a = a_num / det, so we need trans_w * det < a_num <= 0
+
+	if (det > 0) {
+		if (a_num < 0 || a_num >= (int32_t)(trans_w * det)) return false;
+		if (b_num < 0 || b_num >= (int32_t)(trans_h * det)) return false;
+	} else {
+		// det < 0
+		if (a_num > 0 || a_num <= (int32_t)(trans_w * det)) return false;
+		if (b_num > 0 || b_num <= (int32_t)(trans_h * det)) return false;
+	}
+
+	return true;
+}
+
+// Check if a tile (defined by its transform) has at least one cell inside the active unit area
+template<typename grid>
+bool tileHasCellInActiveUnitArea(
+	const Shape<grid>& shape,
+	const typename grid::xform_t& T,
+	size_t trans_w,
+	size_t trans_h)
+{
+	for (const auto& p : shape) {
+		auto tp = T * p;
+		if (isPointInActiveUnitArea<grid>(tp, trans_w, trans_h)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// Filter a patch to only include tiles that have at least one cell inside the active unit area
+template<typename grid, typename coord_t>
+LabelledPatch<coord_t> filterPatchToActiveUnitArea(
+	const Shape<grid>& shape,
+	const LabelledPatch<coord_t>& patch,
+	size_t trans_w,
+	size_t trans_h)
+{
+	LabelledPatch<coord_t> filtered;
+	for (const auto& tile : patch) {
+		if (tileHasCellInActiveUnitArea<grid>(shape, tile.second, trans_w, trans_h)) {
+			filtered.push_back(tile);
+		}
+	}
+	return filtered;
+}
+
 // Write a patch as JSON array, converting transforms to page coordinates
 // If singleLine is true, outputs compact JSON on one line
 template<typename grid, typename coord_t>
@@ -301,6 +385,17 @@ ProcessResult processShapeToJson(const vector<pair<typename grid::coord_t, typen
 		holesPatch = info.getPatch(1);
 	}
 
+	// For periodic tilers, filter the patch to only include tiles that have
+	// at least one cell inside the active unit area
+	if (tilesPeriodically && result.periodicTranslationW > 0 && result.periodicTranslationH > 0) {
+		size_t originalSize = connectedPatch.size();
+		connectedPatch = filterPatchToActiveUnitArea<grid>(
+			shape, connectedPatch,
+			result.periodicTranslationW, result.periodicTranslationH);
+		cerr << "Filtered periodic patch from " << originalSize << " to " 
+		     << connectedPatch.size() << " tiles (active unit area)" << endl;
+	}
+
 	// For non-tilers with hc=0 and no patch, create a trivial patch
 	if (connectedPatch.empty() && !tilesIsohedrally && !tilesPeriodically) {
 		connectedPatch.push_back(make_pair(0, xform_t{}));
@@ -311,7 +406,7 @@ ProcessResult processShapeToJson(const vector<pair<typename grid::coord_t, typen
 		cerr << "Heesch number: infinity (tiles isohedrally)" << endl;
 	} else if (tilesPeriodically) {
 		cerr << "Heesch number: infinity (tiles periodically/anisohedrally)" << endl;
-		cerr << "Periodic witness has " << connectedPatch.size() << " tiles" << endl;
+		cerr << "Periodic witness has " << connectedPatch.size() << " tiles (filtered to active unit area)" << endl;
 		cerr << "  Grid size: " << result.periodicGridSize << "x" << result.periodicGridSize << endl;
 		cerr << "  Translation: " << result.periodicTranslationW << "×V1 + " << result.periodicTranslationH << "×V2" << endl;
 	} else if (inconclusive) {
