@@ -200,8 +200,14 @@ private:
 		for( size_t idx = 0; idx < sz; ++idx ) {
 			is.getline( buf, 1000 );
 			IntReader<coord_t> i { buf };
-			patch.emplace_back( *i++, 
-				xform_t { *i++, *i++, *i++, *i++, *i++, *i++ } );
+			coord_t c0 = *i++;
+			coord_t c1 = *i++;
+			coord_t c2 = *i++;
+			coord_t c3 = *i++;
+			coord_t c4 = *i++;
+			coord_t c5 = *i++;
+			coord_t c6 = *i++;
+			patch.emplace_back( c0, xform_t { c1, c2, c3, c4, c5, c6 } );
 		}
 
 		// Move semantics.
@@ -234,7 +240,9 @@ TileInfo<grid>::TileInfo( std::istream& is )
 
 	auto iend = IntReader<coord_t> { buf + is.gcount() - 1 };
 	for( auto i = IntReader<coord_t> { buf }; i != iend; ) {
-		shape_.add( *i++, *i++ );
+		coord_t x = *i++;
+		coord_t y = *i++;
+		shape_.add( x, y );
 	}
 	shape_.complete();
 

@@ -32,7 +32,9 @@ static bool readShape( istream& is, Shape<grid>& shape )
 	iter iend { buf + gc - 1 };
 
 	for( auto i = iter { buf }; i != iend; ) {
-		shape.add( *i++, *i++ );
+		coord_t x = *i++;
+		coord_t y = *i++;
+		shape.add( x, y );
 	}
 
 	if( shape.size() > 0 ) {
