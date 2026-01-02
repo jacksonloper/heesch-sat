@@ -182,7 +182,7 @@ bool isPointInActiveUnitArea(const typename grid::point_t& p, size_t trans_w, si
 	// Compute the determinant of the change-of-basis matrix [V1 | V2]
 	// |V1.x  V2.x|
 	// |V1.y  V2.y|
-	int32_t det = (int32_t)V1.x_ * V2.y_ - (int32_t)V1.y_ * V2.x_;
+	int64_t det = (int64_t)V1.x_ * V2.y_ - (int64_t)V1.y_ * V2.x_;
 
 	if (det == 0) {
 		// Degenerate case (shouldn't happen for valid grids)
@@ -194,8 +194,8 @@ bool isPointInActiveUnitArea(const typename grid::point_t& p, size_t trans_w, si
 	// Using Cramer's rule:
 	// a = (p.x * V2.y - p.y * V2.x) / det
 	// b = (V1.x * p.y - V1.y * p.x) / det
-	int32_t a_num = (int32_t)p.x_ * V2.y_ - (int32_t)p.y_ * V2.x_;
-	int32_t b_num = (int32_t)V1.x_ * p.y_ - (int32_t)V1.y_ * p.x_;
+	int64_t a_num = (int64_t)p.x_ * V2.y_ - (int64_t)p.y_ * V2.x_;
+	int64_t b_num = (int64_t)V1.x_ * p.y_ - (int64_t)V1.y_ * p.x_;
 
 	// We need 0 <= a < trans_w and 0 <= b < trans_h
 	// Since we're working with integers and det might be positive or negative,
@@ -203,13 +203,17 @@ bool isPointInActiveUnitArea(const typename grid::point_t& p, size_t trans_w, si
 	// If det > 0: a = a_num / det, so we need 0 <= a_num < trans_w * det
 	// If det < 0: a = a_num / det, so we need trans_w * det < a_num <= 0
 
+	// Use int64_t for the multiplication to avoid overflow
+	int64_t trans_w_det = (int64_t)trans_w * det;
+	int64_t trans_h_det = (int64_t)trans_h * det;
+
 	if (det > 0) {
-		if (a_num < 0 || a_num >= (int32_t)(trans_w * det)) return false;
-		if (b_num < 0 || b_num >= (int32_t)(trans_h * det)) return false;
+		if (a_num < 0 || a_num >= trans_w_det) return false;
+		if (b_num < 0 || b_num >= trans_h_det) return false;
 	} else {
 		// det < 0
-		if (a_num > 0 || a_num <= (int32_t)(trans_w * det)) return false;
-		if (b_num > 0 || b_num <= (int32_t)(trans_h * det)) return false;
+		if (a_num > 0 || a_num <= trans_w_det) return false;
+		if (b_num > 0 || b_num <= trans_h_det) return false;
 	}
 
 	return true;
