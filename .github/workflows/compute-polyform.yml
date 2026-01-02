@@ -19,7 +19,7 @@ on:
           - halfcairo
           - bevelhex
       coords:
-        description: 'Coordinates: "0,0_1,0_0,1" OR "-3,2 -3,4 -2,2" OR "-3 2 -3 4 -2 2" (space-separated pairs)'
+        description: 'Coordinates: "(0,-1) (1,-1)" OR "0,0_1,0_0,1" OR "-3,2 -3,4" OR "-3 2 -3 4"'
         required: true
         type: string
       force:
@@ -49,11 +49,21 @@ jobs:
 
           # Normalize coordinates to underscore format (x,y_x,y_x,y)
           # Accepts:
+          #   - Parenthetical format: (0,-1) (1,-1) (-1,0)
           #   - Underscore format: 0,0_1,0_0,1
           #   - Comma-space format: -3,2 -3,4 -2,2
           #   - Pure space format: -3 2 -3 4 -2 2 (pairs of numbers)
           normalize_coords() {
             local input="$1"
+
+            # If parenthetical format like "(0,-1) (1,-1) (-1,0)", extract and convert
+            if [[ "$input" == *"("* ]]; then
+              # Remove all parentheses and convert spaces to underscores
+              # "(0,-1) (1,-1)" -> "0,-1_1,-1"
+              local result=$(echo "$input" | sed 's/(//g; s/)//g' | sed 's/  */ /g' | tr ' ' '_' | sed 's/_$//')
+              echo "$result"
+              return
+            fi
 
             # If already in underscore format, return as-is
             if [[ "$input" == *"_"* ]]; then

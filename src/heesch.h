@@ -1081,32 +1081,51 @@ void HeeschSolver<grid>::solve(
 			VLOG("  Does not tile isohedrally, continuing...");
 		}
 
-		// Check for periodic tiling after each level (not just at maxlevel)
-		// This can detect tiling shapes early and avoid expensive SAT solves
-		if (check_periodic_ && (level_ >= 2)) {
+		// Check for periodic tiling only at level 2
+		// Run with maxtranslation 16 first, then 32 if inconclusive or no
+		if (check_periodic_ && (level_ == 2)) {
 			VLOG("  Checking periodic tiling at level " << level_ << "...");
 			ManualTimer perTimer;
-			PeriodicSolver<grid> per {shape_, 16, 16};
-
-			if (get_solution) {
-				std::vector<xform_t> per_solution;
-				if (per.solve(&per_solution)) {
-					VLOG("  TILES PERIODICALLY (detected at level " << level_ << ") in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
+			std::vector<xform_t> per_solution;
+			Periodic::SolutionInfo sol_info;
+			
+			// Try with maxtranslation 16 first
+			PeriodicSolver<grid> per16 {shape_, 16, 16};
+			auto result = get_solution ? per16.solve(&per_solution, &sol_info) : per16.solve(nullptr, &sol_info);
+			VLOG("  Periodic solver (16x16) returned " << 
+				(result == Periodic::Result::YES ? "YES" : 
+				 result == Periodic::Result::NO ? "NO" : "INCONCLUSIVE") <<
+				" in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
+			
+			if (result != Periodic::Result::YES) {
+				// Try again with maxtranslation 32
+				VLOG("  Retrying with 32x32...");
+				perTimer.reset();
+				per_solution.clear();
+				PeriodicSolver<grid> per32 {shape_, 32, 32};
+				result = get_solution ? per32.solve(&per_solution, &sol_info) : per32.solve(nullptr, &sol_info);
+				VLOG("  Periodic solver (32x32) returned " << 
+					(result == Periodic::Result::YES ? "YES" : 
+					 result == Periodic::Result::NO ? "NO" : "INCONCLUSIVE") <<
+					" in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
+			}
+			
+			if (result == Periodic::Result::YES) {
+				// Found periodic tiling
+				VLOG("  Translation: " << sol_info.translation_w << "×V1 + " << sol_info.translation_h << "×V2 (grid: " << sol_info.grid_width << "×" << sol_info.grid_height << ")");
+				if (get_solution) {
 					patch_t demo;
 					for (const auto& T: per_solution) {
 						demo.push_back(std::make_pair(0, T));
 					}
-					info.setPeriodic(2, &demo);
-					return;
+					info.setPeriodic(2, &demo, sol_info.grid_width, sol_info.translation_w, sol_info.translation_h);
+				} else {
+					info.setPeriodic(2, nullptr, sol_info.grid_width, sol_info.translation_w, sol_info.translation_h);
 				}
-			} else {
-				if (per.solve()) {
-					VLOG("  TILES PERIODICALLY (detected at level " << level_ << ") in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
-					info.setPeriodic(2);
-					return;
-				}
+				VLOG("  TILES PERIODICALLY (detected at level " << level_ << ")");
+				return;
 			}
-			VLOG("  Does not tile periodically at level " << level_ << " (" << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s)");
+			VLOG("  Does not tile periodically at level " << level_);
 		}
 
 		// There was a solution, so prepare for another round
@@ -1122,32 +1141,49 @@ void HeeschSolver<grid>::solve(
 		// We iterated above to failure.  First, we might have blown past
 		// maxlevel.  If so, the tile is inconclusive.
 
-		// Last ditch check for anisohedral
+		// Last ditch check for anisohedral - use same logic as level 2 check
 		if (check_periodic_) {
 			VLOG("Checking periodic tiling...");
 			ManualTimer perTimer;
-			PeriodicSolver<grid> per {shape_, 16, 16};
-
-			if (get_solution) {
-				std::vector<xform_t> per_solution;
-				if (per.solve(&per_solution)) {
-					VLOG("TILES PERIODICALLY in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
+			std::vector<xform_t> per_solution;
+			Periodic::SolutionInfo sol_info;
+			
+			// Try with maxtranslation 16 first
+			PeriodicSolver<grid> per16 {shape_, 16, 16};
+			auto result = get_solution ? per16.solve(&per_solution, &sol_info) : per16.solve(nullptr, &sol_info);
+			VLOG("  Periodic solver (16x16) returned " << 
+				(result == Periodic::Result::YES ? "YES" : 
+				 result == Periodic::Result::NO ? "NO" : "INCONCLUSIVE") <<
+				" in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
+			
+			if (result != Periodic::Result::YES) {
+				// Try again with maxtranslation 32
+				VLOG("  Retrying with 32x32...");
+				perTimer.reset();
+				per_solution.clear();
+				PeriodicSolver<grid> per32 {shape_, 32, 32};
+				result = get_solution ? per32.solve(&per_solution, &sol_info) : per32.solve(nullptr, &sol_info);
+				VLOG("  Periodic solver (32x32) returned " << 
+					(result == Periodic::Result::YES ? "YES" : 
+					 result == Periodic::Result::NO ? "NO" : "INCONCLUSIVE") <<
+					" in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
+			}
+			
+			if (result == Periodic::Result::YES) {
+				VLOG("  Translation: " << sol_info.translation_w << "×V1 + " << sol_info.translation_h << "×V2 (grid: " << sol_info.grid_width << "×" << sol_info.grid_height << ")");
+				if (get_solution) {
 					patch_t demo;
 					for (const auto& T: per_solution) {
 						demo.push_back(std::make_pair(0, T));
 					}
-					info.setPeriodic(2, &demo);
-					return;
+					info.setPeriodic(2, &demo, sol_info.grid_width, sol_info.translation_w, sol_info.translation_h);
+				} else {
+					info.setPeriodic(2, nullptr, sol_info.grid_width, sol_info.translation_w, sol_info.translation_h);
 				}
-			} else {
-				if (per.solve()) {
-					VLOG("TILES PERIODICALLY in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
-					// FIXME -- get the actual transitivity
-					info.setPeriodic(2);
-					return;
-				}
+				VLOG("TILES PERIODICALLY");
+				return;
 			}
-			VLOG("Does not tile periodically (" << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s)");
+			VLOG("Does not tile periodically");
 		}
 
 		if (get_solution) {

@@ -68,7 +68,7 @@ image = (
     .pip_install("fastapi", "psutil")
     .add_local_dir("../src", "/app/src", copy=True)
     .run_commands(
-        "echo 'Build: 2025-12-31T20:15:00Z' && cd /app/src && make clean render_witness gen",
+        "echo 'Build: 2026-01-02T21:20:00Z' && cd /app/src && make clean render_witness gen",
         "cp /app/src/render_witness /app/src/gen /usr/local/bin/",
     )
 )

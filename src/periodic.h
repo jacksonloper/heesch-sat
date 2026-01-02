@@ -6,6 +6,35 @@ namespace Periodic {
 
 const bool DEBUG = false;
 
+// Result type for periodic solver
+enum class Result {
+	YES,          // Tiles periodically with valid translation
+	NO,           // Cannot tile periodically
+	INCONCLUSIVE  // Result is unreliable (solution at boundary)
+};
+
+// Information about a periodic tiling solution
+struct SolutionInfo {
+	size_t grid_width;     // Grid width used (16 or 32)
+	size_t grid_height;    // Grid height used (16 or 32)
+	size_t translation_w;  // Width of the periodic region in V1 multiples
+	size_t translation_h;  // Height of the periodic region in V2 multiples
+	
+	SolutionInfo()
+		: grid_width {0}
+		, grid_height {0}
+		, translation_w {0}
+		, translation_h {0}
+	{}
+	
+	SolutionInfo(size_t gw, size_t gh, size_t tw, size_t th)
+		: grid_width {gw}
+		, grid_height {gh}
+		, translation_w {tw}
+		, translation_h {th}
+	{}
+};
+
 template<typename grid>
 struct cell_info {
 	using coord_t = typename grid::coord_t;
@@ -23,7 +52,7 @@ struct cell_info {
 	{}
 };
 
-};
+} // namespace Periodic
 
 template<typename grid>
 class PeriodicSolver {
@@ -84,7 +113,8 @@ public:
 		delete [] v_vars_;
 	}
 
-	bool solve(std::vector<xform_t>* patch = nullptr);
+	Periodic::Result solve(std::vector<xform_t>* patch = nullptr, 
+						   Periodic::SolutionInfo* solution_info = nullptr);
 	
 private:
 	var_id declareVariable();
@@ -123,7 +153,8 @@ var_id PeriodicSolver<grid>::declareVariable()
 }
 
 template<typename grid>
-bool PeriodicSolver<grid>::solve(std::vector<xform_t>* patch)
+Periodic::Result PeriodicSolver<grid>::solve(std::vector<xform_t>* patch,
+											 Periodic::SolutionInfo* solution_info)
 {
 	buildCells();
 	buildTiles();
@@ -135,10 +166,40 @@ bool PeriodicSolver<grid>::solve(std::vector<xform_t>* patch)
 	addOccupancyClauses(solver);
 	addWraparoundClauses(solver);
 
-	bool ret = solver.solve() == CMSat::l_True;
+	if (solver.solve() != CMSat::l_True) {
+		if (Periodic::DEBUG) {
+			std::cerr << "-----" << std::endl;
+			std::cerr << "NO SOLUTION" << std::endl;
+		}
+		return Periodic::Result::NO;
+	}
 
-	if (ret && patch) {
-		const std::vector<CMSat::lbool>& model = solver.get_model();
+	// SAT found a solution - check if it's at the boundary
+	const std::vector<CMSat::lbool>& model = solver.get_model();
+
+	// Check if the solution uses the maximum width (h_vars_[w_-1] is true)
+	// or maximum height (v_vars_[h_-1] is true). If so, the result is
+	// inconclusive because the periodic tiling may require a larger domain.
+	bool at_boundary = false;
+	if (w_ > 0 && model[h_vars_[w_ - 1]] == CMSat::l_True) {
+		at_boundary = true;
+	}
+	if (h_ > 0 && model[v_vars_[h_ - 1]] == CMSat::l_True) {
+		at_boundary = true;
+	}
+
+	if (Periodic::DEBUG) {
+		std::cerr << "-----" << std::endl;
+		std::cerr << "SOLVED" << (at_boundary ? " (AT BOUNDARY - INCONCLUSIVE)" : "") << std::endl;
+		debugSolution(solver);
+	}
+
+	if (at_boundary) {
+		return Periodic::Result::INCONCLUSIVE;
+	}
+
+	// Valid solution found - extract patch if requested
+	if (patch) {
 		for (auto v: tilemap_) {
 			if (model[v.second] == CMSat::l_True) {
 				patch->push_back(v.first);
@@ -146,17 +207,29 @@ bool PeriodicSolver<grid>::solve(std::vector<xform_t>* patch)
 		}
 	}
 
-	if (Periodic::DEBUG) {
-		std::cerr << "-----" << std::endl;
-		if (ret) {
-			std::cerr << "SOLVED" << std::endl;
-			debugSolution(solver);
-		} else {
-			std::cerr << "NO SOLUTION" << std::endl;
+	// Extract solution info if requested
+	if (solution_info) {
+		// Find the highest set h_var (width) and v_var (height)
+		// h_vars[idx] being true means the periodic width is idx+1
+		// Iterate backwards to find the first true value efficiently
+		size_t trans_w = 0;
+		size_t trans_h = 0;
+		for (size_t idx = w_; idx > 0; --idx) {
+			if (model[h_vars_[idx - 1]] == CMSat::l_True) {
+				trans_w = idx;
+				break;
+			}
 		}
+		for (size_t idx = h_; idx > 0; --idx) {
+			if (model[v_vars_[idx - 1]] == CMSat::l_True) {
+				trans_h = idx;
+				break;
+			}
+		}
+		*solution_info = Periodic::SolutionInfo(w_, h_, trans_w, trans_h);
 	}
 
-	return ret;
+	return Periodic::Result::YES;
 }
 
 template<typename grid>
@@ -449,7 +522,10 @@ void PeriodicSolver<grid>::addWraparoundClauses(CMSat::SATSolver& solver) const
 					xform_t NT = tac.first.translate(v1);
 					const auto i = tilemap_.find(NT);
 					if (i == tilemap_.end()) {
-						std::cerr << "Hmm 1" << std::endl;
+						// Tile not found - this can happen with large grids
+						// where the translated tile falls outside the built cells
+						v1 += grid::translationV1;
+						continue;
 					}
 
 					cl[1] = neg(h_vars_[idx-1]);
@@ -492,7 +568,10 @@ void PeriodicSolver<grid>::addWraparoundClauses(CMSat::SATSolver& solver) const
 					xform_t NT = tac.first.translate(v2);
 					const auto i = tilemap_.find(NT);
 					if (i == tilemap_.end()) {
-						std::cerr << "Hmm 2" << std::endl;
+						// Tile not found - this can happen with large grids
+						// where the translated tile falls outside the built cells
+						v2 += grid::translationV2;
+						continue;
 					}
 
 					cl[1] = neg(v_vars_[jdx-1]);
