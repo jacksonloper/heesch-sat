@@ -19,6 +19,8 @@ struct PeriodicSolution {
 	size_t v2_multiplier;  // Number of V2 translations in the fundamental domain
 	size_t grid_width;     // Width parameter used for the solver
 	size_t grid_height;    // Height parameter used for the solver
+	size_t active_units;   // Number of unit cells actually used (should equal v1*v2)
+	size_t tiles_in_unit;  // Number of tile placements in the fundamental domain
 };
 
 template<typename grid>
@@ -191,6 +193,7 @@ Periodic::PeriodicResult PeriodicSolver<grid>::solve(std::vector<xform_t>* patch
 	// Compute translation multipliers if requested
 	if (solution) {
 		// Count how many h_vars are true (this gives v1_multiplier)
+		// Due to implication chain h_vars[x] => h_vars[x-1], they form a contiguous prefix
 		size_t v1_mult = 0;
 		for (size_t x = 0; x < w_; ++x) {
 			if (model[h_vars_[x]] == CMSat::l_True) {
@@ -206,10 +209,28 @@ Periodic::PeriodicResult PeriodicSolver<grid>::solve(std::vector<xform_t>* patch
 			}
 		}
 
+		// Count actual number of unit cells that are true
+		size_t active_units = 0;
+		for (size_t idx = 0; idx < w_ * h_; ++idx) {
+			if (model[unit_vars_[idx]] == CMSat::l_True) {
+				++active_units;
+			}
+		}
+
+		// Count tiles in the solution
+		size_t tiles_in_unit = 0;
+		for (const auto& v: tilemap_) {
+			if (model[v.second] == CMSat::l_True) {
+				++tiles_in_unit;
+			}
+		}
+
 		solution->v1_multiplier = v1_mult;
 		solution->v2_multiplier = v2_mult;
 		solution->grid_width = w_;
 		solution->grid_height = h_;
+		solution->active_units = active_units;
+		solution->tiles_in_unit = tiles_in_unit;
 	}
 
 	if (Periodic::DEBUG) {

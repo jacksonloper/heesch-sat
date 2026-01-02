@@ -1102,7 +1102,8 @@ void HeeschSolver<grid>::solve(
 						demo.push_back(std::make_pair(0, T));
 					}
 					info.setPeriodic(2, &demo, sol_info.v1_multiplier, sol_info.v2_multiplier,
-						sol_info.grid_width, sol_info.grid_height);
+						sol_info.grid_width, sol_info.grid_height,
+						sol_info.active_units, sol_info.tiles_in_unit);
 					return;
 				}
 			} else {
@@ -1110,7 +1111,8 @@ void HeeschSolver<grid>::solve(
 				if (result == Periodic::PeriodicResult::YES) {
 					VLOG("  TILES PERIODICALLY (maxtrans=16) in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
 					info.setPeriodic(2, nullptr, sol_info.v1_multiplier, sol_info.v2_multiplier,
-						sol_info.grid_width, sol_info.grid_height);
+						sol_info.grid_width, sol_info.grid_height,
+						sol_info.active_units, sol_info.tiles_in_unit);
 					return;
 				}
 			}
@@ -1130,7 +1132,8 @@ void HeeschSolver<grid>::solve(
 							demo.push_back(std::make_pair(0, T));
 						}
 						info.setPeriodic(2, &demo, sol_info.v1_multiplier, sol_info.v2_multiplier,
-							sol_info.grid_width, sol_info.grid_height);
+							sol_info.grid_width, sol_info.grid_height,
+							sol_info.active_units, sol_info.tiles_in_unit);
 						return;
 					}
 				} else {
@@ -1138,7 +1141,8 @@ void HeeschSolver<grid>::solve(
 					if (result == Periodic::PeriodicResult::YES) {
 						VLOG("  TILES PERIODICALLY (maxtrans=32) in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
 						info.setPeriodic(2, nullptr, sol_info.v1_multiplier, sol_info.v2_multiplier,
-							sol_info.grid_width, sol_info.grid_height);
+							sol_info.grid_width, sol_info.grid_height,
+							sol_info.active_units, sol_info.tiles_in_unit);
 						return;
 					}
 				}

@@ -204,6 +204,8 @@ struct ProcessResult {
 	size_t periodicV2Mult;
 	size_t periodicGridW;
 	size_t periodicGridH;
+	size_t periodicActiveUnits;
+	size_t periodicTilesInUnit;
 };
 
 // Structure to track a slow polyform (> 2 minutes processing time)
@@ -235,6 +237,8 @@ ProcessResult processShapeToJson(const vector<pair<typename grid::coord_t, typen
 	result.periodicV2Mult = 0;
 	result.periodicGridW = 0;
 	result.periodicGridH = 0;
+	result.periodicActiveUnits = 0;
+	result.periodicTilesInUnit = 0;
 
 	size_t numCells = coords.size();
 	cerr << "Processing " << numCells << "-" << result.gridTypeName << endl;
@@ -295,6 +299,8 @@ ProcessResult processShapeToJson(const vector<pair<typename grid::coord_t, typen
 		result.periodicV2Mult = info.getPeriodicV2Mult();
 		result.periodicGridW = info.getPeriodicGridW();
 		result.periodicGridH = info.getPeriodicGridH();
+		result.periodicActiveUnits = info.getPeriodicActiveUnits();
+		result.periodicTilesInUnit = info.getPeriodicTilesInUnit();
 	}
 
 	// Extract patches from TileInfo
@@ -413,6 +419,8 @@ ProcessResult processShapeToJson(const vector<pair<typename grid::coord_t, typen
 		json << indent << "  \"grid_size\": [" << result.periodicGridW << ", " << result.periodicGridH << "]," << nl;
 		json << indent << "  \"v1_multiplier\": " << result.periodicV1Mult << "," << nl;
 		json << indent << "  \"v2_multiplier\": " << result.periodicV2Mult << "," << nl;
+		json << indent << "  \"active_units\": " << result.periodicActiveUnits << "," << nl;
+		json << indent << "  \"tiles_in_unit\": " << result.periodicTilesInUnit << "," << nl;
 		json << indent << "  \"translation_v1\": [" << t1_page.x_ << ", " << t1_page.y_ << "]," << nl;
 		json << indent << "  \"translation_v2\": [" << t2_page.x_ << ", " << t2_page.y_ << "]" << nl;
 		json << indent << "}," << nl;

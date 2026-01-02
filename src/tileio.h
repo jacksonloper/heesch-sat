@@ -97,6 +97,8 @@ public:
 		, periodic_v2_mult_ { 0 }
 		, periodic_grid_w_ { 0 }
 		, periodic_grid_h_ { 0 }
+		, periodic_active_units_ { 0 }
+		, periodic_tiles_in_unit_ { 0 }
 	{}
 
 	TileInfo( std::istream& is );
@@ -183,7 +185,8 @@ public:
 	}	
 
 	void setPeriodic(size_t transitivity = 1, const patch_t *patch = nullptr,
-		size_t v1_mult = 0, size_t v2_mult = 0, size_t grid_w = 0, size_t grid_h = 0)
+		size_t v1_mult = 0, size_t v2_mult = 0, size_t grid_w = 0, size_t grid_h = 0,
+		size_t active_units = 0, size_t tiles_in_unit = 0)
 	{
 		patches_.clear();
 		transitivity_ = transitivity;
@@ -197,12 +200,16 @@ public:
 		periodic_v2_mult_ = v2_mult;
 		periodic_grid_w_ = grid_w;
 		periodic_grid_h_ = grid_h;
+		periodic_active_units_ = active_units;
+		periodic_tiles_in_unit_ = tiles_in_unit;
 	}
 
 	size_t getPeriodicV1Mult() const { return periodic_v1_mult_; }
 	size_t getPeriodicV2Mult() const { return periodic_v2_mult_; }
 	size_t getPeriodicGridW() const { return periodic_grid_w_; }
 	size_t getPeriodicGridH() const { return periodic_grid_h_; }
+	size_t getPeriodicActiveUnits() const { return periodic_active_units_; }
+	size_t getPeriodicTilesInUnit() const { return periodic_tiles_in_unit_; }
 
 	void write( std::ostream& os ) const;
 
@@ -239,6 +246,8 @@ private:
 	size_t periodic_v2_mult_;  // Multiplier for V2 translation
 	size_t periodic_grid_w_;   // Grid width used by solver
 	size_t periodic_grid_h_;   // Grid height used by solver
+	size_t periodic_active_units_;   // Number of unit cells actually used
+	size_t periodic_tiles_in_unit_;  // Number of tile placements in fundamental domain
 };
 
 template<typename grid>
