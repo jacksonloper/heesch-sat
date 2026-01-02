@@ -1086,7 +1086,7 @@ void HeeschSolver<grid>::solve(
 		if (check_periodic_ && (level_ >= 2)) {
 			VLOG("  Checking periodic tiling at level " << level_ << "...");
 			ManualTimer perTimer;
-			PeriodicSolver<grid> per {shape_, 16, 16};
+			PeriodicSolver<grid> per {shape_, 32, 32};
 
 			if (get_solution) {
 				std::vector<xform_t> per_solution;
@@ -1130,7 +1130,7 @@ void HeeschSolver<grid>::solve(
 		if (check_periodic_) {
 			VLOG("Checking periodic tiling...");
 			ManualTimer perTimer;
-			PeriodicSolver<grid> per {shape_, 16, 16};
+			PeriodicSolver<grid> per {shape_, 32, 32};
 
 			if (get_solution) {
 				std::vector<xform_t> per_solution;
