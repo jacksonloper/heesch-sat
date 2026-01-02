@@ -1087,10 +1087,11 @@ void HeeschSolver<grid>::solve(
 			VLOG("  Checking periodic tiling at level " << level_ << "...");
 			ManualTimer perTimer;
 			std::vector<xform_t> per_solution;
+			Periodic::SolutionInfo sol_info;
 			
 			// Try with maxtranslation 16 first
 			PeriodicSolver<grid> per16 {shape_, 16, 16};
-			auto result = get_solution ? per16.solve(&per_solution) : per16.solve();
+			auto result = get_solution ? per16.solve(&per_solution, &sol_info) : per16.solve(nullptr, &sol_info);
 			VLOG("  Periodic solver (16x16) returned " << 
 				(result == Periodic::Result::YES ? "YES" : 
 				 result == Periodic::Result::NO ? "NO" : "INCONCLUSIVE") <<
@@ -1102,7 +1103,7 @@ void HeeschSolver<grid>::solve(
 				perTimer.reset();
 				per_solution.clear();
 				PeriodicSolver<grid> per32 {shape_, 32, 32};
-				result = get_solution ? per32.solve(&per_solution) : per32.solve();
+				result = get_solution ? per32.solve(&per_solution, &sol_info) : per32.solve(nullptr, &sol_info);
 				VLOG("  Periodic solver (32x32) returned " << 
 					(result == Periodic::Result::YES ? "YES" : 
 					 result == Periodic::Result::NO ? "NO" : "INCONCLUSIVE") <<
@@ -1111,14 +1112,15 @@ void HeeschSolver<grid>::solve(
 			
 			if (result == Periodic::Result::YES) {
 				// Found periodic tiling
+				VLOG("  Translation: " << sol_info.translation_w << "×V1 + " << sol_info.translation_h << "×V2 (grid: " << sol_info.grid_width << "×" << sol_info.grid_height << ")");
 				if (get_solution) {
 					patch_t demo;
 					for (const auto& T: per_solution) {
 						demo.push_back(std::make_pair(0, T));
 					}
-					info.setPeriodic(2, &demo);
+					info.setPeriodic(2, &demo, sol_info.grid_width, sol_info.translation_w, sol_info.translation_h);
 				} else {
-					info.setPeriodic(2);
+					info.setPeriodic(2, nullptr, sol_info.grid_width, sol_info.translation_w, sol_info.translation_h);
 				}
 				VLOG("  TILES PERIODICALLY (detected at level " << level_ << ")");
 				return;
@@ -1144,10 +1146,11 @@ void HeeschSolver<grid>::solve(
 			VLOG("Checking periodic tiling...");
 			ManualTimer perTimer;
 			std::vector<xform_t> per_solution;
+			Periodic::SolutionInfo sol_info;
 			
 			// Try with maxtranslation 16 first
 			PeriodicSolver<grid> per16 {shape_, 16, 16};
-			auto result = get_solution ? per16.solve(&per_solution) : per16.solve();
+			auto result = get_solution ? per16.solve(&per_solution, &sol_info) : per16.solve(nullptr, &sol_info);
 			VLOG("  Periodic solver (16x16) returned " << 
 				(result == Periodic::Result::YES ? "YES" : 
 				 result == Periodic::Result::NO ? "NO" : "INCONCLUSIVE") <<
@@ -1159,7 +1162,7 @@ void HeeschSolver<grid>::solve(
 				perTimer.reset();
 				per_solution.clear();
 				PeriodicSolver<grid> per32 {shape_, 32, 32};
-				result = get_solution ? per32.solve(&per_solution) : per32.solve();
+				result = get_solution ? per32.solve(&per_solution, &sol_info) : per32.solve(nullptr, &sol_info);
 				VLOG("  Periodic solver (32x32) returned " << 
 					(result == Periodic::Result::YES ? "YES" : 
 					 result == Periodic::Result::NO ? "NO" : "INCONCLUSIVE") <<
@@ -1167,14 +1170,15 @@ void HeeschSolver<grid>::solve(
 			}
 			
 			if (result == Periodic::Result::YES) {
+				VLOG("  Translation: " << sol_info.translation_w << "×V1 + " << sol_info.translation_h << "×V2 (grid: " << sol_info.grid_width << "×" << sol_info.grid_height << ")");
 				if (get_solution) {
 					patch_t demo;
 					for (const auto& T: per_solution) {
 						demo.push_back(std::make_pair(0, T));
 					}
-					info.setPeriodic(2, &demo);
+					info.setPeriodic(2, &demo, sol_info.grid_width, sol_info.translation_w, sol_info.translation_h);
 				} else {
-					info.setPeriodic(2);
+					info.setPeriodic(2, nullptr, sol_info.grid_width, sol_info.translation_w, sol_info.translation_h);
 				}
 				VLOG("TILES PERIODICALLY");
 				return;

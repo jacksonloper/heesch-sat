@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import './WitnessViewer.css'
-import { generateGridLines } from '../utils/gridUtils'
+import { generateGridLines, getPeriodicRegionOutline } from '../utils/gridUtils'
 
 // Color palette for corona levels
 const CORONA_COLORS = [
@@ -42,7 +42,7 @@ function WitnessViewer({ witness, onClose }) {
             </div>
           )}
           {witness.tiles_periodically && (
-            <div className="plane-tiler-badge periodic" title="This polyform tiles the plane periodically (anisohedral)">
+            <div className="plane-tiler-badge periodic" title={`This polyform tiles the plane periodically (anisohedral). Grid: ${witness.periodic_grid_size}×${witness.periodic_grid_size}, Translation: ${witness.periodic_translation_w}×V1 + ${witness.periodic_translation_h}×V2`}>
               ♾️ Periodic Tiler
             </div>
           )}
@@ -79,6 +79,16 @@ function WitnessViewer({ witness, onClose }) {
               <label>Tiles in patch:</label>
               <span className="value">{activeWitness?.length || 0}</span>
             </div>
+
+            {witness.tiles_periodically && witness.periodic_grid_size && (
+              <div className="info-row">
+                <label>Periodic info:</label>
+                <span className="value">
+                  Grid: {witness.periodic_grid_size}×{witness.periodic_grid_size}, 
+                  Translation: {witness.periodic_translation_w}×V1 + {witness.periodic_translation_h}×V2
+                </span>
+              </div>
+            )}
 
             <div className="info-row">
               <label>Coordinates:</label>
@@ -158,7 +168,7 @@ function WitnessSVG({ witness, patch, showGrid, gridOffsetX, gridOffsetY }) {
   let minY = Infinity, maxY = -Infinity
 
   // For each tile, transform its boundary vertices and track bounds
-  const transformedTiles = patch.map(tile => {
+  patch.forEach(tile => {
     const [a, b, c, d, e, f] = tile.transform
 
     // Transform each boundary vertex (both boundary and transforms are in page coords)
@@ -172,8 +182,6 @@ function WitnessSVG({ witness, patch, showGrid, gridOffsetX, gridOffsetY }) {
       minY = Math.min(minY, y)
       maxY = Math.max(maxY, y)
     }
-
-    return { ...tile, points }
   })
 
   const padding = 2
@@ -190,6 +198,19 @@ function WitnessSVG({ witness, patch, showGrid, gridOffsetX, gridOffsetY }) {
   const gridLines = showGrid
     ? generateGridLines(grid_type, minX - padding, maxX + padding, minY - padding, maxY + padding, gridOffsetX, gridOffsetY)
     : []
+
+  // Generate periodic region outline if this is a periodic tiler
+  const periodicOutline = witness.tiles_periodically && witness.periodic_translation_w && witness.periodic_translation_h
+    ? getPeriodicRegionOutline(grid_type, witness.periodic_translation_w, witness.periodic_translation_h)
+    : null
+
+  // Build the periodic region path if outline exists
+  const periodicPath = periodicOutline
+    ? `M ${periodicOutline[0][0]} ${periodicOutline[0][1]} ` +
+      `L ${periodicOutline[1][0]} ${periodicOutline[1][1]} ` +
+      `L ${periodicOutline[2][0]} ${periodicOutline[2][1]} ` +
+      `L ${periodicOutline[3][0]} ${periodicOutline[3][1]} Z`
+    : null
 
   return (
     <svg
@@ -216,6 +237,19 @@ function WitnessSVG({ witness, patch, showGrid, gridOffsetX, gridOffsetY }) {
             />
           ))}
         </g>
+      )}
+
+      {/* Periodic region outline (behind tiles) */}
+      {periodicPath && (
+        <path
+          d={periodicPath}
+          fill="none"
+          stroke="#00ff00"
+          strokeWidth={0.2}
+          strokeDasharray="0.5 0.3"
+          opacity={0.9}
+          className="periodic-outline"
+        />
       )}
 
       {patch.map((tile, i) => (

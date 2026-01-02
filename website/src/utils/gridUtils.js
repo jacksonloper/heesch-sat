@@ -668,3 +668,54 @@ export function generateGridLines(gridType, minX, maxX, minY, maxY, offsetX, off
 
   return generator(minX, maxX, minY, maxY)
 }
+
+// Translation vectors for each grid type (in grid coordinates)
+// These define the periodic lattice structure
+// V1 is the "horizontal" translation, V2 is the "vertical" translation
+const translationVectors = {
+  omino: { v1: [1, 0], v2: [0, 1] },
+  hex: { v1: [1, 0], v2: [0, 1] },
+  iamond: { v1: [3, 0], v2: [0, 3] },
+  kite: { v1: [4, -2], v2: [2, 2] },
+  abolo: { v1: [2, 0], v2: [0, 2] },
+  trihex: { v1: [3, 0], v2: [0, 3] },
+  octasquare: { v1: [1, 0], v2: [0, 1] },
+  drafter: { v1: [7, 0], v2: [0, 7] },
+  halfcairo: { v1: [4, 0], v2: [0, 4] },
+  bevelhex: { v1: [6, 0], v2: [0, 6] },
+}
+
+// Generate a parallelogram outline for the periodic region
+// Returns an array of 4 points in page coordinates that form the outline
+export function getPeriodicRegionOutline(gridType, translationW, translationH) {
+  const vecs = translationVectors[gridType]
+  if (!vecs) {
+    console.warn(`Unknown grid type for translation: ${gridType}`)
+    return null
+  }
+
+  const toPage = gridToPage[gridType]
+  if (!toPage) {
+    return null
+  }
+
+  // Compute the four corners of the parallelogram
+  // Starting from origin (0, 0), the corners are:
+  // - Origin
+  // - translationW * V1
+  // - translationW * V1 + translationH * V2
+  // - translationH * V2
+  const { v1, v2 } = vecs
+
+  const gridCorners = [
+    [0, 0],
+    [translationW * v1[0], translationW * v1[1]],
+    [translationW * v1[0] + translationH * v2[0], translationW * v1[1] + translationH * v2[1]],
+    [translationH * v2[0], translationH * v2[1]],
+  ]
+
+  // Convert to page coordinates
+  const pageCorners = gridCorners.map(([gx, gy]) => toPage(gx, gy))
+
+  return pageCorners
+}

@@ -198,6 +198,10 @@ struct ProcessResult {
 	string hash;         // 8-char hex hash for filename
 	string gridTypeName; // Grid type name (e.g., "drafter")
 	size_t cellCount;    // Number of cells
+	// Periodic tiling info (only valid when tilesPeriodically is true)
+	size_t periodicGridSize;       // Grid size used (16 or 32)
+	size_t periodicTranslationW;   // Width of periodic region in V1 multiples
+	size_t periodicTranslationH;   // Height of periodic region in V2 multiples
 };
 
 // Structure to track a slow polyform (> 2 minutes processing time)
@@ -225,6 +229,9 @@ ProcessResult processShapeToJson(const vector<pair<typename grid::coord_t, typen
 	result.heeschHoles = 0;
 	result.cellCount = coords.size();
 	result.gridTypeName = getGridTypeName(grid::grid_type);
+	result.periodicGridSize = 0;
+	result.periodicTranslationW = 0;
+	result.periodicTranslationH = 0;
 
 	size_t numCells = coords.size();
 	cerr << "Processing " << numCells << "-" << result.gridTypeName << endl;
@@ -279,6 +286,13 @@ ProcessResult processShapeToJson(const vector<pair<typename grid::coord_t, typen
 	result.heeschConnected = hc;
 	result.heeschHoles = hh;
 
+	// Extract periodic tiling info if applicable
+	if (tilesPeriodically) {
+		result.periodicGridSize = info.getPeriodicGridSize();
+		result.periodicTranslationW = info.getPeriodicTranslationW();
+		result.periodicTranslationH = info.getPeriodicTranslationH();
+	}
+
 	// Extract patches from TileInfo
 	if (info.numPatches() > 0) {
 		connectedPatch = info.getPatch(0);
@@ -298,6 +312,8 @@ ProcessResult processShapeToJson(const vector<pair<typename grid::coord_t, typen
 	} else if (tilesPeriodically) {
 		cerr << "Heesch number: infinity (tiles periodically/anisohedrally)" << endl;
 		cerr << "Periodic witness has " << connectedPatch.size() << " tiles" << endl;
+		cerr << "  Grid size: " << result.periodicGridSize << "x" << result.periodicGridSize << endl;
+		cerr << "  Translation: " << result.periodicTranslationW << "×V1 + " << result.periodicTranslationH << "×V2" << endl;
 	} else if (inconclusive) {
 		cerr << "Heesch number: >= " << hc << " (INCONCLUSIVE - hit max level)" << endl;
 		cerr << "Connected witness has " << connectedPatch.size() << " tiles" << endl;
@@ -369,6 +385,13 @@ ProcessResult processShapeToJson(const vector<pair<typename grid::coord_t, typen
 	// Tiling classification flags
 	json << indent << "\"tiles_isohedrally\": " << (tilesIsohedrally ? "true" : "false") << "," << nl;
 	json << indent << "\"tiles_periodically\": " << (tilesPeriodically ? "true" : "false") << "," << nl;
+
+	// Periodic tiling info (only included when tiles_periodically is true)
+	if (tilesPeriodically) {
+		json << indent << "\"periodic_grid_size\": " << result.periodicGridSize << "," << nl;
+		json << indent << "\"periodic_translation_w\": " << result.periodicTranslationW << "," << nl;
+		json << indent << "\"periodic_translation_h\": " << result.periodicTranslationH << "," << nl;
+	}
 
 	// Connected witness (or periodic witness for plane tilers)
 	json << indent << "\"witness_connected\": ";

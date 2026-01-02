@@ -93,6 +93,9 @@ public:
 		, hh_ { 0 }
 		, patches_ {}
 		, transitivity_ { 0 }
+		, periodic_grid_size_ { 0 }
+		, periodic_translation_w_ { 0 }
+		, periodic_translation_h_ { 0 }
 	{}
 
 	TileInfo( std::istream& is );
@@ -147,6 +150,21 @@ public:
 		return transitivity_;
 	}
 
+	size_t getPeriodicGridSize() const
+	{
+		return periodic_grid_size_;
+	}
+
+	size_t getPeriodicTranslationW() const
+	{
+		return periodic_translation_w_;
+	}
+
+	size_t getPeriodicTranslationH() const
+	{
+		return periodic_translation_h_;
+	}
+
 	void setInconclusive()
 	{
 		record_type_ = INCONCLUSIVE;
@@ -178,11 +196,15 @@ public:
 		}
 	}	
 
-	void setPeriodic(size_t transitivity = 1, const patch_t *patch = nullptr) 
+	void setPeriodic(size_t transitivity = 1, const patch_t *patch = nullptr,
+					 size_t grid_size = 0, size_t translation_w = 0, size_t translation_h = 0) 
 	{
 		patches_.clear();
 		transitivity_ = transitivity;
 		record_type_ = (transitivity > 1) ? ANISOHEDRAL : ISOHEDRAL;
+		periodic_grid_size_ = grid_size;
+		periodic_translation_w_ = translation_w;
+		periodic_translation_h_ = translation_h;
 
 		 if (patch) {
 		 	patches_.push_back(*patch);
@@ -224,6 +246,11 @@ private:
 	
 	// For periodic, number of transitivity classes
 	size_t transitivity_;
+
+	// For periodic tilers, information about how the tiling was found
+	size_t periodic_grid_size_;       // Grid size used to find tiling (16 or 32)
+	size_t periodic_translation_w_;   // Width of periodic region in V1 multiples
+	size_t periodic_translation_h_;   // Height of periodic region in V2 multiples
 };
 
 template<typename grid>

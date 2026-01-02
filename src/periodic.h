@@ -13,6 +13,28 @@ enum class Result {
 	INCONCLUSIVE  // Result is unreliable (solution at boundary)
 };
 
+// Information about a periodic tiling solution
+struct SolutionInfo {
+	size_t grid_width;     // Grid width used (16 or 32)
+	size_t grid_height;    // Grid height used (16 or 32)
+	size_t translation_w;  // Width of the periodic region in V1 multiples
+	size_t translation_h;  // Height of the periodic region in V2 multiples
+	
+	SolutionInfo()
+		: grid_width {0}
+		, grid_height {0}
+		, translation_w {0}
+		, translation_h {0}
+	{}
+	
+	SolutionInfo(size_t gw, size_t gh, size_t tw, size_t th)
+		: grid_width {gw}
+		, grid_height {gh}
+		, translation_w {tw}
+		, translation_h {th}
+	{}
+};
+
 template<typename grid>
 struct cell_info {
 	using coord_t = typename grid::coord_t;
@@ -91,7 +113,8 @@ public:
 		delete [] v_vars_;
 	}
 
-	Periodic::Result solve(std::vector<xform_t>* patch = nullptr);
+	Periodic::Result solve(std::vector<xform_t>* patch = nullptr, 
+						   Periodic::SolutionInfo* solution_info = nullptr);
 	
 private:
 	var_id declareVariable();
@@ -130,7 +153,8 @@ var_id PeriodicSolver<grid>::declareVariable()
 }
 
 template<typename grid>
-Periodic::Result PeriodicSolver<grid>::solve(std::vector<xform_t>* patch)
+Periodic::Result PeriodicSolver<grid>::solve(std::vector<xform_t>* patch,
+											 Periodic::SolutionInfo* solution_info)
 {
 	buildCells();
 	buildTiles();
@@ -181,6 +205,24 @@ Periodic::Result PeriodicSolver<grid>::solve(std::vector<xform_t>* patch)
 				patch->push_back(v.first);
 			}
 		}
+	}
+
+	// Extract solution info if requested
+	if (solution_info) {
+		// Find the highest set h_var (width-1) and v_var (height-1)
+		size_t trans_w = 0;
+		size_t trans_h = 0;
+		for (size_t idx = 0; idx < w_; ++idx) {
+			if (model[h_vars_[idx]] == CMSat::l_True) {
+				trans_w = idx + 1;
+			}
+		}
+		for (size_t idx = 0; idx < h_; ++idx) {
+			if (model[v_vars_[idx]] == CMSat::l_True) {
+				trans_h = idx + 1;
+			}
+		}
+		*solution_info = Periodic::SolutionInfo(w_, h_, trans_w, trans_h);
 	}
 
 	return Periodic::Result::YES;
