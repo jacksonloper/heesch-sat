@@ -532,7 +532,9 @@ void PeriodicSolver<grid>::addWraparoundClauses(CMSat::SATSolver& solver) const
 					xform_t NT = tac.first.translate(v1);
 					const auto i = tilemap_.find(NT);
 					if (i == tilemap_.end()) {
-						std::cerr << "Hmm 1" << std::endl;
+						// Translated tile falls outside the grid, skip
+						v1 += grid::translationV1;
+						continue;
 					}
 
 					cl[1] = neg(h_vars_[idx-1]);
@@ -575,7 +577,9 @@ void PeriodicSolver<grid>::addWraparoundClauses(CMSat::SATSolver& solver) const
 					xform_t NT = tac.first.translate(v2);
 					const auto i = tilemap_.find(NT);
 					if (i == tilemap_.end()) {
-						std::cerr << "Hmm 2" << std::endl;
+						// Translated tile falls outside the grid, skip
+						v2 += grid::translationV2;
+						continue;
 					}
 
 					cl[1] = neg(v_vars_[jdx-1]);
