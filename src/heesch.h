@@ -1087,16 +1087,16 @@ void HeeschSolver<grid>::solve(
 			VLOG("  Checking periodic tiling at level 2...");
 			ManualTimer perTimer;
 
-			// Use 32x32 grid to avoid hitting boundary for shapes with larger periods
-			PeriodicSolver<grid> periodic_solver {shape_, 32, 32};
+			// Try with 16x16 grid first
+			PeriodicSolver<grid> per16 {shape_, 16, 16};
 			Periodic::PeriodicResult result;
 			Periodic::PeriodicSolution sol_info;
 
 			if (get_solution) {
 				std::vector<xform_t> per_solution;
-				result = periodic_solver.solve(&per_solution, &sol_info);
+				result = per16.solve(&per_solution, &sol_info);
 				if (result == Periodic::PeriodicResult::YES) {
-					VLOG("  TILES PERIODICALLY in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
+					VLOG("  TILES PERIODICALLY (16x16) in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
 					patch_t demo;
 					for (const auto& T: per_solution) {
 						demo.push_back(std::make_pair(0, T));
@@ -1107,9 +1107,9 @@ void HeeschSolver<grid>::solve(
 					return;
 				}
 			} else {
-				result = periodic_solver.solve(nullptr, &sol_info);
+				result = per16.solve(nullptr, &sol_info);
 				if (result == Periodic::PeriodicResult::YES) {
-					VLOG("  TILES PERIODICALLY in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
+					VLOG("  TILES PERIODICALLY (16x16) in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
 					info.setPeriodic(2, nullptr, sol_info.v1_multiplier, sol_info.v2_multiplier,
 						sol_info.grid_width, sol_info.grid_height,
 						sol_info.active_units, sol_info.tiles_in_unit);
@@ -1117,10 +1117,43 @@ void HeeschSolver<grid>::solve(
 				}
 			}
 
+			// If INCONCLUSIVE (hit boundary), try again with 32x32
+			if (result == Periodic::PeriodicResult::INCONCLUSIVE) {
+				VLOG("  Periodic check hit boundary with 16x16, trying 32x32...");
+				PeriodicSolver<grid> per32 {shape_, 32, 32};
+
+				if (get_solution) {
+					std::vector<xform_t> per_solution;
+					result = per32.solve(&per_solution, &sol_info);
+					if (result == Periodic::PeriodicResult::YES) {
+						VLOG("  TILES PERIODICALLY (32x32) in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
+						patch_t demo;
+						for (const auto& T: per_solution) {
+							demo.push_back(std::make_pair(0, T));
+						}
+						info.setPeriodic(2, &demo, sol_info.v1_multiplier, sol_info.v2_multiplier,
+							sol_info.grid_width, sol_info.grid_height,
+							sol_info.active_units, sol_info.tiles_in_unit);
+						return;
+					}
+				} else {
+					result = per32.solve(nullptr, &sol_info);
+					if (result == Periodic::PeriodicResult::YES) {
+						VLOG("  TILES PERIODICALLY (32x32) in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
+						info.setPeriodic(2, nullptr, sol_info.v1_multiplier, sol_info.v2_multiplier,
+							sol_info.grid_width, sol_info.grid_height,
+							sol_info.active_units, sol_info.tiles_in_unit);
+						return;
+					}
+				}
+
+				if (result == Periodic::PeriodicResult::INCONCLUSIVE) {
+					VLOG("  Periodic check still inconclusive with 32x32 in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
+				}
+			}
+
 			if (result == Periodic::PeriodicResult::NO) {
 				VLOG("  Does not tile periodically (" << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s)");
-			} else {
-				VLOG("  Periodic check inconclusive (hit boundary) in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
 			}
 		}
 
@@ -1142,16 +1175,16 @@ void HeeschSolver<grid>::solve(
 			VLOG("Checking periodic tiling...");
 			ManualTimer perTimer;
 
-			// Use 32x32 grid to avoid hitting boundary for shapes with larger periods
-			PeriodicSolver<grid> periodic_solver {shape_, 32, 32};
+			// Try with 16x16 grid first
+			PeriodicSolver<grid> per16 {shape_, 16, 16};
 			Periodic::PeriodicResult result;
 			Periodic::PeriodicSolution sol_info;
 
 			if (get_solution) {
 				std::vector<xform_t> per_solution;
-				result = periodic_solver.solve(&per_solution, &sol_info);
+				result = per16.solve(&per_solution, &sol_info);
 				if (result == Periodic::PeriodicResult::YES) {
-					VLOG("TILES PERIODICALLY in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
+					VLOG("TILES PERIODICALLY (16x16) in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
 					patch_t demo;
 					for (const auto& T: per_solution) {
 						demo.push_back(std::make_pair(0, T));
@@ -1162,9 +1195,9 @@ void HeeschSolver<grid>::solve(
 					return;
 				}
 			} else {
-				result = periodic_solver.solve(nullptr, &sol_info);
+				result = per16.solve(nullptr, &sol_info);
 				if (result == Periodic::PeriodicResult::YES) {
-					VLOG("TILES PERIODICALLY in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
+					VLOG("TILES PERIODICALLY (16x16) in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
 					info.setPeriodic(2, nullptr, sol_info.v1_multiplier, sol_info.v2_multiplier,
 						sol_info.grid_width, sol_info.grid_height,
 						sol_info.active_units, sol_info.tiles_in_unit);
@@ -1172,10 +1205,43 @@ void HeeschSolver<grid>::solve(
 				}
 			}
 
+			// If INCONCLUSIVE, try again with 32x32
+			if (result == Periodic::PeriodicResult::INCONCLUSIVE) {
+				VLOG("Periodic check hit boundary with 16x16, trying 32x32...");
+				PeriodicSolver<grid> per32 {shape_, 32, 32};
+
+				if (get_solution) {
+					std::vector<xform_t> per_solution;
+					result = per32.solve(&per_solution, &sol_info);
+					if (result == Periodic::PeriodicResult::YES) {
+						VLOG("TILES PERIODICALLY (32x32) in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
+						patch_t demo;
+						for (const auto& T: per_solution) {
+							demo.push_back(std::make_pair(0, T));
+						}
+						info.setPeriodic(2, &demo, sol_info.v1_multiplier, sol_info.v2_multiplier,
+							sol_info.grid_width, sol_info.grid_height,
+							sol_info.active_units, sol_info.tiles_in_unit);
+						return;
+					}
+				} else {
+					result = per32.solve(nullptr, &sol_info);
+					if (result == Periodic::PeriodicResult::YES) {
+						VLOG("TILES PERIODICALLY (32x32) in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
+						info.setPeriodic(2, nullptr, sol_info.v1_multiplier, sol_info.v2_multiplier,
+							sol_info.grid_width, sol_info.grid_height,
+							sol_info.active_units, sol_info.tiles_in_unit);
+						return;
+					}
+				}
+
+				if (result == Periodic::PeriodicResult::INCONCLUSIVE) {
+					VLOG("Periodic check still inconclusive with 32x32 in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
+				}
+			}
+
 			if (result == Periodic::PeriodicResult::NO) {
 				VLOG("Does not tile periodically (" << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s)");
-			} else {
-				VLOG("Periodic check inconclusive (hit boundary) in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
 			}
 		}
 
