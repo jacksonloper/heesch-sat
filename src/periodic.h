@@ -6,6 +6,13 @@ namespace Periodic {
 
 const bool DEBUG = false;
 
+// Result of a periodic solver run
+enum class PeriodicResult {
+	YES,           // Found a periodic tiling
+	NO,            // No periodic tiling exists (within the search space)
+	INCONCLUSIVE   // Search space was too small to determine (hit boundary)
+};
+
 template<typename grid>
 struct cell_info {
 	using coord_t = typename grid::coord_t;
@@ -84,7 +91,7 @@ public:
 		delete [] v_vars_;
 	}
 
-	bool solve(std::vector<xform_t>* patch = nullptr);
+	Periodic::PeriodicResult solve(std::vector<xform_t>* patch = nullptr);
 	
 private:
 	var_id declareVariable();
@@ -123,7 +130,7 @@ var_id PeriodicSolver<grid>::declareVariable()
 }
 
 template<typename grid>
-bool PeriodicSolver<grid>::solve(std::vector<xform_t>* patch)
+Periodic::PeriodicResult PeriodicSolver<grid>::solve(std::vector<xform_t>* patch)
 {
 	buildCells();
 	buildTiles();
@@ -135,10 +142,35 @@ bool PeriodicSolver<grid>::solve(std::vector<xform_t>* patch)
 	addOccupancyClauses(solver);
 	addWraparoundClauses(solver);
 
-	bool ret = solver.solve() == CMSat::l_True;
+	if (solver.solve() != CMSat::l_True) {
+		if (Periodic::DEBUG) {
+			std::cerr << "-----" << std::endl;
+			std::cerr << "NO SOLUTION" << std::endl;
+		}
+		return Periodic::PeriodicResult::NO;
+	}
 
-	if (ret && patch) {
-		const std::vector<CMSat::lbool>& model = solver.get_model();
+	// SAT returned true - but check if the solution extends to the boundary
+	// If so, the result is meaningless and we should return INCONCLUSIVE
+	const std::vector<CMSat::lbool>& model = solver.get_model();
+
+	// Check if the last h_var (rightmost column) or last v_var (bottom row) is used
+	// This indicates the translation unit extends to the maximum allowed size
+	bool hits_h_boundary = (model[h_vars_[w_ - 1]] == CMSat::l_True);
+	bool hits_v_boundary = (model[v_vars_[h_ - 1]] == CMSat::l_True);
+
+	if (hits_h_boundary || hits_v_boundary) {
+		if (Periodic::DEBUG) {
+			std::cerr << "-----" << std::endl;
+			std::cerr << "INCONCLUSIVE (hits boundary: h=" << hits_h_boundary
+				<< ", v=" << hits_v_boundary << ")" << std::endl;
+			debugSolution(solver);
+		}
+		return Periodic::PeriodicResult::INCONCLUSIVE;
+	}
+
+	// Valid solution found within bounds
+	if (patch) {
 		for (auto v: tilemap_) {
 			if (model[v.second] == CMSat::l_True) {
 				patch->push_back(v.first);
@@ -148,15 +180,11 @@ bool PeriodicSolver<grid>::solve(std::vector<xform_t>* patch)
 
 	if (Periodic::DEBUG) {
 		std::cerr << "-----" << std::endl;
-		if (ret) {
-			std::cerr << "SOLVED" << std::endl;
-			debugSolution(solver);
-		} else {
-			std::cerr << "NO SOLUTION" << std::endl;
-		}
+		std::cerr << "SOLVED" << std::endl;
+		debugSolution(solver);
 	}
 
-	return ret;
+	return Periodic::PeriodicResult::YES;
 }
 
 template<typename grid>
