@@ -248,6 +248,95 @@ private:
 	bool reduce_;
 };
 
+// Helper function to check periodic tiling across all orientations of a shape.
+// This ensures that congruent shapes (related by grid symmetries) give consistent
+// results, since the periodic solver uses fixed translation vectors V1 and V2.
+// Returns YES if any orientation tiles periodically, NO if none do, or INCONCLUSIVE
+// if no definite answer could be found.
+template<typename grid>
+Periodic::Result checkPeriodicAllOrientations(
+	const Shape<grid>& shape,
+	bool get_solution,
+	std::vector<typename grid::xform_t>* per_solution,
+	Periodic::SolutionInfo* sol_info)
+{
+	using xform_t = typename grid::xform_t;
+	
+	// Track if we get at least one INCONCLUSIVE result
+	bool got_inconclusive = false;
+	
+	// Try the original shape first, then all non-identity orientations
+	for (size_t ori = 0; ori < grid::num_orientations; ++ori) {
+		Shape<grid> oriented_shape;
+		xform_t orientation = grid::orientations[ori];
+		oriented_shape.reset(shape, orientation);
+		oriented_shape.untranslate();
+		
+		VLOG("    Trying orientation " << ori << "...");
+		
+		// Try 16x16 first
+		{
+			PeriodicSolver<grid> solver {oriented_shape, 16, 16};
+			std::vector<xform_t> temp_solution;
+			Periodic::SolutionInfo temp_info;
+			auto result = solver.solve(get_solution ? &temp_solution : nullptr, &temp_info);
+			
+			if (result == Periodic::Result::YES) {
+				VLOG("      16x16: YES");
+				if (per_solution) {
+					// Transform the solution back to the original orientation
+					xform_t inv_orientation = orientation.invert();
+					per_solution->clear();
+					for (const auto& T : temp_solution) {
+						per_solution->push_back(inv_orientation * T);
+					}
+				}
+				if (sol_info) {
+					*sol_info = temp_info;
+				}
+				return Periodic::Result::YES;
+			} else if (result == Periodic::Result::INCONCLUSIVE) {
+				got_inconclusive = true;
+			}
+		}
+		
+		// Try 32x32
+		{
+			PeriodicSolver<grid> solver {oriented_shape, 32, 32};
+			std::vector<xform_t> temp_solution;
+			Periodic::SolutionInfo temp_info;
+			auto result = solver.solve(get_solution ? &temp_solution : nullptr, &temp_info);
+			
+			if (result == Periodic::Result::YES) {
+				VLOG("      32x32: YES");
+				if (per_solution) {
+					// Transform the solution back to the original orientation
+					xform_t inv_orientation = orientation.invert();
+					per_solution->clear();
+					for (const auto& T : temp_solution) {
+						per_solution->push_back(inv_orientation * T);
+					}
+				}
+				if (sol_info) {
+					*sol_info = temp_info;
+				}
+				return Periodic::Result::YES;
+			} else if (result == Periodic::Result::INCONCLUSIVE) {
+				got_inconclusive = true;
+			}
+		}
+	}
+	
+	// If we got INCONCLUSIVE from any attempt, return that
+	// (we can't definitively say NO because larger grids might work)
+	if (got_inconclusive) {
+		return Periodic::Result::INCONCLUSIVE;
+	}
+	
+	// All attempts returned NO
+	return Periodic::Result::NO;
+}
+
 template<typename grid, typename coord>
 void debugSolution( std::ostream& os, 
 	const Shape<grid>& shape, const LabelledPatch<coord>& soln )
@@ -1082,33 +1171,20 @@ void HeeschSolver<grid>::solve(
 		}
 
 		// Check for periodic tiling only at level 2
-		// Run with maxtranslation 16 first, then 32 if inconclusive or no
+		// Try all orientations to ensure congruent shapes give consistent results
 		if (check_periodic_ && (level_ == 2)) {
 			VLOG("  Checking periodic tiling at level " << level_ << "...");
 			ManualTimer perTimer;
 			std::vector<xform_t> per_solution;
 			Periodic::SolutionInfo sol_info;
 			
-			// Try with maxtranslation 16 first
-			PeriodicSolver<grid> per16 {shape_, 16, 16};
-			auto result = get_solution ? per16.solve(&per_solution, &sol_info) : per16.solve(nullptr, &sol_info);
-			VLOG("  Periodic solver (16x16) returned " << 
+			auto result = checkPeriodicAllOrientations<grid>(
+				shape_, get_solution, &per_solution, &sol_info);
+			
+			VLOG("  Periodic solver (all orientations) returned " << 
 				(result == Periodic::Result::YES ? "YES" : 
 				 result == Periodic::Result::NO ? "NO" : "INCONCLUSIVE") <<
 				" in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
-			
-			if (result != Periodic::Result::YES) {
-				// Try again with maxtranslation 32
-				VLOG("  Retrying with 32x32...");
-				perTimer.reset();
-				per_solution.clear();
-				PeriodicSolver<grid> per32 {shape_, 32, 32};
-				result = get_solution ? per32.solve(&per_solution, &sol_info) : per32.solve(nullptr, &sol_info);
-				VLOG("  Periodic solver (32x32) returned " << 
-					(result == Periodic::Result::YES ? "YES" : 
-					 result == Periodic::Result::NO ? "NO" : "INCONCLUSIVE") <<
-					" in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
-			}
 			
 			if (result == Periodic::Result::YES) {
 				// Found periodic tiling
@@ -1141,33 +1217,20 @@ void HeeschSolver<grid>::solve(
 		// We iterated above to failure.  First, we might have blown past
 		// maxlevel.  If so, the tile is inconclusive.
 
-		// Last ditch check for anisohedral - use same logic as level 2 check
+		// Last ditch check for anisohedral - try all orientations
 		if (check_periodic_) {
 			VLOG("Checking periodic tiling...");
 			ManualTimer perTimer;
 			std::vector<xform_t> per_solution;
 			Periodic::SolutionInfo sol_info;
 			
-			// Try with maxtranslation 16 first
-			PeriodicSolver<grid> per16 {shape_, 16, 16};
-			auto result = get_solution ? per16.solve(&per_solution, &sol_info) : per16.solve(nullptr, &sol_info);
-			VLOG("  Periodic solver (16x16) returned " << 
+			auto result = checkPeriodicAllOrientations<grid>(
+				shape_, get_solution, &per_solution, &sol_info);
+			
+			VLOG("  Periodic solver (all orientations) returned " << 
 				(result == Periodic::Result::YES ? "YES" : 
 				 result == Periodic::Result::NO ? "NO" : "INCONCLUSIVE") <<
 				" in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
-			
-			if (result != Periodic::Result::YES) {
-				// Try again with maxtranslation 32
-				VLOG("  Retrying with 32x32...");
-				perTimer.reset();
-				per_solution.clear();
-				PeriodicSolver<grid> per32 {shape_, 32, 32};
-				result = get_solution ? per32.solve(&per_solution, &sol_info) : per32.solve(nullptr, &sol_info);
-				VLOG("  Periodic solver (32x32) returned " << 
-					(result == Periodic::Result::YES ? "YES" : 
-					 result == Periodic::Result::NO ? "NO" : "INCONCLUSIVE") <<
-					" in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
-			}
 			
 			if (result == Periodic::Result::YES) {
 				VLOG("  Translation: " << sol_info.translation_w << "×V1 + " << sol_info.translation_h << "×V2 (grid: " << sol_info.grid_width << "×" << sol_info.grid_height << ")");
