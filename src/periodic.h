@@ -23,6 +23,13 @@ struct cell_info {
 	{}
 };
 
+// Structure to hold information about the active unit cells in a periodic solution
+struct unit_domain_info {
+	size_t w;  // Width of the grid
+	size_t h;  // Height of the grid
+	std::vector<std::pair<size_t, size_t>> active_units;  // (x, y) coordinates of active unit cells
+};
+
 };
 
 template<typename grid>
@@ -84,7 +91,8 @@ public:
 		delete [] v_vars_;
 	}
 
-	bool solve(std::vector<xform_t>* patch = nullptr);
+	bool solve(std::vector<xform_t>* patch = nullptr, 
+			   Periodic::unit_domain_info* domain_info = nullptr);
 	
 private:
 	var_id declareVariable();
@@ -123,7 +131,8 @@ var_id PeriodicSolver<grid>::declareVariable()
 }
 
 template<typename grid>
-bool PeriodicSolver<grid>::solve(std::vector<xform_t>* patch)
+bool PeriodicSolver<grid>::solve(std::vector<xform_t>* patch,
+								 Periodic::unit_domain_info* domain_info)
 {
 	buildCells();
 	buildTiles();
@@ -137,11 +146,27 @@ bool PeriodicSolver<grid>::solve(std::vector<xform_t>* patch)
 
 	bool ret = solver.solve() == CMSat::l_True;
 
-	if (ret && patch) {
+	if (ret) {
 		const std::vector<CMSat::lbool>& model = solver.get_model();
-		for (auto v: tilemap_) {
-			if (model[v.second] == CMSat::l_True) {
-				patch->push_back(v.first);
+		
+		if (patch) {
+			for (auto v: tilemap_) {
+				if (model[v.second] == CMSat::l_True) {
+					patch->push_back(v.first);
+				}
+			}
+		}
+		
+		if (domain_info) {
+			domain_info->w = w_;
+			domain_info->h = h_;
+			domain_info->active_units.clear();
+			for (size_t y = 0; y < h_; ++y) {
+				for (size_t x = 0; x < w_; ++x) {
+					if (model[unit_vars_[y * w_ + x]] == CMSat::l_True) {
+						domain_info->active_units.push_back({x, y});
+					}
+				}
 			}
 		}
 	}

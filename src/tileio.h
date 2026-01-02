@@ -7,6 +7,11 @@
 #include "grid.h"
 #include "shape.h"
 
+// Forward declare the unit_domain_info from periodic.h
+namespace Periodic {
+	struct unit_domain_info;
+}
+
 // Handle text-based input and output of information about polyforms.
 // It would be natural to use a standard format like JSON here, but 
 // because of the sheer volume of data we'll be processing, there's 
@@ -178,16 +183,14 @@ public:
 		}
 	}	
 
-	void setPeriodic(size_t transitivity = 1, const patch_t *patch = nullptr) 
-	{
-		patches_.clear();
-		transitivity_ = transitivity;
-		record_type_ = (transitivity > 1) ? ANISOHEDRAL : ISOHEDRAL;
+	void setPeriodic(size_t transitivity = 1, const patch_t *patch = nullptr,
+					 const Periodic::unit_domain_info* domain = nullptr);
 
-		 if (patch) {
-		 	patches_.push_back(*patch);
-		 }
-	}
+	// Get unit domain info for periodic tilings
+	bool hasUnitDomainInfo() const { return !unit_domain_.empty(); }
+	size_t getUnitDomainWidth() const { return unit_domain_w_; }
+	size_t getUnitDomainHeight() const { return unit_domain_h_; }
+	const std::vector<std::pair<size_t, size_t>>& getUnitDomain() const { return unit_domain_; }
 
 	void write( std::ostream& os ) const;
 
@@ -226,7 +229,34 @@ private:
 	
 	// For periodic, number of transitivity classes
 	size_t transitivity_;
+	
+	// For periodic tilings, the active unit cells in the fundamental domain
+	size_t unit_domain_w_ = 0;
+	size_t unit_domain_h_ = 0;
+	std::vector<std::pair<size_t, size_t>> unit_domain_;
 };
+
+// Include periodic.h for the unit_domain_info definition
+#include "periodic.h"
+
+template<typename grid>
+void TileInfo<grid>::setPeriodic(size_t transitivity, const patch_t *patch,
+								 const Periodic::unit_domain_info* domain)
+{
+	patches_.clear();
+	transitivity_ = transitivity;
+	record_type_ = (transitivity > 1) ? ANISOHEDRAL : ISOHEDRAL;
+
+	if (patch) {
+		patches_.push_back(*patch);
+	}
+	
+	if (domain) {
+		unit_domain_w_ = domain->w;
+		unit_domain_h_ = domain->h;
+		unit_domain_ = domain->active_units;
+	}
+}
 
 template<typename grid>
 TileInfo<grid>::TileInfo( std::istream& is )

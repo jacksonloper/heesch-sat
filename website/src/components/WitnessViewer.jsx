@@ -17,6 +17,7 @@ const CORONA_COLORS = [
 function WitnessViewer({ witness, onClose }) {
   const [showHoles, setShowHoles] = useState(false)
   const [showGrid, setShowGrid] = useState(false)
+  const [showUnitCells, setShowUnitCells] = useState(false)
   const [gridOffsetX] = useState(-1.5)
   const [gridOffsetY] = useState(0.5)
 
@@ -59,6 +60,7 @@ function WitnessViewer({ witness, onClose }) {
               witness={witness}
               patch={activeWitness}
               showGrid={showGrid}
+              showUnitCells={showUnitCells}
               gridOffsetX={gridOffsetX}
               gridOffsetY={gridOffsetY}
             />
@@ -114,6 +116,19 @@ function WitnessViewer({ witness, onClose }) {
               </label>
             </div>
 
+            {witness.unit_domain && (
+              <div className="toggle-row">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={showUnitCells}
+                    onChange={e => setShowUnitCells(e.target.checked)}
+                  />
+                  Show unit cells ({witness.unit_domain.active_units.length} active in {witness.unit_domain.width}×{witness.unit_domain.height} grid)
+                </label>
+              </div>
+            )}
+
             <div className="corona-legend">
               <h4>Corona levels:</h4>
               {[...new Set(activeWitness?.map(t => t.corona) || [])].sort((a, b) => a - b).map(level => (
@@ -133,8 +148,8 @@ function WitnessViewer({ witness, onClose }) {
   )
 }
 
-function WitnessSVG({ witness, patch, showGrid, gridOffsetX, gridOffsetY }) {
-  const { tile_boundary, grid_type } = witness
+function WitnessSVG({ witness, patch, showGrid, showUnitCells, gridOffsetX, gridOffsetY }) {
+  const { tile_boundary, grid_type, unit_domain } = witness
 
   if (!tile_boundary || tile_boundary.length === 0 || !patch) {
     return <div className="no-svg">No boundary data</div>
@@ -191,6 +206,54 @@ function WitnessSVG({ witness, patch, showGrid, gridOffsetX, gridOffsetY }) {
     ? generateGridLines(grid_type, minX - padding, maxX + padding, minY - padding, maxY + padding, gridOffsetX, gridOffsetY)
     : []
 
+  // Generate unit cell rectangles if showUnitCells is enabled and we have unit domain info
+  // Unit cells are displayed in the grid's coordinate system using translation vectors
+  const unitCellRects = []
+  if (showUnitCells && unit_domain) {
+    const { translation_v1, translation_v2, active_units } = unit_domain
+    const sqrt3 = 1.73205080756887729353
+
+    // Convert grid coords to page coords for skewed grids (hex-based)
+    const gridToPage = (gx, gy) => {
+      // For kite and other hex-based grids: P = { x + 0.5*y, (sqrt3/2)*y }
+      const needsSkew = ['kite', 'hex', 'iamond', 'trihex', 'drafter', 'halfcairo'].includes(grid_type)
+      if (needsSkew) {
+        return [gx + 0.5 * gy, (sqrt3 / 2.0) * gy]
+      }
+      return [gx, gy]
+    }
+
+    // For each active unit cell, draw a parallelogram using the translation vectors
+    for (const [ux, uy] of active_units) {
+      // Grid space corners of the unit cell parallelogram
+      // Origin + ux*V1 + uy*V2
+      const [v1x, v1y] = translation_v1
+      const [v2x, v2y] = translation_v2
+
+      // Grid coordinates of the four corners
+      const gx0 = ux * v1x + uy * v2x
+      const gy0 = ux * v1y + uy * v2y
+      const gx1 = gx0 + v1x
+      const gy1 = gy0 + v1y
+      const gx2 = gx0 + v1x + v2x
+      const gy2 = gy0 + v1y + v2y
+      const gx3 = gx0 + v2x
+      const gy3 = gy0 + v2y
+
+      // Convert to page coordinates
+      const [px0, py0] = gridToPage(gx0, gy0)
+      const [px1, py1] = gridToPage(gx1, gy1)
+      const [px2, py2] = gridToPage(gx2, gy2)
+      const [px3, py3] = gridToPage(gx3, gy3)
+
+      unitCellRects.push({
+        path: `M ${px0} ${py0} L ${px1} ${py1} L ${px2} ${py2} L ${px3} ${py3} Z`,
+        center: [(px0 + px2) / 2, (py0 + py2) / 2],
+        label: `(${ux},${uy})`
+      })
+    }
+  }
+
   return (
     <svg
       viewBox={`${minX - padding} ${minY - padding} ${width} ${height}`}
@@ -199,6 +262,22 @@ function WitnessSVG({ witness, patch, showGrid, gridOffsetX, gridOffsetY }) {
       <defs>
         <path id={`tile-${witness.hash}`} d={tilePath} />
       </defs>
+
+      {/* Unit cell parallelograms (behind everything else) */}
+      {showUnitCells && (
+        <g className="unit-cells">
+          {unitCellRects.map((rect, i) => (
+            <path
+              key={i}
+              d={rect.path}
+              fill="rgba(100, 149, 237, 0.3)"
+              stroke="rgba(0, 0, 139, 0.8)"
+              strokeWidth={0.1}
+              strokeDasharray="0.3 0.15"
+            />
+          ))}
+        </g>
+      )}
 
       {/* Grid lines (behind tiles) */}
       {showGrid && (

@@ -387,6 +387,27 @@ ProcessResult processShapeToJson(const vector<pair<typename grid::coord_t, typen
 	} else {
 		json << "null";
 	}
+	json << "," << nl;
+
+	// Unit domain info for periodic tilings
+	json << indent << "\"unit_domain\": ";
+	if (tilesPeriodically && info.hasUnitDomainInfo()) {
+		json << "{" << nl;
+		json << indent2 << "\"width\": " << info.getUnitDomainWidth() << "," << nl;
+		json << indent2 << "\"height\": " << info.getUnitDomainHeight() << "," << nl;
+		json << indent2 << "\"translation_v1\": [" << grid::translationV1.x_ << ", " << grid::translationV1.y_ << "]," << nl;
+		json << indent2 << "\"translation_v2\": [" << grid::translationV2.x_ << ", " << grid::translationV2.y_ << "]," << nl;
+		json << indent2 << "\"active_units\": [";
+		const auto& units = info.getUnitDomain();
+		for (size_t i = 0; i < units.size(); ++i) {
+			if (i > 0) json << ", ";
+			json << "[" << units[i].first << ", " << units[i].second << "]";
+		}
+		json << "]" << nl;
+		json << indent << "}";
+	} else {
+		json << "null";
+	}
 	json << nl;
 
 	json << "}";

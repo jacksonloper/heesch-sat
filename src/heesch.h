@@ -1090,15 +1090,17 @@ void HeeschSolver<grid>::solve(
 
 			if (get_solution) {
 				std::vector<xform_t> per_solution;
-				if (per.solve(&per_solution)) {
+				Periodic::unit_domain_info domain_info;
+				if (per.solve(&per_solution, &domain_info)) {
 					VLOG("  TILES PERIODICALLY (detected at level " << level_ << ") in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
 					VLOG("  Witness contains " << per_solution.size() << " tiles forming a fundamental domain that tiles the plane when repeated.");
 					VLOG("  The '0' prefix on each tile indicates no corona structure (all tiles are equivalent in a periodic tiling).");
+					VLOG("  Active unit cells: " << domain_info.active_units.size() << " (grid " << domain_info.w << "x" << domain_info.h << ")");
 					patch_t demo;
 					for (const auto& T: per_solution) {
 						demo.push_back(std::make_pair(0, T));
 					}
-					info.setPeriodic(2, &demo);
+					info.setPeriodic(2, &demo, &domain_info);
 					return;
 				}
 			} else {
@@ -1132,15 +1134,17 @@ void HeeschSolver<grid>::solve(
 
 			if (get_solution) {
 				std::vector<xform_t> per_solution;
-				if (per.solve(&per_solution)) {
+				Periodic::unit_domain_info domain_info;
+				if (per.solve(&per_solution, &domain_info)) {
 					VLOG("TILES PERIODICALLY in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
 					VLOG("Witness contains " << per_solution.size() << " tiles forming a fundamental domain that tiles the plane when repeated.");
 					VLOG("The '0' prefix on each tile indicates no corona structure (all tiles are equivalent in a periodic tiling).");
+					VLOG("Active unit cells: " << domain_info.active_units.size() << " (grid " << domain_info.w << "x" << domain_info.h << ")");
 					patch_t demo;
 					for (const auto& T: per_solution) {
 						demo.push_back(std::make_pair(0, T));
 					}
-					info.setPeriodic(2, &demo);
+					info.setPeriodic(2, &demo, &domain_info);
 					return;
 				}
 			} else {
