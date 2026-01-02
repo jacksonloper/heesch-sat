@@ -209,17 +209,21 @@ Periodic::Result PeriodicSolver<grid>::solve(std::vector<xform_t>* patch,
 
 	// Extract solution info if requested
 	if (solution_info) {
-		// Find the highest set h_var (width-1) and v_var (height-1)
+		// Find the highest set h_var (width) and v_var (height)
+		// h_vars[idx] being true means the periodic width is idx+1
+		// Iterate backwards to find the first true value efficiently
 		size_t trans_w = 0;
 		size_t trans_h = 0;
-		for (size_t idx = 0; idx < w_; ++idx) {
-			if (model[h_vars_[idx]] == CMSat::l_True) {
-				trans_w = idx + 1;
+		for (size_t idx = w_; idx > 0; --idx) {
+			if (model[h_vars_[idx - 1]] == CMSat::l_True) {
+				trans_w = idx;
+				break;
 			}
 		}
-		for (size_t idx = 0; idx < h_; ++idx) {
-			if (model[v_vars_[idx]] == CMSat::l_True) {
-				trans_h = idx + 1;
+		for (size_t idx = h_; idx > 0; --idx) {
+			if (model[v_vars_[idx - 1]] == CMSat::l_True) {
+				trans_h = idx;
+				break;
 			}
 		}
 		*solution_info = Periodic::SolutionInfo(w_, h_, trans_w, trans_h);
