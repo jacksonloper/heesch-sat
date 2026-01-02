@@ -532,7 +532,17 @@ void PeriodicSolver<grid>::addWraparoundClauses(CMSat::SATSolver& solver) const
 					xform_t NT = tac.first.translate(v1);
 					const auto i = tilemap_.find(NT);
 					if (i == tilemap_.end()) {
-						// Translated tile falls outside the grid, skip
+						// Translated tile falls outside the grid
+						// This means we can't have the translation boundary at idx
+						// if this tile is placed in this row
+						// Add clause: ¬v_vars[y] ∨ ¬tile ∨ ¬h_vars[idx-1] ∨ h_vars[idx]
+						std::vector<CMSat::Lit> cl4;
+						cl4.resize(4);
+						cl4[0] = cl[0];  // neg(v_vars_[y])
+						cl4[1] = cl[3];  // neg(tac.second)
+						cl4[2] = neg(h_vars_[idx-1]);
+						cl4[3] = pos(h_vars_[idx]);
+						solver.add_clause(cl4);
 						v1 += grid::translationV1;
 						continue;
 					}
@@ -577,7 +587,17 @@ void PeriodicSolver<grid>::addWraparoundClauses(CMSat::SATSolver& solver) const
 					xform_t NT = tac.first.translate(v2);
 					const auto i = tilemap_.find(NT);
 					if (i == tilemap_.end()) {
-						// Translated tile falls outside the grid, skip
+						// Translated tile falls outside the grid
+						// This means we can't have the translation boundary at jdx
+						// if this tile is placed in this column
+						// Add clause: ¬h_vars[x] ∨ ¬tile ∨ ¬v_vars[jdx-1] ∨ v_vars[jdx]
+						std::vector<CMSat::Lit> cl4;
+						cl4.resize(4);
+						cl4[0] = cl[0];  // neg(h_vars_[x])
+						cl4[1] = cl[3];  // neg(tac.second)
+						cl4[2] = neg(v_vars_[jdx-1]);
+						cl4[3] = pos(v_vars_[jdx]);
+						solver.add_clause(cl4);
 						v2 += grid::translationV2;
 						continue;
 					}
