@@ -1090,24 +1090,27 @@ void HeeschSolver<grid>::solve(
 			// Try with maxtranslation 16 first
 			PeriodicSolver<grid> per16 {shape_, 16, 16};
 			Periodic::PeriodicResult result;
+			Periodic::PeriodicSolution sol_info;
 
 			if (get_solution) {
 				std::vector<xform_t> per_solution;
-				result = per16.solve(&per_solution);
+				result = per16.solve(&per_solution, &sol_info);
 				if (result == Periodic::PeriodicResult::YES) {
 					VLOG("  TILES PERIODICALLY (maxtrans=16) in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
 					patch_t demo;
 					for (const auto& T: per_solution) {
 						demo.push_back(std::make_pair(0, T));
 					}
-					info.setPeriodic(2, &demo);
+					info.setPeriodic(2, &demo, sol_info.v1_multiplier, sol_info.v2_multiplier,
+						sol_info.grid_width, sol_info.grid_height);
 					return;
 				}
 			} else {
-				result = per16.solve();
+				result = per16.solve(nullptr, &sol_info);
 				if (result == Periodic::PeriodicResult::YES) {
 					VLOG("  TILES PERIODICALLY (maxtrans=16) in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
-					info.setPeriodic(2);
+					info.setPeriodic(2, nullptr, sol_info.v1_multiplier, sol_info.v2_multiplier,
+						sol_info.grid_width, sol_info.grid_height);
 					return;
 				}
 			}
@@ -1119,21 +1122,23 @@ void HeeschSolver<grid>::solve(
 
 				if (get_solution) {
 					std::vector<xform_t> per_solution;
-					result = per32.solve(&per_solution);
+					result = per32.solve(&per_solution, &sol_info);
 					if (result == Periodic::PeriodicResult::YES) {
 						VLOG("  TILES PERIODICALLY (maxtrans=32) in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
 						patch_t demo;
 						for (const auto& T: per_solution) {
 							demo.push_back(std::make_pair(0, T));
 						}
-						info.setPeriodic(2, &demo);
+						info.setPeriodic(2, &demo, sol_info.v1_multiplier, sol_info.v2_multiplier,
+							sol_info.grid_width, sol_info.grid_height);
 						return;
 					}
 				} else {
-					result = per32.solve();
+					result = per32.solve(nullptr, &sol_info);
 					if (result == Periodic::PeriodicResult::YES) {
 						VLOG("  TILES PERIODICALLY (maxtrans=32) in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
-						info.setPeriodic(2);
+						info.setPeriodic(2, nullptr, sol_info.v1_multiplier, sol_info.v2_multiplier,
+							sol_info.grid_width, sol_info.grid_height);
 						return;
 					}
 				}
@@ -1163,24 +1168,27 @@ void HeeschSolver<grid>::solve(
 			// Try with maxtranslation 16 first
 			PeriodicSolver<grid> per16 {shape_, 16, 16};
 			Periodic::PeriodicResult result;
+			Periodic::PeriodicSolution sol_info;
 
 			if (get_solution) {
 				std::vector<xform_t> per_solution;
-				result = per16.solve(&per_solution);
+				result = per16.solve(&per_solution, &sol_info);
 				if (result == Periodic::PeriodicResult::YES) {
 					VLOG("TILES PERIODICALLY (maxtrans=16) in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
 					patch_t demo;
 					for (const auto& T: per_solution) {
 						demo.push_back(std::make_pair(0, T));
 					}
-					info.setPeriodic(2, &demo);
+					info.setPeriodic(2, &demo, sol_info.v1_multiplier, sol_info.v2_multiplier,
+						sol_info.grid_width, sol_info.grid_height);
 					return;
 				}
 			} else {
-				result = per16.solve();
+				result = per16.solve(nullptr, &sol_info);
 				if (result == Periodic::PeriodicResult::YES) {
 					VLOG("TILES PERIODICALLY (maxtrans=16) in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
-					info.setPeriodic(2);
+					info.setPeriodic(2, nullptr, sol_info.v1_multiplier, sol_info.v2_multiplier,
+						sol_info.grid_width, sol_info.grid_height);
 					return;
 				}
 			}
@@ -1192,21 +1200,23 @@ void HeeschSolver<grid>::solve(
 
 				if (get_solution) {
 					std::vector<xform_t> per_solution;
-					result = per32.solve(&per_solution);
+					result = per32.solve(&per_solution, &sol_info);
 					if (result == Periodic::PeriodicResult::YES) {
 						VLOG("TILES PERIODICALLY (maxtrans=32) in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
 						patch_t demo;
 						for (const auto& T: per_solution) {
 							demo.push_back(std::make_pair(0, T));
 						}
-						info.setPeriodic(2, &demo);
+						info.setPeriodic(2, &demo, sol_info.v1_multiplier, sol_info.v2_multiplier,
+							sol_info.grid_width, sol_info.grid_height);
 						return;
 					}
 				} else {
-					result = per32.solve();
+					result = per32.solve(nullptr, &sol_info);
 					if (result == Periodic::PeriodicResult::YES) {
 						VLOG("TILES PERIODICALLY (maxtrans=32) in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
-						info.setPeriodic(2);
+						info.setPeriodic(2, nullptr, sol_info.v1_multiplier, sol_info.v2_multiplier,
+							sol_info.grid_width, sol_info.grid_height);
 						return;
 					}
 				}

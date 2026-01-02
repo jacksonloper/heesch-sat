@@ -198,6 +198,12 @@ struct ProcessResult {
 	string hash;         // 8-char hex hash for filename
 	string gridTypeName; // Grid type name (e.g., "drafter")
 	size_t cellCount;    // Number of cells
+
+	// For periodic tilers: translation info
+	size_t periodicV1Mult;
+	size_t periodicV2Mult;
+	size_t periodicGridW;
+	size_t periodicGridH;
 };
 
 // Structure to track a slow polyform (> 2 minutes processing time)
@@ -225,6 +231,10 @@ ProcessResult processShapeToJson(const vector<pair<typename grid::coord_t, typen
 	result.heeschHoles = 0;
 	result.cellCount = coords.size();
 	result.gridTypeName = getGridTypeName(grid::grid_type);
+	result.periodicV1Mult = 0;
+	result.periodicV2Mult = 0;
+	result.periodicGridW = 0;
+	result.periodicGridH = 0;
 
 	size_t numCells = coords.size();
 	cerr << "Processing " << numCells << "-" << result.gridTypeName << endl;
@@ -278,6 +288,14 @@ ProcessResult processShapeToJson(const vector<pair<typename grid::coord_t, typen
 	result.inconclusive = inconclusive;
 	result.heeschConnected = hc;
 	result.heeschHoles = hh;
+
+	// Extract periodic tiling info if available
+	if (tilesPeriodically) {
+		result.periodicV1Mult = info.getPeriodicV1Mult();
+		result.periodicV2Mult = info.getPeriodicV2Mult();
+		result.periodicGridW = info.getPeriodicGridW();
+		result.periodicGridH = info.getPeriodicGridH();
+	}
 
 	// Extract patches from TileInfo
 	if (info.numPatches() > 0) {
@@ -369,6 +387,39 @@ ProcessResult processShapeToJson(const vector<pair<typename grid::coord_t, typen
 	// Tiling classification flags
 	json << indent << "\"tiles_isohedrally\": " << (tilesIsohedrally ? "true" : "false") << "," << nl;
 	json << indent << "\"tiles_periodically\": " << (tilesPeriodically ? "true" : "false") << "," << nl;
+
+	// For periodic tilers, output the translation vectors and grid info
+	if (tilesPeriodically && result.periodicV1Mult > 0 && result.periodicV2Mult > 0) {
+		// Compute actual translation vectors: multiplier * base translation
+		using point_t = typename grid::point_t;
+		point_t t1_grid = grid::translationV1;
+		point_t t2_grid = grid::translationV2;
+
+		// Scale by multipliers
+		point<double> t1_scaled {
+			(double)t1_grid.x_ * result.periodicV1Mult,
+			(double)t1_grid.y_ * result.periodicV1Mult
+		};
+		point<double> t2_scaled {
+			(double)t2_grid.x_ * result.periodicV2Mult,
+			(double)t2_grid.y_ * result.periodicV2Mult
+		};
+
+		// Convert to page coordinates
+		point<double> t1_page = grid::gridToPage(t1_scaled);
+		point<double> t2_page = grid::gridToPage(t2_scaled);
+
+		json << indent << "\"periodic_info\": {" << nl;
+		json << indent << "  \"grid_size\": [" << result.periodicGridW << ", " << result.periodicGridH << "]," << nl;
+		json << indent << "  \"v1_multiplier\": " << result.periodicV1Mult << "," << nl;
+		json << indent << "  \"v2_multiplier\": " << result.periodicV2Mult << "," << nl;
+		json << indent << "  \"translation_v1\": [" << t1_page.x_ << ", " << t1_page.y_ << "]," << nl;
+		json << indent << "  \"translation_v2\": [" << t2_page.x_ << ", " << t2_page.y_ << "]" << nl;
+		json << indent << "}," << nl;
+	} else if (tilesPeriodically) {
+		// Periodic but no translation info available (shouldn't happen normally)
+		json << indent << "\"periodic_info\": null," << nl;
+	}
 
 	// Connected witness (or periodic witness for plane tilers)
 	json << indent << "\"witness_connected\": ";

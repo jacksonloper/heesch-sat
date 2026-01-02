@@ -93,6 +93,10 @@ public:
 		, hh_ { 0 }
 		, patches_ {}
 		, transitivity_ { 0 }
+		, periodic_v1_mult_ { 0 }
+		, periodic_v2_mult_ { 0 }
+		, periodic_grid_w_ { 0 }
+		, periodic_grid_h_ { 0 }
 	{}
 
 	TileInfo( std::istream& is );
@@ -178,16 +182,27 @@ public:
 		}
 	}	
 
-	void setPeriodic(size_t transitivity = 1, const patch_t *patch = nullptr) 
+	void setPeriodic(size_t transitivity = 1, const patch_t *patch = nullptr,
+		size_t v1_mult = 0, size_t v2_mult = 0, size_t grid_w = 0, size_t grid_h = 0)
 	{
 		patches_.clear();
 		transitivity_ = transitivity;
 		record_type_ = (transitivity > 1) ? ANISOHEDRAL : ISOHEDRAL;
 
-		 if (patch) {
-		 	patches_.push_back(*patch);
-		 }
+		if (patch) {
+			patches_.push_back(*patch);
+		}
+
+		periodic_v1_mult_ = v1_mult;
+		periodic_v2_mult_ = v2_mult;
+		periodic_grid_w_ = grid_w;
+		periodic_grid_h_ = grid_h;
 	}
+
+	size_t getPeriodicV1Mult() const { return periodic_v1_mult_; }
+	size_t getPeriodicV2Mult() const { return periodic_v2_mult_; }
+	size_t getPeriodicGridW() const { return periodic_grid_w_; }
+	size_t getPeriodicGridH() const { return periodic_grid_h_; }
 
 	void write( std::ostream& os ) const;
 
@@ -215,9 +230,15 @@ private:
 	size_t hh_;
 
 	std::vector<patch_t> patches_;
-	
+
 	// For periodic, number of transitivity classes
 	size_t transitivity_;
+
+	// For periodic tilers, the translation info
+	size_t periodic_v1_mult_;  // Multiplier for V1 translation
+	size_t periodic_v2_mult_;  // Multiplier for V2 translation
+	size_t periodic_grid_w_;   // Grid width used by solver
+	size_t periodic_grid_h_;   // Grid height used by solver
 };
 
 template<typename grid>

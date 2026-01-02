@@ -13,6 +13,14 @@ enum class PeriodicResult {
 	INCONCLUSIVE   // Search space was too small to determine (hit boundary)
 };
 
+// Information about a successful periodic solution
+struct PeriodicSolution {
+	size_t v1_multiplier;  // Number of V1 translations in the fundamental domain
+	size_t v2_multiplier;  // Number of V2 translations in the fundamental domain
+	size_t grid_width;     // Width parameter used for the solver
+	size_t grid_height;    // Height parameter used for the solver
+};
+
 template<typename grid>
 struct cell_info {
 	using coord_t = typename grid::coord_t;
@@ -91,7 +99,8 @@ public:
 		delete [] v_vars_;
 	}
 
-	Periodic::PeriodicResult solve(std::vector<xform_t>* patch = nullptr);
+	Periodic::PeriodicResult solve(std::vector<xform_t>* patch = nullptr,
+		Periodic::PeriodicSolution* solution = nullptr);
 	
 private:
 	var_id declareVariable();
@@ -130,7 +139,8 @@ var_id PeriodicSolver<grid>::declareVariable()
 }
 
 template<typename grid>
-Periodic::PeriodicResult PeriodicSolver<grid>::solve(std::vector<xform_t>* patch)
+Periodic::PeriodicResult PeriodicSolver<grid>::solve(std::vector<xform_t>* patch,
+	Periodic::PeriodicSolution* solution)
 {
 	buildCells();
 	buildTiles();
@@ -176,6 +186,30 @@ Periodic::PeriodicResult PeriodicSolver<grid>::solve(std::vector<xform_t>* patch
 				patch->push_back(v.first);
 			}
 		}
+	}
+
+	// Compute translation multipliers if requested
+	if (solution) {
+		// Count how many h_vars are true (this gives v1_multiplier)
+		size_t v1_mult = 0;
+		for (size_t x = 0; x < w_; ++x) {
+			if (model[h_vars_[x]] == CMSat::l_True) {
+				v1_mult = x + 1;
+			}
+		}
+
+		// Count how many v_vars are true (this gives v2_multiplier)
+		size_t v2_mult = 0;
+		for (size_t y = 0; y < h_; ++y) {
+			if (model[v_vars_[y]] == CMSat::l_True) {
+				v2_mult = y + 1;
+			}
+		}
+
+		solution->v1_multiplier = v1_mult;
+		solution->v2_multiplier = v2_mult;
+		solution->grid_width = w_;
+		solution->grid_height = h_;
 	}
 
 	if (Periodic::DEBUG) {
