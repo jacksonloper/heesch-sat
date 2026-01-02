@@ -154,7 +154,7 @@ Periodic::Result PeriodicSolver<grid>::solve(std::vector<xform_t>* patch)
 	const std::vector<CMSat::lbool>& model = solver.get_model();
 
 	// Check if the solution uses the maximum width (h_vars_[w_-1] is true)
-	// or maximum height (v_vars_[h_-1] is true). If so, the result is 
+	// or maximum height (v_vars_[h_-1] is true). If so, the result is
 	// inconclusive because the periodic tiling may require a larger domain.
 	bool at_boundary = false;
 	if (w_ > 0 && model[h_vars_[w_ - 1]] == CMSat::l_True) {
