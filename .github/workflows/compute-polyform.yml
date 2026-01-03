@@ -32,6 +32,11 @@ on:
         required: false
         type: number
         default: 300
+      maxlevel:
+        description: 'Maximum corona level for Heesch computation (default: 7)'
+        required: false
+        type: number
+        default: 7
 
 jobs:
   compute:
@@ -46,6 +51,7 @@ jobs:
           echo "Raw coordinates: ${{ inputs.coords }}"
           echo "Force: ${{ inputs.force }}"
           echo "Timeout: ${{ inputs.timeout }} seconds"
+          echo "Max level: ${{ inputs.maxlevel }}"
 
           # Normalize coordinates to underscore format (x,y_x,y_x,y)
           # Accepts:
@@ -106,7 +112,7 @@ jobs:
 
           # Build the API URL
           API_URL="https://hloper--heesch-renderings-web.modal.run/compute"
-          PARAMS="grid_type=${{ inputs.grid_type }}&coords=${COORDS}&timeout=${{ inputs.timeout }}"
+          PARAMS="grid_type=${{ inputs.grid_type }}&coords=${COORDS}&timeout=${{ inputs.timeout }}&maxlevel=${{ inputs.maxlevel }}"
           if [ "${{ inputs.force }}" = "true" ]; then
             PARAMS="${PARAMS}&force=true"
           fi
@@ -144,4 +150,5 @@ jobs:
           echo "- **Input Coordinates:** \`${{ inputs.coords }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Normalized Coordinates:** \`${{ steps.compute.outputs.coords }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Timeout:** ${{ inputs.timeout }} seconds" >> $GITHUB_STEP_SUMMARY
+          echo "- **Max Level:** ${{ inputs.maxlevel }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Status:** ${{ steps.compute.outputs.status }}" >> $GITHUB_STEP_SUMMARY

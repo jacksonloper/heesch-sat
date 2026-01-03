@@ -36,6 +36,9 @@
 //   Polyforms that tile (isohedrally or periodically) are skipped.
 //   Polyforms with Heesch < N are skipped.
 //
+// -maxlevel N:
+//   Set the maximum corona level for Heesch computation (default: 7).
+//
 // JSON output includes:
 // - coordinates: the cell coordinates
 // - hash: order-independent hash of the coordinate set
@@ -45,6 +48,9 @@
 // - witness_with_holes: (corona, transform) pairs for witness allowing holes (page coords), or null
 
 using namespace std;
+
+// Global maxLevel setting - can be set from command line
+size_t g_maxLevel = 7;
 
 // Convert grid-space transform to page-space transform
 // For page coords P and grid coords G with gridToPage M: P = M * G
@@ -690,7 +696,7 @@ ProcessResult processShapeToJson(const vector<pair<typename grid::coord_t, typen
 	TileInfo<grid> info;
 	info.setShape(shape);
 
-	size_t maxLevel = 7;
+	size_t maxLevel = g_maxLevel;
 	HeeschSolver<grid> solver{shape, ALL, true};
 	solver.setCheckIsohedral(true);
 	solver.setCheckPeriodic(true);
@@ -1011,6 +1017,9 @@ void printUsage(const char *prog)
 	cerr << "  -json_nup N: Only output polyforms with Heesch >= N and < infinity." << endl;
 	cerr << "               Skips tilers (isohedral/periodic) and Heesch < N." << endl;
 	cerr << endl;
+	cerr << "  -maxlevel N: Set the maximum corona level for Heesch computation (default: 7)." << endl;
+	cerr << "               Higher values allow computing higher Heesch numbers but take longer." << endl;
+	cerr << endl;
 	cerr << "  -verbose:    Enable detailed timing and progress logging to stderr." << endl;
 	cerr << "               Useful for debugging slow polyforms." << endl;
 }
@@ -1234,7 +1243,7 @@ int main(int argc, char **argv)
 	string outputDir;
 	string summaryFile;
 
-	// Parse arguments to find -batch, -in, -out, -json_nup, -summary, and -verbose
+	// Parse arguments to find -batch, -in, -out, -json_nup, -summary, -maxlevel, and -verbose
 	for (int i = 1; i < argc; ++i) {
 		if (strcmp(argv[i], "-batch") == 0) {
 			batchMode = true;
@@ -1246,6 +1255,13 @@ int main(int argc, char **argv)
 			jsonNup = atoi(argv[++i]);
 		} else if (strcmp(argv[i], "-summary") == 0 && i + 1 < argc) {
 			summaryFile = argv[++i];
+		} else if (strcmp(argv[i], "-maxlevel") == 0 && i + 1 < argc) {
+			int val = atoi(argv[++i]);
+			if (val > 0) {
+				g_maxLevel = val;
+			} else {
+				cerr << "Warning: Invalid maxlevel value, using default (" << g_maxLevel << ")" << endl;
+			}
 		} else if (strcmp(argv[i], "-verbose") == 0) {
 			g_verbose = true;
 		}
@@ -1261,7 +1277,7 @@ int main(int argc, char **argv)
 	}
 
 	// Single mode: original behavior
-	// First remove -verbose from the argument list if present
+	// First remove -verbose and -maxlevel from the argument list if present
 	for (int i = 1; i < argc; ++i) {
 		if (strcmp(argv[i], "-verbose") == 0) {
 			// Splice out -verbose
@@ -1269,6 +1285,13 @@ int main(int argc, char **argv)
 				argv[j] = argv[j + 1];
 			}
 			--argc;
+			--i;  // Check this position again
+		} else if (strcmp(argv[i], "-maxlevel") == 0 && i + 1 < argc) {
+			// Splice out -maxlevel and its argument (already parsed above)
+			for (int j = i; j < argc - 2; ++j) {
+				argv[j] = argv[j + 2];
+			}
+			argc -= 2;
 			--i;  // Check this position again
 		}
 	}
