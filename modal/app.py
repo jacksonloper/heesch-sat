@@ -61,14 +61,14 @@ volume = modal.Volume.from_name("heesch-renderings-vol", create_if_missing=True)
 VOLUME_PATH = "/data"
 
 # Image with heesch-sat binaries compiled
-# Build timestamp: 2026-01-03T14:50:00Z - forces image rebuild
+# Build timestamp: 2026-01-03T17:55:00Z - forces image rebuild
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("build-essential", "libcryptominisat5-dev", "libboost-dev")
     .pip_install("fastapi", "psutil")
     .add_local_dir("../src", "/app/src", copy=True)
     .run_commands(
-        "echo 'Build: 2026-01-03T14:50:00Z' && cd /app/src && make clean render_witness gen",
+        "echo 'Build: 2026-01-03T17:55:00Z' && cd /app/src && make clean render_witness gen",
         "cp /app/src/render_witness /app/src/gen /usr/local/bin/",
     )
 )

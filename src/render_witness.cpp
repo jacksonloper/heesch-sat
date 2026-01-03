@@ -316,6 +316,74 @@ LabelledPatch<coord_t> filterPatchByActiveUnits(
 }
 
 // ============================================================================
+// Deduplicate periodic copies
+// ============================================================================
+// Greedily removes a tile t if there is already a tile t' in the patch
+// that differs from t only by the discovered periodic translation.
+// This ensures we keep only one canonical representative of each tile.
+
+template<typename grid, typename coord_t>
+LabelledPatch<coord_t> deduplicatePeriodicCopies(
+	const LabelledPatch<coord_t>& patch,
+	size_t trans_w,
+	size_t trans_h)
+{
+	using point_t = typename grid::point_t;
+	using xform_t = typename grid::xform_t;
+
+	// Get translation vectors for the full periodic region
+	point_t fullTransV1 = point_t{
+		(coord_t)(trans_w * grid::translationV1.x_),
+		(coord_t)(trans_w * grid::translationV1.y_)};
+	point_t fullTransV2 = point_t{
+		(coord_t)(trans_h * grid::translationV2.x_),
+		(coord_t)(trans_h * grid::translationV2.y_)};
+
+	// Build list of all translation vectors to check (including combinations)
+	// We check: ±V1, ±V2, and all combinations ±V1±V2
+	vector<point_t> translations;
+	for (int i = -1; i <= 1; ++i) {
+		for (int j = -1; j <= 1; ++j) {
+			if (i == 0 && j == 0) continue; // Skip identity
+			point_t trans = point_t{
+				(coord_t)(i * fullTransV1.x_ + j * fullTransV2.x_),
+				(coord_t)(i * fullTransV1.y_ + j * fullTransV2.y_)};
+			translations.push_back(trans);
+		}
+	}
+
+	// Set of transforms we've already kept (canonical representatives)
+	xform_set<coord_t> keptTransforms;
+	LabelledPatch<coord_t> deduplicated;
+
+	for (const auto& tile : patch) {
+		const xform_t& T = tile.second;
+
+		// Check if this tile is a periodic copy of an already-kept tile
+		bool isDuplicate = false;
+		for (const auto& trans : translations) {
+			xform_t translatedT = T.translate(trans);
+			if (keptTransforms.find(translatedT) != keptTransforms.end()) {
+				isDuplicate = true;
+				break;
+			}
+		}
+
+		if (!isDuplicate) {
+			// Keep this tile
+			deduplicated.push_back(tile);
+			keptTransforms.insert(T);
+		}
+	}
+
+	if (deduplicated.size() < patch.size()) {
+		cerr << "Deduplicated periodic copies: " << patch.size() << " -> " << deduplicated.size() << " tiles" << endl;
+	}
+
+	return deduplicated;
+}
+
+// ============================================================================
 // Generate the grid cells that make up the active unit area
 // ============================================================================
 // For visualization, we want to output the cells (e.g., hexes for kite grid)
@@ -662,6 +730,11 @@ ProcessResult processShapeToJson(const vector<pair<typename grid::coord_t, typen
 
 		// Use the unit-based approach as primary (matches SAT solver's logic)
 		connectedPatch = filteredByUnits;
+
+		// Deduplicate: remove tiles that are periodic copies of other tiles
+		connectedPatch = deduplicatePeriodicCopies<grid, coord_t>(
+			connectedPatch,
+			result.periodicTranslationW, result.periodicTranslationH);
 
 		cerr << "Filtered periodic patch from " << originalSize << " to " 
 		     << connectedPatch.size() << " tiles (active unit area)" << endl;
