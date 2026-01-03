@@ -237,7 +237,7 @@ function WitnessViewer({ witness, onClose }) {
                     checked={showPeriodicCopies}
                     onChange={e => setShowPeriodicCopies(e.target.checked)}
                   />
-                  Show 9 periodic copies
+                  Show periodic tiling
                 </label>
               </div>
             )}
@@ -316,33 +316,23 @@ function WitnessSVG({ witness, patch, showGrid, showActiveUnitCells, showPeriodi
     }
   })
 
-  // If showing 9 copies, extend bounds to include all translated copies
-  if (showPeriodicCopies && translationVecs) {
-    const { fullV1, fullV2 } = translationVecs
-    const offsets = [
-      [-1, -1], [0, -1], [1, -1],
-      [-1, 0], [0, 0], [1, 0],
-      [-1, 1], [0, 1], [1, 1]
-    ]
-    for (const [i, j] of offsets) {
-      const dx = i * fullV1[0] + j * fullV2[0]
-      const dy = i * fullV1[1] + j * fullV2[1]
-      patch.forEach(tile => {
-        const [a, b, c, d, e, f] = tile.transform
-        const points = tile_boundary.map(([[x1, y1]]) => {
-          return transformPoint([x1, y1], [a, b, c + dx, d, e, f + dy])
-        })
-        for (const [x, y] of points) {
-          minX = Math.min(minX, x)
-          maxX = Math.max(maxX, x)
-          minY = Math.min(minY, y)
-          maxY = Math.max(maxY, y)
-        }
-      })
+  // If this is a periodic tiler, extend bounds to include the translation parallelogram
+  // View bounds = union of (central patch bounds) and (periodic translation parallelogram)
+  const periodicOutlineForBounds = witness.tiles_periodically && witness.periodic_translation_w && witness.periodic_translation_h
+    ? getPeriodicRegionOutline(grid_type, witness.periodic_translation_w, witness.periodic_translation_h)
+    : null
+
+  if (periodicOutlineForBounds) {
+    for (const [x, y] of periodicOutlineForBounds) {
+      minX = Math.min(minX, x)
+      maxX = Math.max(maxX, x)
+      minY = Math.min(minY, y)
+      maxY = Math.max(maxY, y)
     }
   }
 
-  const padding = 2
+  // Increased padding around the union of central patch and translation parallelogram
+  const padding = 4
   const width = maxX - minX + padding * 2
   const height = maxY - minY + padding * 2
 
@@ -357,10 +347,8 @@ function WitnessSVG({ witness, patch, showGrid, showActiveUnitCells, showPeriodi
     ? generateGridLines(grid_type, minX - padding, maxX + padding, minY - padding, maxY + padding, gridOffsetX, gridOffsetY)
     : []
 
-  // Generate periodic region outline if this is a periodic tiler
-  const periodicOutline = witness.tiles_periodically && witness.periodic_translation_w && witness.periodic_translation_h
-    ? getPeriodicRegionOutline(grid_type, witness.periodic_translation_w, witness.periodic_translation_h)
-    : null
+  // Reuse the periodic outline computed for bounds calculation
+  const periodicOutline = periodicOutlineForBounds
 
   // Build the periodic region path if outline exists
   const periodicPath = periodicOutline
@@ -459,32 +447,70 @@ function WitnessSVG({ witness, patch, showGrid, showActiveUnitCells, showPeriodi
         </g>
       )}
 
-      {/* 9 periodic copies (if enabled) or single patch */}
+      {/* Periodic copies (if enabled) or single patch */}
       {showPeriodicCopies && translationVecs ? (
-        // Render 9 copies: center + 8 surrounding
+        // For each tile, render all translations that stay inside the view bounds
         <>
-          {[[-1, -1], [0, -1], [1, -1], [-1, 0], [0, 0], [1, 0], [-1, 1], [0, 1], [1, 1]].map(([i, j], copyIdx) => {
-            const dx = i * translationVecs.fullV1[0] + j * translationVecs.fullV2[0]
-            const dy = i * translationVecs.fullV1[1] + j * translationVecs.fullV2[1]
-            const isCenter = i === 0 && j === 0
-            return (
-              <g key={`copy-${copyIdx}`} className={`periodic-copy ${isCenter ? 'center' : 'neighbor'}`}>
-                {patch.map((tile, tileIdx) => {
-                  const [a, b, c, d, e, f] = tile.transform
-                  return (
-                    <use
-                      key={`${copyIdx}-${tileIdx}`}
-                      href={`#tile-${witness.hash}`}
-                      transform={getSvgTransform([a, b, c + dx, d, e, f + dy])}
-                      fill={isCenter ? CORONA_COLORS[tile.corona % CORONA_COLORS.length] : '#888'}
-                      stroke={isCenter ? '#333' : '#666'}
-                      strokeWidth={0.05}
-                      opacity={isCenter ? 0.8 : 0.4}
-                    />
-                  )
-                })}
-              </g>
+          {patch.flatMap((tile, tileIdx) => {
+            const [a, b, c, d, e, f] = tile.transform
+            // Compute tile bounds in its original position
+            const tilePoints = tile_boundary.map(([[x1, y1]]) =>
+              transformPoint([x1, y1], [a, b, c, d, e, f])
             )
+            let tileMinX = Infinity, tileMaxX = -Infinity
+            let tileMinY = Infinity, tileMaxY = -Infinity
+            for (const [x, y] of tilePoints) {
+              tileMinX = Math.min(tileMinX, x)
+              tileMaxX = Math.max(tileMaxX, x)
+              tileMinY = Math.min(tileMinY, y)
+              tileMaxY = Math.max(tileMaxY, y)
+            }
+
+            // View bounds (with padding)
+            const viewMinX = minX - padding
+            const viewMaxX = maxX + padding
+            const viewMinY = minY - padding
+            const viewMaxY = maxY + padding
+
+            // Find range of translation indices that keep the tile in view
+            const { fullV1, fullV2 } = translationVecs
+            // Estimate the range of i,j values needed
+            const maxRange = 10 // Reasonable upper bound
+            const tilePlacements = []
+
+            for (let i = -maxRange; i <= maxRange; i++) {
+              for (let j = -maxRange; j <= maxRange; j++) {
+                const dx = i * fullV1[0] + j * fullV2[0]
+                const dy = i * fullV1[1] + j * fullV2[1]
+
+                // Check if any part of the translated tile is in view
+                const translatedMinX = tileMinX + dx
+                const translatedMaxX = tileMaxX + dx
+                const translatedMinY = tileMinY + dy
+                const translatedMaxY = tileMaxY + dy
+
+                // Tile is in view if bounding boxes overlap
+                const inView = translatedMaxX >= viewMinX && translatedMinX <= viewMaxX &&
+                               translatedMaxY >= viewMinY && translatedMinY <= viewMaxY
+
+                if (inView) {
+                  const isCenter = i === 0 && j === 0
+                  tilePlacements.push({ i, j, dx, dy, isCenter })
+                }
+              }
+            }
+
+            return tilePlacements.map(({ i, j, dx, dy, isCenter }) => (
+              <use
+                key={`tile-${tileIdx}-${i}-${j}`}
+                href={`#tile-${witness.hash}`}
+                transform={getSvgTransform([a, b, c + dx, d, e, f + dy])}
+                fill={isCenter ? CORONA_COLORS[tile.corona % CORONA_COLORS.length] : '#888'}
+                stroke={isCenter ? '#333' : '#666'}
+                strokeWidth={0.05}
+                opacity={isCenter ? 0.8 : 0.4}
+              />
+            ))
           })}
         </>
       ) : (
