@@ -229,8 +229,8 @@ bool isPointInActiveUnitArea(const typename grid::point_t& p, size_t trans_w, si
 
 // Get the unit index (x, y) for a grid cell coordinate.
 // This mirrors how PeriodicSolver::buildCells assigns cells to units.
-// Returns the unit as (x mod trans_w, y mod trans_h) where x, y are the
-// unit indices that would contain this cell.
+// Each unit (x, y) has its base position at x*V1 + y*V2, and contains cells
+// at positions base + origin for each origin in grid::origins.
 template<typename grid>
 pair<int64_t, int64_t> getUnitIndexForCell(const typename grid::point_t& cell)
 {
@@ -240,14 +240,6 @@ pair<int64_t, int64_t> getUnitIndexForCell(const typename grid::point_t& cell)
 	const point_t& V1 = grid::translationV1;
 	const point_t& V2 = grid::translationV2;
 
-	// We need to find which unit (x, y) contains this cell.
-	// The unit (x, y) starts at position x*V1 + y*V2 and contains cells
-	// at offsets defined by grid::origins.
-	//
-	// To find which unit contains a cell, we essentially do the inverse:
-	// solve cell = x*V1 + y*V2 + origin_offset
-	//
-	// We can compute this by doing change of basis.
 	// The determinant of [V1 | V2]:
 	int64_t det = (int64_t)V1.x_ * V2.y_ - (int64_t)V1.y_ * V2.x_;
 
@@ -255,29 +247,29 @@ pair<int64_t, int64_t> getUnitIndexForCell(const typename grid::point_t& cell)
 		return {0, 0}; // Degenerate case
 	}
 
-	// Using Cramer's rule to express cell in (V1, V2) basis:
-	// cell = a * V1 + b * V2
-	// a = (cell.x * V2.y - cell.y * V2.x) / det
-	// b = (V1.x * cell.y - V1.y * cell.x) / det
-	int64_t a_num = (int64_t)cell.x_ * V2.y_ - (int64_t)cell.y_ * V2.x_;
-	int64_t b_num = (int64_t)V1.x_ * cell.y_ - (int64_t)V1.y_ * cell.x_;
+	// For each origin, compute cell - origin and see if it gives us integer
+	// multiples of V1 and V2. The cell belongs to unit (x, y) where
+	// cell = x*V1 + y*V2 + origin for some origin in grid::origins.
+	for (const auto& origin : grid::origins) {
+		// Compute base = cell - origin
+		int64_t base_x = cell.x_ - origin.x_;
+		int64_t base_y = cell.y_ - origin.y_;
 
-	// Integer division that rounds down (floor division)
-	// For positive den: floor(num/den) = num/den if num>=0, (num-den+1)/den if num<0
-	// For negative den: floor(num/den) = num/den if num<=0, (num-den-1)/den if num>0
-	// Actually, simpler formula: floor(a/b) = (a - ((a % b) + b) % b) / b
-	// Or we can use: (a < 0 != b < 0 && a % b != 0) ? (a/b - 1) : (a/b)
-	auto floorDiv = [](int64_t num, int64_t den) -> int64_t {
-		int64_t q = num / den;
-		int64_t r = num % den;
-		// If the signs of num and den differ and there's a remainder, subtract 1
-		return (r != 0 && ((num < 0) != (den < 0))) ? q - 1 : q;
-	};
+		// Using Cramer's rule to express base in (V1, V2) basis:
+		// base = a * V1 + b * V2
+		// a = (base_x * V2.y - base_y * V2.x) / det
+		// b = (V1.x * base_y - V1.y * base_x) / det
+		int64_t a_num = base_x * V2.y_ - base_y * V2.x_;
+		int64_t b_num = (int64_t)V1.x_ * base_y - (int64_t)V1.y_ * base_x;
 
-	int64_t unit_x = floorDiv(a_num, det);
-	int64_t unit_y = floorDiv(b_num, det);
+		// Check if both are exact integer divisions (no remainder)
+		if (a_num % det == 0 && b_num % det == 0) {
+			return {a_num / det, b_num / det};
+		}
+	}
 
-	return {unit_x, unit_y};
+	// Shouldn't reach here for valid cells, but return an invalid index
+	return {-999999, -999999};
 }
 
 // Check if a cell's unit index is within the active units [0, trans_w) x [0, trans_h)
