@@ -318,8 +318,10 @@ LabelledPatch<coord_t> filterPatchByActiveUnits(
 // ============================================================================
 // Deduplicate periodic copies
 // ============================================================================
-// Greedily removes a tile t if there is already a tile t' in the patch
-// that differs from t only by the discovered periodic translation.
+// Properly deduplicate tiles by:
+// 1. Grouping tiles by their 2x2 linear part (rotation/reflection)
+// 2. For tiles with the same linear part, canonicalizing the translation
+//    by reducing it modulo the periodic translation vectors
 // This ensures we keep only one canonical representative of each tile.
 
 template<typename grid, typename coord_t>
@@ -328,51 +330,92 @@ LabelledPatch<coord_t> deduplicatePeriodicCopies(
 	size_t trans_w,
 	size_t trans_h)
 {
-	using point_t = typename grid::point_t;
 	using xform_t = typename grid::xform_t;
 
-	// Get translation vectors for the full periodic region
-	point_t fullTransV1 = point_t{
-		(coord_t)(trans_w * grid::translationV1.x_),
-		(coord_t)(trans_w * grid::translationV1.y_)};
-	point_t fullTransV2 = point_t{
-		(coord_t)(trans_h * grid::translationV2.x_),
-		(coord_t)(trans_h * grid::translationV2.y_)};
+	// Get the full periodic translation vectors
+	// V1_full = trans_w * translationV1
+	// V2_full = trans_h * translationV2
+	int64_t V1x = trans_w * grid::translationV1.x_;
+	int64_t V1y = trans_w * grid::translationV1.y_;
+	int64_t V2x = trans_h * grid::translationV2.x_;
+	int64_t V2y = trans_h * grid::translationV2.y_;
 
-	// Build list of all translation vectors to check (including combinations)
-	// We check: ±V1, ±V2, and all combinations ±V1±V2
-	vector<point_t> translations;
-	for (int i = -1; i <= 1; ++i) {
-		for (int j = -1; j <= 1; ++j) {
-			if (i == 0 && j == 0) continue; // Skip identity
-			point_t trans = point_t{
-				(coord_t)(i * fullTransV1.x_ + j * fullTransV2.x_),
-				(coord_t)(i * fullTransV1.y_ + j * fullTransV2.y_)};
-			translations.push_back(trans);
-		}
+	// Compute determinant for change-of-basis (V1, V2 are columns)
+	// det = V1x * V2y - V1y * V2x
+	int64_t det = V1x * V2y - V1y * V2x;
+	if (det == 0) {
+		cerr << "WARNING: Periodic translation vectors are linearly dependent!" << endl;
+		return patch;
 	}
 
-	// Set of transforms we've already kept (canonical representatives)
-	xform_set<coord_t> keptTransforms;
+	// Function to canonicalize a translation (c, f) by reducing it modulo (V1, V2)
+	// We find the smallest non-negative representative in the fundamental domain
+	auto canonicalizeTranslation = [&](coord_t c, coord_t f) -> pair<coord_t, coord_t> {
+		// Solve for coefficients (s, t) such that (c, f) = s * V1 + t * V2
+		// Using Cramer's rule:
+		// s = (c * V2y - f * V2x) / det
+		// t = (V1x * f - V1y * c) / det
+		// Then reduce s, t to fractional parts in [0, 1)
+		
+		// Since we want the canonical representative, we need to find integers i, j
+		// such that (c - i*V1x - j*V2x, f - i*V1y - j*V2y) is in a canonical form.
+		// 
+		// We use the inverse of the matrix [V1 V2] to express (c, f) in terms of V1, V2:
+		// (s)   1   ( V2y  -V2x ) (c)
+		// (t) = - * (-V1y   V1x ) (f)
+		//       det
+		
+		int64_t c64 = c;
+		int64_t f64 = f;
+		
+		// Compute s * det and t * det (to avoid floating point)
+		int64_t s_det = c64 * V2y - f64 * V2x;
+		int64_t t_det = V1x * f64 - V1y * c64;
+		
+		// Compute floor(s) and floor(t) using integer division
+		// For floor division: if det > 0, use standard division; otherwise negate
+		int64_t s_floor, t_floor;
+		if (det > 0) {
+			// floor(s_det / det)
+			s_floor = (s_det >= 0) ? (s_det / det) : ((s_det - det + 1) / det);
+			t_floor = (t_det >= 0) ? (t_det / det) : ((t_det - det + 1) / det);
+		} else {
+			// det < 0, so we need to flip signs
+			int64_t neg_det = -det;
+			s_floor = (s_det <= 0) ? ((-s_det) / neg_det) : (((-s_det) - neg_det + 1) / neg_det);
+			s_floor = -s_floor;
+			t_floor = (t_det <= 0) ? ((-t_det) / neg_det) : (((-t_det) - neg_det + 1) / neg_det);
+			t_floor = -t_floor;
+		}
+		
+		// Reduce translation by subtracting floor(s) * V1 + floor(t) * V2
+		coord_t new_c = c - (coord_t)(s_floor * V1x + t_floor * V2x);
+		coord_t new_f = f - (coord_t)(s_floor * V1y + t_floor * V2y);
+		
+		return {new_c, new_f};
+	};
+
+	// Key for grouping: (a, b, d, e) = linear part of transform
+	// Value: canonical translation (c, f)
+	// We use a map from canonical transform to (label, original transform)
+	map<tuple<coord_t, coord_t, coord_t, coord_t, coord_t, coord_t>, 
+	    pair<size_t, xform_t>> canonicalMap;
+	
 	LabelledPatch<coord_t> deduplicated;
 
 	for (const auto& tile : patch) {
 		const xform_t& T = tile.second;
-
-		// Check if this tile is a periodic copy of an already-kept tile
-		bool isDuplicate = false;
-		for (const auto& trans : translations) {
-			xform_t translatedT = T.translate(trans);
-			if (keptTransforms.find(translatedT) != keptTransforms.end()) {
-				isDuplicate = true;
-				break;
-			}
-		}
-
-		if (!isDuplicate) {
-			// Keep this tile
+		
+		// Canonicalize the translation part
+		auto [canon_c, canon_f] = canonicalizeTranslation(T.c_, T.f_);
+		
+		// Create canonical transform key: (a, b, d, e, canon_c, canon_f)
+		auto key = make_tuple(T.a_, T.b_, T.d_, T.e_, canon_c, canon_f);
+		
+		// If we haven't seen this canonical form yet, keep this tile
+		if (canonicalMap.find(key) == canonicalMap.end()) {
+			canonicalMap[key] = {tile.first, T};
 			deduplicated.push_back(tile);
-			keptTransforms.insert(T);
 		}
 	}
 
