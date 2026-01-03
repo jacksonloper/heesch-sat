@@ -219,6 +219,218 @@ bool isPointInActiveUnitArea(const typename grid::point_t& p, size_t trans_w, si
 	return true;
 }
 
+// ============================================================================
+// APPROACH 2: Unit-based filtering (same as SAT solver's cell/unit mapping)
+// ============================================================================
+// This approach mirrors how the periodic SAT solver defines units and cells.
+// Each unit is a fundamental domain, and cells are assigned to units based on
+// which unit's parallelogram they fall into. This is done by computing which
+// unit index (x, y) a cell belongs to based on the translation lattice.
+
+// Get the unit index (x, y) for a grid cell coordinate.
+// This mirrors how PeriodicSolver::buildCells assigns cells to units.
+// Returns the unit as (x mod trans_w, y mod trans_h) where x, y are the
+// unit indices that would contain this cell.
+template<typename grid>
+pair<int64_t, int64_t> getUnitIndexForCell(const typename grid::point_t& cell)
+{
+	using point_t = typename grid::point_t;
+
+	// Get translation vectors
+	const point_t& V1 = grid::translationV1;
+	const point_t& V2 = grid::translationV2;
+
+	// We need to find which unit (x, y) contains this cell.
+	// The unit (x, y) starts at position x*V1 + y*V2 and contains cells
+	// at offsets defined by grid::origins.
+	//
+	// To find which unit contains a cell, we essentially do the inverse:
+	// solve cell = x*V1 + y*V2 + origin_offset
+	//
+	// We can compute this by doing change of basis.
+	// The determinant of [V1 | V2]:
+	int64_t det = (int64_t)V1.x_ * V2.y_ - (int64_t)V1.y_ * V2.x_;
+
+	if (det == 0) {
+		return {0, 0}; // Degenerate case
+	}
+
+	// Using Cramer's rule to express cell in (V1, V2) basis:
+	// cell = a * V1 + b * V2
+	// a = (cell.x * V2.y - cell.y * V2.x) / det
+	// b = (V1.x * cell.y - V1.y * cell.x) / det
+	int64_t a_num = (int64_t)cell.x_ * V2.y_ - (int64_t)cell.y_ * V2.x_;
+	int64_t b_num = (int64_t)V1.x_ * cell.y_ - (int64_t)V1.y_ * cell.x_;
+
+	// Integer division that rounds down (floor division)
+	auto floorDiv = [](int64_t num, int64_t den) -> int64_t {
+		if (den > 0) {
+			return (num >= 0) ? (num / den) : ((num - den + 1) / den);
+		} else {
+			return (num <= 0) ? (num / den) : ((num - den - 1) / den);
+		}
+	};
+
+	int64_t unit_x = floorDiv(a_num, det);
+	int64_t unit_y = floorDiv(b_num, det);
+
+	return {unit_x, unit_y};
+}
+
+// Check if a cell's unit index is within the active units [0, trans_w) x [0, trans_h)
+template<typename grid>
+bool isCellInActiveUnit(const typename grid::point_t& cell, size_t trans_w, size_t trans_h)
+{
+	auto [unit_x, unit_y] = getUnitIndexForCell<grid>(cell);
+	return unit_x >= 0 && unit_x < (int64_t)trans_w &&
+	       unit_y >= 0 && unit_y < (int64_t)trans_h;
+}
+
+// Check if a tile has at least one cell in an active unit (approach 2)
+template<typename grid>
+bool tileHasCellInActiveUnit(
+	const Shape<grid>& shape,
+	const typename grid::xform_t& T,
+	size_t trans_w,
+	size_t trans_h)
+{
+	for (const auto& p : shape) {
+		auto tp = T * p;
+		if (isCellInActiveUnit<grid>(tp, trans_w, trans_h)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// Filter a patch using the unit-based approach (approach 2)
+template<typename grid, typename coord_t>
+LabelledPatch<coord_t> filterPatchByActiveUnits(
+	const Shape<grid>& shape,
+	const LabelledPatch<coord_t>& patch,
+	size_t trans_w,
+	size_t trans_h)
+{
+	LabelledPatch<coord_t> filtered;
+	for (const auto& tile : patch) {
+		if (tileHasCellInActiveUnit<grid>(shape, tile.second, trans_w, trans_h)) {
+			filtered.push_back(tile);
+		}
+	}
+	return filtered;
+}
+
+// ============================================================================
+// Generate the grid cells that make up the active unit area
+// ============================================================================
+// For visualization, we want to output the cells (e.g., hexes for kite grid)
+// that make up the active periodic region.
+
+template<typename grid>
+vector<typename grid::point_t> getActiveUnitCells(size_t trans_w, size_t trans_h)
+{
+	using point_t = typename grid::point_t;
+	vector<point_t> cells;
+
+	// Build cells the same way as PeriodicSolver::buildCells
+	point_t row_start {0, 0};
+
+	for (size_t y = 0; y < trans_h; ++y) {
+		point_t O = row_start;
+		for (size_t x = 0; x < trans_w; ++x) {
+			for (const auto& p : grid::origins) {
+				point_t op = O + p;
+				cells.push_back(op);
+			}
+			O = O + grid::translationV1;
+		}
+		row_start = row_start + grid::translationV2;
+	}
+
+	return cells;
+}
+
+// ============================================================================
+// Validation: Check that translated copies don't improperly overlap
+// ============================================================================
+// After filtering, if we translate the placed tiles by the periodic translation,
+// each new tile should either be identical to or not overlap any original tile.
+
+template<typename grid, typename coord_t>
+bool validatePeriodicTranslations(
+	const Shape<grid>& shape,
+	const LabelledPatch<coord_t>& filteredPatch,
+	size_t trans_w,
+	size_t trans_h)
+{
+	using point_t = typename grid::point_t;
+	using xform_t = typename grid::xform_t;
+
+	// Get translation vectors for the full periodic region
+	point_t fullTransV1 = point_t{
+		(coord_t)(trans_w * grid::translationV1.x_),
+		(coord_t)(trans_w * grid::translationV1.y_)};
+	point_t fullTransV2 = point_t{
+		(coord_t)(trans_h * grid::translationV2.x_),
+		(coord_t)(trans_h * grid::translationV2.y_)};
+
+	// Collect all cells occupied by the original filtered patch
+	point_set<coord_t> originalCells;
+	for (const auto& tile : filteredPatch) {
+		for (const auto& p : shape) {
+			auto tp = tile.second * p;
+			originalCells.insert(tp);
+		}
+	}
+
+	// Store original tile transforms for identity checking
+	xform_set<coord_t> originalTransforms;
+	for (const auto& tile : filteredPatch) {
+		originalTransforms.insert(tile.second);
+	}
+
+	bool valid = true;
+
+	// Check translations in all 4 directions (and combinations)
+	point_t translations[] = {
+		fullTransV1,
+		point_t{(coord_t)(-fullTransV1.x_), (coord_t)(-fullTransV1.y_)},
+		fullTransV2,
+		point_t{(coord_t)(-fullTransV2.x_), (coord_t)(-fullTransV2.y_)}
+	};
+
+	for (const auto& trans : translations) {
+		for (const auto& tile : filteredPatch) {
+			xform_t translatedT = tile.second.translate(trans);
+
+			// Check if this translated tile is identical to an original tile
+			if (originalTransforms.find(translatedT) != originalTransforms.end()) {
+				// Identical - this is fine
+				continue;
+			}
+
+			// Check if the translated tile overlaps with any original cell
+			bool overlaps = false;
+			for (const auto& p : shape) {
+				auto tp = translatedT * p;
+				if (originalCells.find(tp) != originalCells.end()) {
+					overlaps = true;
+					break;
+				}
+			}
+
+			if (overlaps) {
+				// This translated tile overlaps but is not identical - invalid
+				cerr << "WARNING: Translated tile overlaps but is not identical. "
+				     << "Translation: <" << trans.x_ << "," << trans.y_ << ">" << endl;
+				valid = false;
+			}
+		}
+	}
+
+	return valid;
+}
+
 // Check if a tile (defined by its transform) has at least one cell inside the active unit area
 template<typename grid>
 bool tileHasCellInActiveUnitArea(
@@ -391,13 +603,47 @@ ProcessResult processShapeToJson(const vector<pair<typename grid::coord_t, typen
 
 	// For periodic tilers, filter the patch to only include tiles that have
 	// at least one cell inside the active unit area
+	// We use two approaches and verify they agree:
+	// 1. Parallelogram-based (isPointInActiveUnitArea)
+	// 2. Unit-based (same as SAT solver's cell/unit mapping)
+	vector<typename grid::point_t> activeUnitCells;
 	if (tilesPeriodically && result.periodicTranslationW > 0 && result.periodicTranslationH > 0) {
 		size_t originalSize = connectedPatch.size();
-		connectedPatch = filterPatchToActiveUnitArea<grid>(
+
+		// Approach 1: Parallelogram-based filtering
+		patch_t filteredByParallelogram = filterPatchToActiveUnitArea<grid>(
 			shape, connectedPatch,
 			result.periodicTranslationW, result.periodicTranslationH);
+
+		// Approach 2: Unit-based filtering (same as SAT solver)
+		patch_t filteredByUnits = filterPatchByActiveUnits<grid>(
+			shape, connectedPatch,
+			result.periodicTranslationW, result.periodicTranslationH);
+
+		// Compare the two approaches
+		if (filteredByParallelogram.size() != filteredByUnits.size()) {
+			cerr << "NOTE: Filtering approaches differ in count: "
+			     << "parallelogram=" << filteredByParallelogram.size()
+			     << " vs units=" << filteredByUnits.size() << endl;
+		}
+
+		// Use the unit-based approach as primary (matches SAT solver's logic)
+		connectedPatch = filteredByUnits;
+
 		cerr << "Filtered periodic patch from " << originalSize << " to " 
 		     << connectedPatch.size() << " tiles (active unit area)" << endl;
+
+		// Generate the active unit cells for visualization
+		activeUnitCells = getActiveUnitCells<grid>(
+			result.periodicTranslationW, result.periodicTranslationH);
+
+		// Validate that translated copies behave correctly
+		bool valid = validatePeriodicTranslations<grid>(
+			shape, connectedPatch,
+			result.periodicTranslationW, result.periodicTranslationH);
+		if (!valid) {
+			cerr << "WARNING: Periodic translation validation failed!" << endl;
+		}
 	}
 
 	// For non-tilers with hc=0 and no patch, create a trivial patch
@@ -490,6 +736,22 @@ ProcessResult processShapeToJson(const vector<pair<typename grid::coord_t, typen
 		json << indent << "\"periodic_grid_size\": " << result.periodicGridSize << "," << nl;
 		json << indent << "\"periodic_translation_w\": " << result.periodicTranslationW << "," << nl;
 		json << indent << "\"periodic_translation_h\": " << result.periodicTranslationH << "," << nl;
+
+		// Output the active unit cells (the grid cells that make up the fundamental domain)
+		// These are in grid coordinates
+		json << indent << "\"active_unit_cells\": [" << nl;
+		for (size_t i = 0; i < activeUnitCells.size(); ++i) {
+			const auto& cell = activeUnitCells[i];
+			// Convert cell coordinate to page coordinates for visualization
+			// Use the cell coordinate directly as a grid point
+			point<double> gridPt{(double)cell.x_, (double)cell.y_};
+			auto pageCell = grid::gridToPage(gridPt);
+			json << indent2 << "{\"grid\": [" << cell.x_ << ", " << cell.y_ << "], "
+			     << "\"page\": [" << pageCell.x_ << ", " << pageCell.y_ << "]}";
+			if (i + 1 < activeUnitCells.size()) json << ",";
+			json << nl;
+		}
+		json << indent << "]," << nl;
 	}
 
 	// Connected witness (or periodic witness for plane tilers)
