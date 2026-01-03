@@ -843,6 +843,19 @@ ProcessResult processShapeToJson(const vector<pair<typename grid::coord_t, typen
 		json << indent << "\"periodic_translation_w\": " << result.periodicTranslationW << "," << nl;
 		json << indent << "\"periodic_translation_h\": " << result.periodicTranslationH << "," << nl;
 
+		// Output V1 and V2 vectors (both grid and page coordinates)
+		// V1 is the base translation vector in the "width" direction
+		// V2 is the base translation vector in the "height" direction
+		const auto& V1 = grid::translationV1;
+		const auto& V2 = grid::translationV2;
+		point<double> V1_page = grid::gridToPage(point<double>{(double)V1.x_, (double)V1.y_});
+		point<double> V2_page = grid::gridToPage(point<double>{(double)V2.x_, (double)V2.y_});
+		
+		json << indent << "\"V1\": {\"grid\": [" << V1.x_ << ", " << V1.y_ << "], "
+		     << "\"page\": [" << V1_page.x_ << ", " << V1_page.y_ << "]}," << nl;
+		json << indent << "\"V2\": {\"grid\": [" << V2.x_ << ", " << V2.y_ << "], "
+		     << "\"page\": [" << V2_page.x_ << ", " << V2_page.y_ << "]}," << nl;
+
 		// Output the active unit cells (the grid cells that make up the fundamental domain)
 		// These are in grid coordinates
 		json << indent << "\"active_unit_cells\": [" << nl;

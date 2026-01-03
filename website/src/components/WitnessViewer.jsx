@@ -100,6 +100,19 @@ function WitnessViewer({ witness, onClose }) {
     URL.revokeObjectURL(url)
   }
 
+  const handleDownloadJson = () => {
+    const jsonContent = JSON.stringify(witness, null, 2)
+    const blob = new Blob([jsonContent], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${witness.cell_count}-${witness.grid_type}-${witness.hash}.json`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
   const heeschValue = showHoles && witness.heesch_with_holes !== null
     ? witness.heesch_with_holes
     : witness.heesch_connected
@@ -232,6 +245,9 @@ function WitnessViewer({ witness, onClose }) {
             <div className="download-row">
               <button className="download-btn" onClick={handleDownloadSvg}>
                 Download SVG
+              </button>
+              <button className="download-btn" onClick={handleDownloadJson}>
+                Download JSON
               </button>
             </div>
 
