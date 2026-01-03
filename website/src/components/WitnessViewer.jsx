@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import './WitnessViewer.css'
-import { generateGridLines, getPeriodicRegionOutline } from '../utils/gridUtils'
+import { generateGridLines, getPeriodicRegionOutline, getTranslationVectorsPage } from '../utils/gridUtils'
 
 // Color palette for corona levels
 const CORONA_COLORS = [
@@ -18,6 +18,7 @@ function WitnessViewer({ witness, onClose }) {
   const [showHoles, setShowHoles] = useState(false)
   const [showGrid, setShowGrid] = useState(false)
   const [showActiveUnitCells, setShowActiveUnitCells] = useState(false)
+  const [showPeriodicCopies, setShowPeriodicCopies] = useState(false)
   const [gridOffsetX] = useState(-1.5)
   const [gridOffsetY] = useState(0.5)
 
@@ -61,6 +62,7 @@ function WitnessViewer({ witness, onClose }) {
               patch={activeWitness}
               showGrid={showGrid}
               showActiveUnitCells={showActiveUnitCells}
+              showPeriodicCopies={showPeriodicCopies}
               gridOffsetX={gridOffsetX}
               gridOffsetY={gridOffsetY}
             />
@@ -140,6 +142,19 @@ function WitnessViewer({ witness, onClose }) {
               </div>
             )}
 
+            {witness.tiles_periodically && (
+              <div className="toggle-row">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={showPeriodicCopies}
+                    onChange={e => setShowPeriodicCopies(e.target.checked)}
+                  />
+                  Show 9 periodic copies
+                </label>
+              </div>
+            )}
+
             <div className="corona-legend">
               <h4>Corona levels:</h4>
               {[...new Set(activeWitness?.map(t => t.corona) || [])].sort((a, b) => a - b).map(level => (
@@ -159,7 +174,7 @@ function WitnessViewer({ witness, onClose }) {
   )
 }
 
-function WitnessSVG({ witness, patch, showGrid, showActiveUnitCells, gridOffsetX, gridOffsetY }) {
+function WitnessSVG({ witness, patch, showGrid, showActiveUnitCells, showPeriodicCopies, gridOffsetX, gridOffsetY }) {
   const { tile_boundary, grid_type, active_unit_cells } = witness
 
   if (!tile_boundary || tile_boundary.length === 0 || !patch) {
@@ -178,6 +193,11 @@ function WitnessSVG({ witness, patch, showGrid, showActiveUnitCells, gridOffsetX
     a * x + b * y + c,
     d * x + e * y + f
   ]
+
+  // Get translation vectors for periodic copies
+  const translationVecs = witness.tiles_periodically && witness.periodic_translation_w && witness.periodic_translation_h
+    ? getTranslationVectorsPage(grid_type, witness.periodic_translation_w, witness.periodic_translation_h)
+    : null
 
   // Calculate bounds across all transformed tiles
   let minX = Infinity, maxX = -Infinity
@@ -199,6 +219,32 @@ function WitnessSVG({ witness, patch, showGrid, showActiveUnitCells, gridOffsetX
       maxY = Math.max(maxY, y)
     }
   })
+
+  // If showing 9 copies, extend bounds to include all translated copies
+  if (showPeriodicCopies && translationVecs) {
+    const { fullV1, fullV2 } = translationVecs
+    const offsets = [
+      [-1, -1], [0, -1], [1, -1],
+      [-1, 0], [0, 0], [1, 0],
+      [-1, 1], [0, 1], [1, 1]
+    ]
+    for (const [i, j] of offsets) {
+      const dx = i * fullV1[0] + j * fullV2[0]
+      const dy = i * fullV1[1] + j * fullV2[1]
+      patch.forEach(tile => {
+        const [a, b, c, d, e, f] = tile.transform
+        const points = tile_boundary.map(([[x1, y1]]) => {
+          return transformPoint([x1, y1], [a, b, c + dx, d, e, f + dy])
+        })
+        for (const [x, y] of points) {
+          minX = Math.min(minX, x)
+          maxX = Math.max(maxX, x)
+          minY = Math.min(minY, y)
+          maxY = Math.max(maxY, y)
+        }
+      })
+    }
+  }
 
   const padding = 2
   const width = maxX - minX + padding * 2
@@ -235,6 +281,27 @@ function WitnessSVG({ witness, patch, showGrid, showActiveUnitCells, gridOffsetX
     >
       <defs>
         <path id={`tile-${witness.hash}`} d={tilePath} />
+        {/* Arrowhead markers for translation vectors */}
+        <marker
+          id="arrowhead-v1"
+          markerWidth="4"
+          markerHeight="4"
+          refX="3"
+          refY="2"
+          orient="auto"
+        >
+          <polygon points="0 0, 4 2, 0 4" fill="#ff0000" />
+        </marker>
+        <marker
+          id="arrowhead-v2"
+          markerWidth="4"
+          markerHeight="4"
+          refX="3"
+          refY="2"
+          orient="auto"
+        >
+          <polygon points="0 0, 4 2, 0 4" fill="#0000ff" />
+        </marker>
       </defs>
 
       {/* Grid lines (behind tiles) */}
@@ -268,17 +335,76 @@ function WitnessSVG({ witness, patch, showGrid, showActiveUnitCells, gridOffsetX
         />
       )}
 
-      {patch.map((tile, i) => (
-        <use
-          key={i}
-          href={`#tile-${witness.hash}`}
-          transform={getSvgTransform(tile.transform)}
-          fill={CORONA_COLORS[tile.corona % CORONA_COLORS.length]}
-          stroke="#333"
-          strokeWidth={0.05}
-          opacity={0.8}
-        />
-      ))}
+      {/* Translation vectors (shown as arrows from origin) */}
+      {witness.tiles_periodically && translationVecs && (
+        <g className="translation-vectors">
+          {/* V1 vector (red) */}
+          <line
+            x1={0}
+            y1={0}
+            x2={translationVecs.fullV1[0]}
+            y2={translationVecs.fullV1[1]}
+            stroke="#ff0000"
+            strokeWidth={0.15}
+            markerEnd="url(#arrowhead-v1)"
+          />
+          {/* V2 vector (blue) */}
+          <line
+            x1={0}
+            y1={0}
+            x2={translationVecs.fullV2[0]}
+            y2={translationVecs.fullV2[1]}
+            stroke="#0000ff"
+            strokeWidth={0.15}
+            markerEnd="url(#arrowhead-v2)"
+          />
+          {/* Origin marker */}
+          <circle cx={0} cy={0} r={0.3} fill="#000" opacity={0.5} />
+        </g>
+      )}
+
+      {/* 9 periodic copies (if enabled) or single patch */}
+      {showPeriodicCopies && translationVecs ? (
+        // Render 9 copies: center + 8 surrounding
+        <>
+          {[[-1, -1], [0, -1], [1, -1], [-1, 0], [0, 0], [1, 0], [-1, 1], [0, 1], [1, 1]].map(([i, j], copyIdx) => {
+            const dx = i * translationVecs.fullV1[0] + j * translationVecs.fullV2[0]
+            const dy = i * translationVecs.fullV1[1] + j * translationVecs.fullV2[1]
+            const isCenter = i === 0 && j === 0
+            return (
+              <g key={`copy-${copyIdx}`} className={`periodic-copy ${isCenter ? 'center' : 'neighbor'}`}>
+                {patch.map((tile, tileIdx) => {
+                  const [a, b, c, d, e, f] = tile.transform
+                  return (
+                    <use
+                      key={`${copyIdx}-${tileIdx}`}
+                      href={`#tile-${witness.hash}`}
+                      transform={getSvgTransform([a, b, c + dx, d, e, f + dy])}
+                      fill={isCenter ? CORONA_COLORS[tile.corona % CORONA_COLORS.length] : '#888'}
+                      stroke={isCenter ? '#333' : '#666'}
+                      strokeWidth={0.05}
+                      opacity={isCenter ? 0.8 : 0.4}
+                    />
+                  )
+                })}
+              </g>
+            )
+          })}
+        </>
+      ) : (
+        // Single patch (default)
+        patch.map((tile, i) => (
+          <use
+            key={i}
+            href={`#tile-${witness.hash}`}
+            transform={getSvgTransform(tile.transform)}
+            fill={CORONA_COLORS[tile.corona % CORONA_COLORS.length]}
+            stroke="#333"
+            strokeWidth={0.05}
+            opacity={0.8}
+          />
+        ))
+      )}
 
       {/* Active unit cells (shown as small circles at cell centers) */}
       {showActiveUnitCells && active_unit_cells && (
