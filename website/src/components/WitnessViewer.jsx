@@ -316,9 +316,23 @@ function WitnessSVG({ witness, patch, showGrid, showActiveUnitCells, showPeriodi
     }
   })
 
-  // View bounds are based on the central patch only (plus padding)
-  // Periodic copies will be computed to fit within these bounds
-  const padding = 2
+  // If this is a periodic tiler, extend bounds to include the translation parallelogram
+  // View bounds = union of (central patch bounds) and (periodic translation parallelogram)
+  const periodicOutlineForBounds = witness.tiles_periodically && witness.periodic_translation_w && witness.periodic_translation_h
+    ? getPeriodicRegionOutline(grid_type, witness.periodic_translation_w, witness.periodic_translation_h)
+    : null
+
+  if (periodicOutlineForBounds) {
+    for (const [x, y] of periodicOutlineForBounds) {
+      minX = Math.min(minX, x)
+      maxX = Math.max(maxX, x)
+      minY = Math.min(minY, y)
+      maxY = Math.max(maxY, y)
+    }
+  }
+
+  // Increased padding around the union of central patch and translation parallelogram
+  const padding = 4
   const width = maxX - minX + padding * 2
   const height = maxY - minY + padding * 2
 
@@ -333,10 +347,8 @@ function WitnessSVG({ witness, patch, showGrid, showActiveUnitCells, showPeriodi
     ? generateGridLines(grid_type, minX - padding, maxX + padding, minY - padding, maxY + padding, gridOffsetX, gridOffsetY)
     : []
 
-  // Generate periodic region outline if this is a periodic tiler
-  const periodicOutline = witness.tiles_periodically && witness.periodic_translation_w && witness.periodic_translation_h
-    ? getPeriodicRegionOutline(grid_type, witness.periodic_translation_w, witness.periodic_translation_h)
-    : null
+  // Reuse the periodic outline computed for bounds calculation
+  const periodicOutline = periodicOutlineForBounds
 
   // Build the periodic region path if outline exists
   const periodicPath = periodicOutline
