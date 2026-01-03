@@ -719,3 +719,34 @@ export function getPeriodicRegionOutline(gridType, translationW, translationH) {
 
   return pageCorners
 }
+
+// Get translation vectors in page coordinates for visualization
+// Returns { fullV1, fullV2 } where each is [x, y] in page coords
+export function getTranslationVectorsPage(gridType, translationW, translationH) {
+  const vecs = translationVectors[gridType]
+  if (!vecs) {
+    return null
+  }
+
+  const toPage = gridToPage[gridType]
+  if (!toPage) {
+    return null
+  }
+
+  const { v1, v2 } = vecs
+
+  // Compute the full translation vectors in grid coordinates
+  const fullV1Grid = [translationW * v1[0], translationW * v1[1]]
+  const fullV2Grid = [translationH * v2[0], translationH * v2[1]]
+
+  // Convert to page coordinates (relative to origin)
+  const origin = toPage(0, 0)
+  const fullV1Page = toPage(fullV1Grid[0], fullV1Grid[1])
+  const fullV2Page = toPage(fullV2Grid[0], fullV2Grid[1])
+
+  // Return as relative vectors from origin
+  return {
+    fullV1: [fullV1Page[0] - origin[0], fullV1Page[1] - origin[1]],
+    fullV2: [fullV2Page[0] - origin[0], fullV2Page[1] - origin[1]]
+  }
+}
