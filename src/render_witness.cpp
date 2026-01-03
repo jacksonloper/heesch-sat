@@ -263,12 +263,15 @@ pair<int64_t, int64_t> getUnitIndexForCell(const typename grid::point_t& cell)
 	int64_t b_num = (int64_t)V1.x_ * cell.y_ - (int64_t)V1.y_ * cell.x_;
 
 	// Integer division that rounds down (floor division)
+	// For positive den: floor(num/den) = num/den if num>=0, (num-den+1)/den if num<0
+	// For negative den: floor(num/den) = num/den if num<=0, (num-den-1)/den if num>0
+	// Actually, simpler formula: floor(a/b) = (a - ((a % b) + b) % b) / b
+	// Or we can use: (a < 0 != b < 0 && a % b != 0) ? (a/b - 1) : (a/b)
 	auto floorDiv = [](int64_t num, int64_t den) -> int64_t {
-		if (den > 0) {
-			return (num >= 0) ? (num / den) : ((num - den + 1) / den);
-		} else {
-			return (num <= 0) ? (num / den) : ((num - den - 1) / den);
-		}
+		int64_t q = num / den;
+		int64_t r = num % den;
+		// If the signs of num and den differ and there's a remainder, subtract 1
+		return (r != 0 && ((num < 0) != (den < 0))) ? q - 1 : q;
 	};
 
 	int64_t unit_x = floorDiv(a_num, det);
@@ -391,7 +394,9 @@ bool validatePeriodicTranslations(
 
 	bool valid = true;
 
-	// Check translations in all 4 directions (and combinations)
+	// Check translations by the periodic vectors (±V1 and ±V2)
+	// We only check the primary directions; diagonal combinations (±V1±V2) would
+	// also be valid but the primary directions are sufficient for validation.
 	point_t translations[] = {
 		fullTransV1,
 		point_t{(coord_t)(-fullTransV1.x_), (coord_t)(-fullTransV1.y_)},
@@ -620,11 +625,28 @@ ProcessResult processShapeToJson(const vector<pair<typename grid::coord_t, typen
 			shape, connectedPatch,
 			result.periodicTranslationW, result.periodicTranslationH);
 
-		// Compare the two approaches
+		// Compare the two approaches - check both count and content
+		bool approachesMatch = true;
 		if (filteredByParallelogram.size() != filteredByUnits.size()) {
-			cerr << "NOTE: Filtering approaches differ in count: "
+			approachesMatch = false;
+		} else {
+			// Check that both have the same tiles (by transform)
+			xform_set<coord_t> paraTransforms, unitTransforms;
+			for (const auto& t : filteredByParallelogram) {
+				paraTransforms.insert(t.second);
+			}
+			for (const auto& t : filteredByUnits) {
+				unitTransforms.insert(t.second);
+			}
+			if (paraTransforms != unitTransforms) {
+				approachesMatch = false;
+			}
+		}
+
+		if (!approachesMatch) {
+			cerr << "NOTE: Filtering approaches differ: "
 			     << "parallelogram=" << filteredByParallelogram.size()
-			     << " vs units=" << filteredByUnits.size() << endl;
+			     << " tiles, units=" << filteredByUnits.size() << " tiles" << endl;
 		}
 
 		// Use the unit-based approach as primary (matches SAT solver's logic)
