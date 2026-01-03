@@ -210,3 +210,8 @@
   border-radius: 3px;
   border: 1px solid rgba(0, 0, 0, 0.1);
 }
+
+.active-cells-count {
+  color: #666;
+  font-size: 0.85em;
+}

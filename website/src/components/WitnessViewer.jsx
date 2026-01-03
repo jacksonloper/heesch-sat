@@ -17,6 +17,7 @@ const CORONA_COLORS = [
 function WitnessViewer({ witness, onClose }) {
   const [showHoles, setShowHoles] = useState(false)
   const [showGrid, setShowGrid] = useState(false)
+  const [showActiveUnitCells, setShowActiveUnitCells] = useState(false)
   const [gridOffsetX] = useState(-1.5)
   const [gridOffsetY] = useState(0.5)
 
@@ -59,6 +60,7 @@ function WitnessViewer({ witness, onClose }) {
               witness={witness}
               patch={activeWitness}
               showGrid={showGrid}
+              showActiveUnitCells={showActiveUnitCells}
               gridOffsetX={gridOffsetX}
               gridOffsetY={gridOffsetY}
             />
@@ -124,6 +126,20 @@ function WitnessViewer({ witness, onClose }) {
               </label>
             </div>
 
+            {witness.tiles_periodically && witness.active_unit_cells && (
+              <div className="toggle-row">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={showActiveUnitCells}
+                    onChange={e => setShowActiveUnitCells(e.target.checked)}
+                  />
+                  Show active unit cells
+                  <span className="active-cells-count"> ({witness.active_unit_cells.length} cells)</span>
+                </label>
+              </div>
+            )}
+
             <div className="corona-legend">
               <h4>Corona levels:</h4>
               {[...new Set(activeWitness?.map(t => t.corona) || [])].sort((a, b) => a - b).map(level => (
@@ -143,8 +159,8 @@ function WitnessViewer({ witness, onClose }) {
   )
 }
 
-function WitnessSVG({ witness, patch, showGrid, gridOffsetX, gridOffsetY }) {
-  const { tile_boundary, grid_type } = witness
+function WitnessSVG({ witness, patch, showGrid, showActiveUnitCells, gridOffsetX, gridOffsetY }) {
+  const { tile_boundary, grid_type, active_unit_cells } = witness
 
   if (!tile_boundary || tile_boundary.length === 0 || !patch) {
     return <div className="no-svg">No boundary data</div>
@@ -263,6 +279,24 @@ function WitnessSVG({ witness, patch, showGrid, gridOffsetX, gridOffsetY }) {
           opacity={0.8}
         />
       ))}
+
+      {/* Active unit cells (shown as small circles at cell centers) */}
+      {showActiveUnitCells && active_unit_cells && (
+        <g className="active-unit-cells">
+          {active_unit_cells.map((cell, i) => (
+            <circle
+              key={i}
+              cx={cell.page[0]}
+              cy={cell.page[1]}
+              r={0.15}
+              fill="#ff00ff"
+              stroke="#800080"
+              strokeWidth={0.03}
+              opacity={0.7}
+            />
+          ))}
+        </g>
+      )}
     </svg>
   )
 }
