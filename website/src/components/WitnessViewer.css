@@ -215,3 +215,25 @@
   color: #666;
   font-size: 0.85em;
 }
+
+.download-row {
+  margin-top: 1rem;
+}
+
+.download-btn {
+  background: #3498db;
+  color: white;
+  border: none;
+  padding: 0.6rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.download-btn:hover {
+  background: #2980b9;
+}

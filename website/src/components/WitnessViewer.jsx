@@ -14,6 +14,65 @@ const CORONA_COLORS = [
   '#34495e', // 7 - dark gray
 ]
 
+// Generate a clean SVG string with only tiles using <use> notation
+function generateDownloadSvg(witness, patch) {
+  const { tile_boundary } = witness
+  
+  if (!tile_boundary || tile_boundary.length === 0 || !patch) {
+    return null
+  }
+
+  // Build the tile path
+  const tilePath = tile_boundary.map(([[x1, y1], [x2, y2]], i) =>
+    i === 0 ? `M ${x1} ${y1} L ${x2} ${y2}` : `L ${x2} ${y2}`
+  ).join(' ') + ' Z'
+
+  // Transform a point using the affine matrix [a, b, c, d, e, f]
+  const transformPoint = ([x, y], [a, b, c, d, e, f]) => [
+    a * x + b * y + c,
+    d * x + e * y + f
+  ]
+
+  // Calculate bounds across all transformed tiles
+  let minX = Infinity, maxX = -Infinity
+  let minY = Infinity, maxY = -Infinity
+
+  patch.forEach(tile => {
+    const [a, b, c, d, e, f] = tile.transform
+    const points = tile_boundary.map(([[x1, y1]]) => {
+      return transformPoint([x1, y1], [a, b, c, d, e, f])
+    })
+    for (const [x, y] of points) {
+      minX = Math.min(minX, x)
+      maxX = Math.max(maxX, x)
+      minY = Math.min(minY, y)
+      maxY = Math.max(maxY, y)
+    }
+  })
+
+  const padding = 1
+  const width = maxX - minX + padding * 2
+  const height = maxY - minY + padding * 2
+
+  // Convert from C++ xform [a,b,c,d,e,f] to SVG matrix(a,b,c,d,e,f)
+  const getSvgTransform = ([a, b, c, d, e, f]) =>
+    `matrix(${a} ${d} ${b} ${e} ${c} ${f})`
+
+  // Build the SVG string
+  const uses = patch.map((tile, i) => {
+    const transform = getSvgTransform(tile.transform)
+    return `  <use href="#tile" transform="${transform}" fill="${CORONA_COLORS[tile.corona % CORONA_COLORS.length]}" stroke="#333" stroke-width="0.05" opacity="0.8"/>`
+  }).join('\n')
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="${minX - padding} ${minY - padding} ${width} ${height}">
+  <defs>
+    <path id="tile" d="${tilePath}"/>
+  </defs>
+${uses}
+</svg>`
+}
+
 function WitnessViewer({ witness, onClose }) {
   const [showHoles, setShowHoles] = useState(false)
   const [showGrid, setShowGrid] = useState(false)
@@ -25,6 +84,21 @@ function WitnessViewer({ witness, onClose }) {
   const activeWitness = showHoles && witness.witness_with_holes
     ? witness.witness_with_holes
     : witness.witness_connected
+  
+  const handleDownloadSvg = () => {
+    const svgContent = generateDownloadSvg(witness, activeWitness)
+    if (!svgContent) return
+    
+    const blob = new Blob([svgContent], { type: 'image/svg+xml' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${witness.cell_count}-${witness.grid_type}-${witness.hash}.svg`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
 
   const heeschValue = showHoles && witness.heesch_with_holes !== null
     ? witness.heesch_with_holes
@@ -154,6 +228,12 @@ function WitnessViewer({ witness, onClose }) {
                 </label>
               </div>
             )}
+
+            <div className="download-row">
+              <button className="download-btn" onClick={handleDownloadSvg}>
+                Download SVG
+              </button>
+            </div>
 
             <div className="corona-legend">
               <h4>Corona levels:</h4>
