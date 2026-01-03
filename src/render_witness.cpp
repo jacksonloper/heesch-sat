@@ -394,6 +394,11 @@ bool validatePeriodicTranslations(
 
 	bool valid = true;
 
+	// Log the translation vectors for debugging
+	cerr << "Validation: fullTransV1=<" << fullTransV1.x_ << "," << fullTransV1.y_ << ">, "
+	     << "fullTransV2=<" << fullTransV2.x_ << "," << fullTransV2.y_ << ">" << endl;
+	cerr << "  Original tiles: " << filteredPatch.size() << ", cells: " << originalCells.size() << endl;
+
 	// Check translations by the periodic vectors (±V1 and ±V2)
 	// We only check the primary directions; diagonal combinations (±V1±V2) would
 	// also be valid but the primary directions are sufficient for validation.
@@ -405,12 +410,17 @@ bool validatePeriodicTranslations(
 	};
 
 	for (const auto& trans : translations) {
+		int identicalCount = 0;
+		int overlapCount = 0;
+		int nonOverlapCount = 0;
+		
 		for (const auto& tile : filteredPatch) {
 			xform_t translatedT = tile.second.translate(trans);
 
 			// Check if this translated tile is identical to an original tile
 			if (originalTransforms.find(translatedT) != originalTransforms.end()) {
 				// Identical - this is fine
+				identicalCount++;
 				continue;
 			}
 
@@ -426,11 +436,20 @@ bool validatePeriodicTranslations(
 
 			if (overlaps) {
 				// This translated tile overlaps but is not identical - invalid
-				cerr << "WARNING: Translated tile overlaps but is not identical. "
-				     << "Translation: <" << trans.x_ << "," << trans.y_ << ">" << endl;
+				overlapCount++;
 				valid = false;
+			} else {
+				nonOverlapCount++;
 			}
 		}
+
+		cerr << "  Translation <" << trans.x_ << "," << trans.y_ << ">: "
+		     << "identical=" << identicalCount << ", non-overlap=" << nonOverlapCount
+		     << ", OVERLAP=" << overlapCount << endl;
+	}
+
+	if (!valid) {
+		cerr << "WARNING: Periodic translation validation FAILED!" << endl;
 	}
 
 	return valid;
