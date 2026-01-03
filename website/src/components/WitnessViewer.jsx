@@ -283,18 +283,20 @@ function WitnessSVG({ witness, patch, showGrid, showActiveUnitCells, gridOffsetX
       {/* Active unit cells (shown as small circles at cell centers) */}
       {showActiveUnitCells && active_unit_cells && (
         <g className="active-unit-cells">
-          {active_unit_cells.map((cell, i) => (
-            <circle
-              key={i}
-              cx={cell.page[0]}
-              cy={cell.page[1]}
-              r={0.15}
-              fill="#ff00ff"
-              stroke="#800080"
-              strokeWidth={0.03}
-              opacity={0.7}
-            />
-          ))}
+          {active_unit_cells
+            .filter(cell => cell.page && cell.page.length >= 2)
+            .map((cell, i) => (
+              <circle
+                key={i}
+                cx={cell.page[0]}
+                cy={cell.page[1]}
+                r={0.15}
+                fill="#ff00ff"
+                stroke="#800080"
+                strokeWidth={0.03}
+                opacity={0.7}
+              />
+            ))}
         </g>
       )}
     </svg>
