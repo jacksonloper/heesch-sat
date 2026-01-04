@@ -61,14 +61,14 @@ volume = modal.Volume.from_name("heesch-renderings-vol", create_if_missing=True)
 VOLUME_PATH = "/data"
 
 # Image with heesch-sat binaries compiled
-# Build timestamp: 2026-01-03T19:48:00Z - forces image rebuild (improved deduplication via canonicalization)
+# Build timestamp: 2026-01-03T23:48:00Z - forces image rebuild (added maxlevel parameter)
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("build-essential", "libcryptominisat5-dev", "libboost-dev")
     .pip_install("fastapi", "psutil")
     .add_local_dir("../src", "/app/src", copy=True)
     .run_commands(
-        "echo 'Build: 2026-01-03T19:48:00Z' && cd /app/src && make clean render_witness gen",
+        "echo 'Build: 2026-01-03T23:48:00Z' && cd /app/src && make clean render_witness gen",
         "cp /app/src/render_witness /app/src/gen /usr/local/bin/",
     )
 )
@@ -260,25 +260,26 @@ def list_all_polyforms(grid_type_filter: Optional[str] = None) -> List[dict]:
     return result
 
 
-def run_render_witness(grid_type: str, coords: List[Tuple[int, int]], timeout: int = 14400) -> dict:
+def run_render_witness(grid_type: str, coords: List[Tuple[int, int]], timeout: int = 14400, maxlevel: int = 7) -> dict:
     """Run the render_witness binary to compute Heesch data.
 
     Parameters:
     - grid_type: Full grid type name (hex, iamond, omino, etc.)
     - coords: List of (x, y) coordinates
     - timeout: Timeout in seconds (default 14400 = 4 hours)
+    - maxlevel: Maximum corona level for Heesch computation (default 7)
     """
     import tempfile
     import threading
     import time
     import psutil
 
-    # Build command: render_witness -gridtype x1 y1 x2 y2 ...
-    cmd = ["render_witness", f"-{grid_type}"]
+    # Build command: render_witness -gridtype -maxlevel N x1 y1 x2 y2 ...
+    cmd = ["render_witness", f"-{grid_type}", "-maxlevel", str(maxlevel)]
     for x, y in coords:
         cmd.extend([str(x), str(y)])
 
-    print(f"Starting render_witness for {len(coords)} {grid_type} cells...")
+    print(f"Starting render_witness for {len(coords)} {grid_type} cells (maxlevel={maxlevel})...")
     print(f"Command: {' '.join(cmd)}")
 
     # Create temp directory for output (render_witness writes to ../renderings/)
@@ -973,7 +974,7 @@ def web():
         }
 
     @web_app.get("/compute")
-    def compute_polyform(grid_type: str, coords: str, force: bool = False, timeout: int = 14400):
+    def compute_polyform(grid_type: str, coords: str, force: bool = False, timeout: int = 14400, maxlevel: int = 7):
         """
         Compute Heesch data for a polyform using the render_witness binary.
         Returns the computed data and stores it in the database.
@@ -981,9 +982,12 @@ def web():
         Parameters:
         - force: If True, recompute even if already exists (useful for updating old computations)
         - timeout: Computation timeout in seconds (default 14400 = 4 hours)
+        - maxlevel: Maximum corona level for Heesch computation (default 7)
         """
         # Clamp timeout to reasonable range (10 seconds to 4 hours)
         timeout = max(10, min(timeout, 14400))
+        # Clamp maxlevel to reasonable range (1 to 20)
+        maxlevel = max(1, min(maxlevel, 20))
         
         # Normalize grid_type (accept both abbreviation and full name)
         gt = grid_type
@@ -1023,7 +1027,7 @@ def web():
 
         # Compute using render_witness
         try:
-            data = run_render_witness(gt, parsed, timeout=timeout)
+            data = run_render_witness(gt, parsed, timeout=timeout, maxlevel=maxlevel)
         except Exception as e:
             return {
                 "status": "error",

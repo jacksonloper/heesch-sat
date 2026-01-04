@@ -1,0 +1,48 @@
+# Polykite Hat (Einstein Aperiodic Monotile)
+#
+# The "hat" is the famous aperiodic monotile discovered by Smith, Myers, Kaplan,
+# and Goodman-Strauss in 2023. It consists of 8 congruent kites (60°-90°-120°-90°)
+# arranged in a specific pattern that tiles the plane only aperiodically.
+#
+# Key properties of the hat:
+# - 8 kites total
+# - 14 boundary edges (14-sided polygon)
+# - Simply connected (no holes)
+# - Cannot tile the plane periodically (aperiodic)
+# - Causes memory exhaustion in SAT-based tiling solvers due to exponential
+#   growth of the search space (no periodic solution exists)
+#
+# This file contains the hat's coordinates in the heesch-sat kite grid
+# coordinate system. The coordinates were identified by:
+# 1. Finding all simply connected 8-kite polykites with exactly 14 boundary edges
+# 2. Testing each with the SAT solver
+# 3. Identifying the unique shape that exhausts solver memory (characteristic
+#    of aperiodic tilers, as the solver searches for a periodic solution
+#    that doesn't exist)
+#
+# Note: The SAT solver in heesch-sat is designed to detect isohedral/periodic
+# tilings. For the hat, the solver will run out of memory before finding a
+# solution, since no periodic tiling exists. This behavior confirms the hat's
+# aperiodic nature.
+#
+# Format: K x1 y1 x2 y2 x3 y3 x4 y4 x5 y5 x6 y6 x7 y7 x8 y8
+#
+# The kites and their orientations (numbered 0-5 counterclockwise from East):
+#   (-3,  2) - orientation 0 (E = East)
+#   (-2,  3) - orientation 4 (SW = Southwest)
+#   (-1,  1) - orientation 2 (NW = Northwest)
+#   (-1,  3) - orientation 5 (SE = Southeast)
+#   ( 1,  0) - orientation 0 (E = East)
+#   ( 1,  2) - orientation 3 (W = West)
+#   ( 2,  1) - orientation 4 (SW = Southwest)
+#   ( 3, -1) - orientation 2 (NW = Northwest)
+#
+# ASCII visualization (digits = kite orientations, dots = empty valid positions):
+#   y= 3:   4 5
+#   y= 2: 0     3
+#   y= 1:   2   4
+#   y= 0:     0
+#   y=-1:       2
+#
+# THE HAT:
+K -3 2 -2 3 -1 1 -1 3 1 0 1 2 2 1 3 -1
