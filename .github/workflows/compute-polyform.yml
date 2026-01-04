@@ -51,11 +51,13 @@ jobs:
       - name: Install Modal
         run: pip install modal
 
+      - name: Authenticate with Modal
+        env:
+          MODAL_COMMAND: ${{ secrets.MODAL_COMMAND }}
+        run: eval "$MODAL_COMMAND"
+
       - name: Compute polyform via Modal function
         id: compute
-        env:
-          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
-          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
         run: |
           echo "Computing polyform..."
           echo "Grid type: ${{ inputs.grid_type }}"
