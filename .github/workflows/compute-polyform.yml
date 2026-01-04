@@ -43,8 +43,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 250
     steps:
-      - name: Compute polyform via Modal API
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Modal
+        run: pip install modal
+
+      - name: Compute polyform via Modal function
         id: compute
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
         run: |
           echo "Computing polyform..."
           echo "Grid type: ${{ inputs.grid_type }}"
@@ -109,38 +120,44 @@ jobs:
             exit 1
           fi
           echo "Normalized coordinates: ${COORDS}"
-
-          # Build the API URL
-          API_URL="https://hloper--heesch-renderings-web.modal.run/compute"
-          PARAMS="grid_type=${{ inputs.grid_type }}&coords=${COORDS}&timeout=${{ inputs.timeout }}&maxlevel=${{ inputs.maxlevel }}"
-          if [ "${{ inputs.force }}" = "true" ]; then
-            PARAMS="${PARAMS}&force=true"
-          fi
-
-          echo "Calling: ${API_URL}?${PARAMS}"
-
-          # Make the API call with extended timeout for long computations
-          CURL_TIMEOUT=$(( ${{ inputs.timeout }} + 60 ))
-          RESPONSE=$(curl -s -w "\n%{http_code}" --max-time ${CURL_TIMEOUT} "${API_URL}?${PARAMS}")
-          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
-          BODY=$(echo "$RESPONSE" | sed '$d')
-
-          echo "HTTP Status: ${HTTP_CODE}"
-          echo "Response:"
-          echo "$BODY" | jq . || echo "$BODY"
-
-          # Check for success
-          STATUS=$(echo "$BODY" | jq -r '.status // "unknown"')
-          echo "status=${STATUS}" >> $GITHUB_OUTPUT
-
-          if [ "$STATUS" = "error" ]; then
-            MESSAGE=$(echo "$BODY" | jq -r '.message // "Unknown error"')
-            echo "::error::Computation failed: ${MESSAGE}"
-            exit 1
-          fi
-
-          echo "::notice::Computation status: ${STATUS}"
           echo "coords=${COORDS}" >> $GITHUB_OUTPUT
+
+          # Call Modal function directly using Python SDK
+          python3 << EOF
+          from modal import Function
+          import json
+          import sys
+          import os
+
+          # Get reference to the deployed function
+          compute_fn = Function.from_name("heesch-renderings", "compute_polyform")
+
+          # Call the function with parameters
+          result = compute_fn.remote(
+              grid_type="${{ inputs.grid_type }}",
+              coords="${COORDS}",
+              force=${{ inputs.force == true && 'True' || 'False' }},
+              timeout=${{ inputs.timeout }},
+              maxlevel=${{ inputs.maxlevel }}
+          )
+
+          print("Response:")
+          print(json.dumps(result, indent=2))
+
+          status = result.get("status", "unknown")
+          print(f"\n::notice::Computation status: {status}")
+
+          # Write status to GitHub output
+          github_output = os.environ.get("GITHUB_OUTPUT", "")
+          if github_output:
+              with open(github_output, "a") as f:
+                  f.write(f"status={status}\n")
+
+          if status == "error":
+              message = result.get("message", "Unknown error")
+              print(f"::error::Computation failed: {message}")
+              sys.exit(1)
+          EOF
 
       - name: Summary
         run: |

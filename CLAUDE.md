@@ -153,10 +153,10 @@ All Modal functions require authentication. They can be called via the Modal Pyt
 ### Example Usage
 
 ```python
-import modal
+from modal import Function
 
 # Get reference to the deployed function
-search = modal.Function.lookup("heesch-renderings", "search_heesch")
+search = Function.from_name("heesch-renderings", "search_heesch")
 
 # Call the function (requires Modal auth)
 result = search.remote(grid_type="hex", num_cells=6)
