@@ -1,19 +1,15 @@
 """
-Modal app with HTTP endpoints for polyform Heesch data.
+Modal app with authenticated functions for polyform Heesch data.
 
-All interaction with this app should go through the web endpoint:
-https://hloper--heesch-renderings-web.modal.run/
+All functions require Modal authentication to invoke.
 
-Endpoints:
-- GET / - List all available endpoints
-- GET /grid_types - List all supported grid types
-- GET /polyform?hash=abc123 - Get polyform data by hash
-- GET /polyform?grid_type=hex&coords=0,0_1,0_0,1 - Get polyform data by grid type and coordinates
-- POST /polyform - Store new polyform data
-- GET /compute?grid_type=hex&coords=0,0_1,0_0,1 - Compute Heesch data for a polyform
-- GET /list?grid_type=hex - List available polyforms for a grid type
-- GET /list_full?grid_type=hex - List polyforms with full data including witnesses
-- GET /search_heesch?grid_type=hex&num_cells=6 - Search for polyforms with Heesch >= 1
+Functions:
+- get_grid_types() - List all supported grid types
+- get_polyform(hash, grid_type, coords) - Get polyform data by hash or coordinates
+- compute_polyform(grid_type, coords, force, timeout, maxlevel) - Compute Heesch data for a polyform
+- list_polyforms(grid_type) - List available polyforms
+- list_polyforms_full(grid_type) - List polyforms with full data including witnesses
+- search_heesch(grid_type, num_cells, max_results, force, batch_size, json_nup) - Search for polyforms with Heesch >= json_nup
 """
 
 import modal
@@ -873,122 +869,34 @@ def search_heesch_workflow(
         return {"status": "error", "message": f"Search failed: {str(e)}"}
 
 
-@app.function(image=image, volumes={VOLUME_PATH: volume}, timeout=14400)
-@modal.asgi_app()
-def web():
-    """Single FastAPI app with all endpoints."""
-    from fastapi import FastAPI, Request
-    from fastapi.responses import JSONResponse
-    from fastapi.middleware.cors import CORSMiddleware
+@app.function(image=image, volumes={VOLUME_PATH: volume}, timeout=60)
+def get_grid_types() -> dict:
+    """List all supported grid types."""
+    return {
+        "grid_types": [
+            {"abbrev": k, "name": v, "full_name": GRID_NAMES.get(k, v)}
+            for k, v in GRID_TYPES.items()
+        ]
+    }
 
-    web_app = FastAPI(title="Heesch Polyform Data API")
 
-    # Add CORS middleware to allow requests from any origin
-    web_app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+@app.function(image=image, volumes={VOLUME_PATH: volume}, timeout=60)
+def get_polyform(
+    hash: Optional[str] = None,
+    grid_type: Optional[str] = None,
+    coords: Optional[str] = None
+) -> dict:
+    """Get polyform data by hash or by grid_type + coords."""
+    volume.reload()
 
-    @web_app.get("/")
-    def root():
-        return {
-            "message": "Heesch Polyform Data API",
-            "endpoints": [
-                "/grid_types",
-                "/polyform?hash=abc123",
-                "/polyform?grid_type=hex&coords=0,0_1,0_0,1",
-                "/compute?grid_type=hex&coords=0,0_1,0_0,1",
-                "/search_heesch?grid_type=hex&num_cells=6 - Search for polyforms with Heesch >= 1 (4hr timeout)",
-                "/search_heesch?grid_type=hex&num_cells=6&wait=false - Spawn search and return immediately",
-                "/search_heesch?grid_type=hex&num_cells=6&batch_size=20&json_nup=2 - Batch processing with filters",
-                "/list?grid_type=hex",
-                "/list_full - full data including witnesses",
-            ],
-            "post_endpoints": [
-                "POST /polyform - Store new polyform data"
-            ]
-        }
+    if hash:
+        # Look up by hash
+        data = find_polyform_by_hash(hash)
+        if data:
+            return {"status": "found", "data": data}
+        return {"status": "not_found", "message": f"No polyform found with hash: {hash}"}
 
-    @web_app.get("/grid_types")
-    def get_grid_types():
-        """List all supported grid types."""
-        return {
-            "grid_types": [
-                {"abbrev": k, "name": v, "full_name": GRID_NAMES.get(k, v)}
-                for k, v in GRID_TYPES.items()
-            ]
-        }
-
-    @web_app.get("/polyform")
-    def get_polyform(
-        hash: Optional[str] = None,
-        grid_type: Optional[str] = None,
-        coords: Optional[str] = None
-    ):
-        """Get polyform data by hash or by grid_type + coords."""
-        volume.reload()
-
-        if hash:
-            # Look up by hash
-            data = find_polyform_by_hash(hash)
-            if data:
-                return {"status": "found", "data": data}
-            return {"status": "not_found", "message": f"No polyform found with hash: {hash}"}
-
-        if grid_type and coords:
-            # Normalize grid_type (accept both abbreviation and full name)
-            gt = grid_type
-            if grid_type in GRID_TYPES:
-                gt = GRID_TYPES[grid_type]  # Convert abbrev to full name
-            elif grid_type not in GRID_ABBREVS:
-                return {
-                    "status": "error",
-                    "message": f"Invalid grid type: {grid_type}. Valid: {list(GRID_TYPES.keys())} or {list(GRID_TYPES.values())}"
-                }
-
-            try:
-                parsed = parse_coords(coords)
-            except (ValueError, IndexError):
-                return {"status": "error", "message": f"Invalid coordinates format: {coords}"}
-
-            data = find_polyform_by_coords(gt, parsed)
-            if data:
-                return {"status": "found", "data": data}
-
-            # Not found - return expected hash for this polyform
-            expected_hash = compute_hash(gt, parsed)
-            return {
-                "status": "not_found",
-                "message": "Polyform not in database",
-                "grid_type": gt,
-                "coordinates": [list(c) for c in parsed],
-                "expected_hash": expected_hash
-            }
-
-        return {
-            "status": "error",
-            "message": "Provide either 'hash' or both 'grid_type' and 'coords'"
-        }
-
-    @web_app.get("/compute")
-    def compute_polyform(grid_type: str, coords: str, force: bool = False, timeout: int = 14400, maxlevel: int = 7):
-        """
-        Compute Heesch data for a polyform using the render_witness binary.
-        Returns the computed data and stores it in the database.
-
-        Parameters:
-        - force: If True, recompute even if already exists (useful for updating old computations)
-        - timeout: Computation timeout in seconds (default 14400 = 4 hours)
-        - maxlevel: Maximum corona level for Heesch computation (default 7)
-        """
-        # Clamp timeout to reasonable range (10 seconds to 4 hours)
-        timeout = max(10, min(timeout, 14400))
-        # Clamp maxlevel to reasonable range (1 to 20)
-        maxlevel = max(1, min(maxlevel, 20))
-        
+    if grid_type and coords:
         # Normalize grid_type (accept both abbreviation and full name)
         gt = grid_type
         if grid_type in GRID_TYPES:
@@ -1004,282 +912,299 @@ def web():
         except (ValueError, IndexError):
             return {"status": "error", "message": f"Invalid coordinates format: {coords}"}
 
-        if len(parsed) < 1:
-            return {"status": "error", "message": "At least one coordinate required"}
+        data = find_polyform_by_coords(gt, parsed)
+        if data:
+            return {"status": "found", "data": data}
 
-        # Validate coordinates for the grid type
-        is_valid, error_msg = validate_coordinates(gt, parsed)
-        if not is_valid:
-            return {
-                "status": "error",
-                "message": f"Invalid coordinates for {gt} grid: {error_msg}"
-            }
-
-        # Check if already computed (unless force=True)
-        volume.reload()
-        existing = find_polyform_by_coords(gt, parsed)
-        if existing and not force:
-            return {
-                "status": "found",
-                "message": "Already computed",
-                "data": existing
-            }
-
-        # Compute using render_witness
-        try:
-            data = run_render_witness(gt, parsed, timeout=timeout, maxlevel=maxlevel)
-        except Exception as e:
-            return {
-                "status": "error",
-                "message": f"Computation failed: {str(e)}"
-            }
-
-        # Store the result
-        hash_value = data.get("hash", compute_hash(gt, parsed))
-        cell_count = len(parsed)
-        file_path = get_polyform_path(gt, cell_count, hash_value)
-
-        with open(file_path, 'w') as f:
-            json.dump(data, f, indent=2)
-
-        volume.commit()
-
+        # Not found - return expected hash for this polyform
+        expected_hash = compute_hash(gt, parsed)
         return {
-            "status": "computed",
-            "data": data
+            "status": "not_found",
+            "message": "Polyform not in database",
+            "grid_type": gt,
+            "coordinates": [list(c) for c in parsed],
+            "expected_hash": expected_hash
         }
 
-    @web_app.post("/polyform")
-    async def store_polyform(request: Request):
-        """Store new polyform data."""
-        try:
-            data = await request.json()
-        except Exception as e:
-            return JSONResponse(
-                status_code=400,
-                content={"status": "error", "message": f"Invalid JSON: {e}"}
-            )
+    return {
+        "status": "error",
+        "message": "Provide either 'hash' or both 'grid_type' and 'coords'"
+    }
 
-        # Validate required fields
-        required_fields = ["grid_type", "coordinates", "hash", "cell_count"]
-        for field in required_fields:
-            if field not in data:
-                return JSONResponse(
-                    status_code=400,
-                    content={"status": "error", "message": f"Missing required field: {field}"}
-                )
 
-        grid_type = data["grid_type"]
-        coords = [tuple(c) for c in data["coordinates"]]
-        hash_value = data["hash"]
-        cell_count = data["cell_count"]
+@app.function(image=image, volumes={VOLUME_PATH: volume}, timeout=14400)
+def compute_polyform(
+    grid_type: str,
+    coords: str,
+    force: bool = False,
+    timeout: int = 14400,
+    maxlevel: int = 7
+) -> dict:
+    """
+    Compute Heesch data for a polyform using the render_witness binary.
+    Returns the computed data and stores it in the database.
 
-        # Validate grid type
-        if grid_type not in GRID_TYPES.values() and grid_type not in GRID_ABBREVS:
-            return JSONResponse(
-                status_code=400,
-                content={"status": "error", "message": f"Invalid grid type: {grid_type}"}
-            )
+    Parameters:
+    - grid_type: Grid type (e.g., 'hex', 'iamond')
+    - coords: Coordinate string like '0,0_1,0_0,1'
+    - force: If True, recompute even if already exists (useful for updating old computations)
+    - timeout: Computation timeout in seconds (default 14400 = 4 hours)
+    - maxlevel: Maximum corona level for Heesch computation (default 7)
+    """
+    # Clamp timeout to reasonable range (10 seconds to 4 hours)
+    timeout = max(10, min(timeout, 14400))
+    # Clamp maxlevel to reasonable range (1 to 20)
+    maxlevel = max(1, min(maxlevel, 20))
 
-        # Get full grid type name
-        if grid_type in GRID_TYPES:
-            grid_type = GRID_TYPES[grid_type]
-
-        # Store the polyform
-        file_path = get_polyform_path(grid_type, cell_count, hash_value)
-
-        with open(file_path, 'w') as f:
-            json.dump(data, f, indent=2)
-
-        volume.commit()
-
+    # Normalize grid_type (accept both abbreviation and full name)
+    gt = grid_type
+    if grid_type in GRID_TYPES:
+        gt = GRID_TYPES[grid_type]  # Convert abbrev to full name
+    elif grid_type not in GRID_ABBREVS:
         return {
-            "status": "stored",
-            "grid_type": grid_type,
-            "hash": hash_value,
-            "cell_count": cell_count,
-            "path": file_path
+            "status": "error",
+            "message": f"Invalid grid type: {grid_type}. Valid: {list(GRID_TYPES.keys())} or {list(GRID_TYPES.values())}"
         }
 
-    @web_app.get("/list")
-    def list_polyforms(grid_type: Optional[str] = None):
-        """List available polyforms."""
-        volume.reload()
+    try:
+        parsed = parse_coords(coords)
+    except (ValueError, IndexError):
+        return {"status": "error", "message": f"Invalid coordinates format: {coords}"}
 
-        # Normalize grid type filter
-        gt_filter = None
-        if grid_type:
-            if grid_type in GRID_TYPES:
-                gt_filter = GRID_TYPES[grid_type]
-            elif grid_type in GRID_TYPES.values():
-                gt_filter = grid_type
-            else:
-                return {
-                    "status": "error",
-                    "message": f"Invalid grid type: {grid_type}"
-                }
+    if len(parsed) < 1:
+        return {"status": "error", "message": "At least one coordinate required"}
 
-        return {"polyforms": list_all_polyforms(gt_filter)}
+    # Validate coordinates for the grid type
+    is_valid, error_msg = validate_coordinates(gt, parsed)
+    if not is_valid:
+        return {
+            "status": "error",
+            "message": f"Invalid coordinates for {gt} grid: {error_msg}"
+        }
 
-    @web_app.get("/list_full")
-    def list_polyforms_full(grid_type: Optional[str] = None):
-        """List available polyforms with full data (including tile_boundary, witness)."""
-        volume.reload()
+    # Check if already computed (unless force=True)
+    volume.reload()
+    existing = find_polyform_by_coords(gt, parsed)
+    if existing and not force:
+        return {
+            "status": "found",
+            "message": "Already computed",
+            "data": existing
+        }
 
-        # Normalize grid type filter
-        gt_filter = None
-        if grid_type:
-            if grid_type in GRID_TYPES:
-                gt_filter = GRID_TYPES[grid_type]
-            elif grid_type in GRID_TYPES.values():
-                gt_filter = grid_type
-            else:
-                return {
-                    "status": "error",
-                    "message": f"Invalid grid type: {grid_type}"
-                }
+    # Compute using render_witness
+    try:
+        data = run_render_witness(gt, parsed, timeout=timeout, maxlevel=maxlevel)
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Computation failed: {str(e)}"
+        }
 
-        result = []
-        if os.path.exists(VOLUME_PATH):
-            for filename in os.listdir(VOLUME_PATH):
-                if not filename.endswith('.json'):
-                    continue
-                # Skip summary files (e.g., search_6hex_summary.json)
-                if filename.startswith('search_') and '_summary.json' in filename:
-                    continue
-                file_path = os.path.join(VOLUME_PATH, filename)
-                try:
-                    with open(file_path, 'r') as f:
-                        data = json.load(f)
-                    # Skip files that don't have required polyform fields
-                    if 'coordinates' not in data or 'grid_type' not in data:
-                        continue
-                    gt = data.get("grid_type", "")
-                    if gt_filter and gt != gt_filter:
-                        continue
-                    result.append(data)
-                except (json.JSONDecodeError, IOError):
-                    continue
+    # Store the result
+    hash_value = data.get("hash", compute_hash(gt, parsed))
+    cell_count = len(parsed)
+    file_path = get_polyform_path(gt, cell_count, hash_value)
 
-        return {"polyforms": result}
+    with open(file_path, 'w') as f:
+        json.dump(data, f, indent=2)
 
-    @web_app.get("/search_heesch")
-    def search_heesch_endpoint(
-        grid_type: str,
-        num_cells: int,
-        max_results: int = 3,
-        force: bool = False,
-        wait: bool = True,
-        batch_size: int = 10,
-        json_nup: int = 1
-    ):
-        """
-        Search for polyforms with Heesch number >= json_nup by generating all polyforms
-        of the given size and computing their Heesch numbers.
+    volume.commit()
 
-        Parameters:
-        - grid_type: Grid type (e.g., 'hex', 'iamond', or abbreviation like 'H', 'I')
-        - num_cells: Number of cells in each polyform
-        - max_results: Maximum number of results to store (default 3, stores highest Heesch numbers)
-        - force: If True, run the search even if results already exist in the volume
-        - wait: If True (default), wait for results. If False, spawn job and return immediately.
-        - batch_size: Number of polyforms to process in each batch (default 10)
-        - json_nup: Minimum Heesch number to include in results (default 1)
+    return {
+        "status": "computed",
+        "data": data
+    }
 
-        Note: This endpoint only stores polyforms with Heesch number >= json_nup.
-        Polyforms with Heesch < json_nup or infinity (tiles isohedrally) are not stored.
 
-        If results already exist in the volume for this grid type and cell count,
-        they will be returned immediately (unless force=True).
+@app.function(image=image, volumes={VOLUME_PATH: volume}, timeout=60)
+def store_polyform(data: dict) -> dict:
+    """Store new polyform data."""
+    # Validate required fields
+    required_fields = ["grid_type", "coordinates", "hash", "cell_count"]
+    for field in required_fields:
+        if field not in data:
+            return {"status": "error", "message": f"Missing required field: {field}"}
 
-        The search runs as a spawned Modal function with a 4-hour timeout that
-        continues running even if the HTTP connection is closed.
-        """
-        # Normalize grid_type (accept both abbreviation and full name)
-        gt = grid_type
+    grid_type = data["grid_type"]
+    hash_value = data["hash"]
+    cell_count = data["cell_count"]
+
+    # Validate grid type
+    if grid_type not in GRID_TYPES.values() and grid_type not in GRID_ABBREVS:
+        return {"status": "error", "message": f"Invalid grid type: {grid_type}"}
+
+    # Get full grid type name
+    if grid_type in GRID_TYPES:
+        grid_type = GRID_TYPES[grid_type]
+
+    # Store the polyform
+    file_path = get_polyform_path(grid_type, cell_count, hash_value)
+
+    with open(file_path, 'w') as f:
+        json.dump(data, f, indent=2)
+
+    volume.commit()
+
+    return {
+        "status": "stored",
+        "grid_type": grid_type,
+        "hash": hash_value,
+        "cell_count": cell_count,
+        "path": file_path
+    }
+
+
+@app.function(image=image, volumes={VOLUME_PATH: volume}, timeout=60)
+def list_polyforms(grid_type: Optional[str] = None) -> dict:
+    """List available polyforms."""
+    volume.reload()
+
+    # Normalize grid type filter
+    gt_filter = None
+    if grid_type:
         if grid_type in GRID_TYPES:
-            gt = GRID_TYPES[grid_type]  # Convert abbrev to full name
-        elif grid_type not in GRID_ABBREVS:
+            gt_filter = GRID_TYPES[grid_type]
+        elif grid_type in GRID_TYPES.values():
+            gt_filter = grid_type
+        else:
             return {
                 "status": "error",
-                "message": f"Invalid grid type: {grid_type}. Valid: {list(GRID_TYPES.keys())} or {list(GRID_TYPES.values())}"
+                "message": f"Invalid grid type: {grid_type}"
             }
 
-        if num_cells < 1:
+    return {"polyforms": list_all_polyforms(gt_filter)}
+
+
+@app.function(image=image, volumes={VOLUME_PATH: volume}, timeout=60)
+def list_polyforms_full(grid_type: Optional[str] = None) -> dict:
+    """List available polyforms with full data (including tile_boundary, witness)."""
+    volume.reload()
+
+    # Normalize grid type filter
+    gt_filter = None
+    if grid_type:
+        if grid_type in GRID_TYPES:
+            gt_filter = GRID_TYPES[grid_type]
+        elif grid_type in GRID_TYPES.values():
+            gt_filter = grid_type
+        else:
             return {
                 "status": "error",
-                "message": "num_cells must be at least 1"
+                "message": f"Invalid grid type: {grid_type}"
             }
 
-        if max_results < 1:
+    result = []
+    if os.path.exists(VOLUME_PATH):
+        for filename in os.listdir(VOLUME_PATH):
+            if not filename.endswith('.json'):
+                continue
+            # Skip summary files (e.g., search_6hex_summary.json)
+            if filename.startswith('search_') and '_summary.json' in filename:
+                continue
+            file_path = os.path.join(VOLUME_PATH, filename)
+            try:
+                with open(file_path, 'r') as f:
+                    data = json.load(f)
+                # Skip files that don't have required polyform fields
+                if 'coordinates' not in data or 'grid_type' not in data:
+                    continue
+                gt = data.get("grid_type", "")
+                if gt_filter and gt != gt_filter:
+                    continue
+                result.append(data)
+            except (json.JSONDecodeError, IOError):
+                continue
+
+    return {"polyforms": result}
+
+
+@app.function(image=image, volumes={VOLUME_PATH: volume}, timeout=14400)
+def search_heesch(
+    grid_type: str,
+    num_cells: int,
+    max_results: int = 3,
+    force: bool = False,
+    batch_size: int = 10,
+    json_nup: int = 1
+) -> dict:
+    """
+    Search for polyforms with Heesch number >= json_nup by generating all polyforms
+    of the given size and computing their Heesch numbers.
+
+    Parameters:
+    - grid_type: Grid type (e.g., 'hex', 'iamond', or abbreviation like 'H', 'I')
+    - num_cells: Number of cells in each polyform
+    - max_results: Maximum number of results to store (default 3, stores highest Heesch numbers)
+    - force: If True, run the search even if results already exist in the volume
+    - batch_size: Number of polyforms to process in each batch (default 10)
+    - json_nup: Minimum Heesch number to include in results (default 1)
+
+    Note: This function only stores polyforms with Heesch number >= json_nup.
+    Polyforms with Heesch < json_nup or infinity (tiles isohedrally) are not stored.
+
+    If results already exist in the volume for this grid type and cell count,
+    they will be returned immediately (unless force=True).
+    """
+    # Normalize grid_type (accept both abbreviation and full name)
+    gt = grid_type
+    if grid_type in GRID_TYPES:
+        gt = GRID_TYPES[grid_type]  # Convert abbrev to full name
+    elif grid_type not in GRID_ABBREVS:
+        return {
+            "status": "error",
+            "message": f"Invalid grid type: {grid_type}. Valid: {list(GRID_TYPES.keys())} or {list(GRID_TYPES.values())}"
+        }
+
+    if num_cells < 1:
+        return {
+            "status": "error",
+            "message": "num_cells must be at least 1"
+        }
+
+    if max_results < 1:
+        return {
+            "status": "error",
+            "message": "max_results must be at least 1"
+        }
+
+    if batch_size < 1:
+        return {
+            "status": "error",
+            "message": "batch_size must be at least 1"
+        }
+
+    if json_nup < 0:
+        return {
+            "status": "error",
+            "message": "json_nup must be at least 0"
+        }
+
+    # Check for existing results (unless force=True)
+    volume.reload()
+    if not force:
+        existing = find_heesch_polyforms(gt, num_cells, min_heesch=json_nup)
+        if existing:
+            # Return existing results (up to max_results)
+            existing = existing[:max_results]
             return {
-                "status": "error",
-                "message": "max_results must be at least 1"
+                "status": "cached",
+                "message": f"Found {len(existing)} existing polyform(s) with Heesch >= {json_nup}",
+                "grid_type": gt,
+                "num_cells": num_cells,
+                "results_found": len(existing),
+                "results": existing
             }
 
-        if batch_size < 1:
-            return {
-                "status": "error",
-                "message": "batch_size must be at least 1"
-            }
-
-        if json_nup < 0:
-            return {
-                "status": "error",
-                "message": "json_nup must be at least 0"
-            }
-
-        # Check for existing results (unless force=True)
-        volume.reload()
-        if not force:
-            existing = find_heesch_polyforms(gt, num_cells, min_heesch=json_nup)
-            if existing:
-                # Return existing results (up to max_results)
-                existing = existing[:max_results]
-                return {
-                    "status": "cached",
-                    "message": f"Found {len(existing)} existing polyform(s) with Heesch >= {json_nup}",
-                    "grid_type": gt,
-                    "num_cells": num_cells,
-                    "results_found": len(existing),
-                    "results": existing
-                }
-
-        # Spawn the search as a separate Modal function so it survives HTTP disconnection
-        # The spawned function has a 4-hour timeout and will store results to the volume
-        try:
-            function_call = search_heesch_workflow.spawn(
-                grid_type=gt,
-                num_cells=num_cells,
-                max_results=max_results,
-                force=force,
-                batch_size=batch_size,
-                json_nup=json_nup
-            )
-
-            if not wait:
-                # Return immediately with the function call ID for later polling
-                return {
-                    "status": "spawned",
-                    "message": "Search job started. Results will be stored to volume. Call again without force to get cached results.",
-                    "function_call_id": function_call.object_id,
-                    "grid_type": gt,
-                    "num_cells": num_cells,
-                    "batch_size": batch_size,
-                    "json_nup": json_nup
-                }
-
-            # Wait for the result (the spawned function continues even if we disconnect)
-            result = function_call.get()
-            return result
-
-        except Exception as e:
-            return {
-                "status": "error",
-                "message": f"Search failed: {str(e)}"
-            }
-
-    return web_app
+    # Run the search using the internal workflow function
+    return search_heesch_workflow.local(
+        grid_type=gt,
+        num_cells=num_cells,
+        max_results=max_results,
+        force=True,  # Already checked for existing, so force=True here
+        batch_size=batch_size,
+        json_nup=json_nup
+    )
 
 
 # Local entry point for testing

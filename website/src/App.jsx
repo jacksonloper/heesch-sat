@@ -8,30 +8,20 @@ function App() {
   const [selected, setSelected] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [refreshing, setRefreshing] = useState(false)
-
-  const loadFromSource = async (url, isJSONL = true) => {
-    const res = await fetch(url)
-    if (!res.ok) throw new Error(`Failed to load from ${url}`)
-
-    if (isJSONL) {
-      // Parse JSONL format (one JSON object per line)
-      const text = await res.text()
-      return text
-        .trim()
-        .split('\n')
-        .filter(line => line.length > 0)
-        .map(line => JSON.parse(line))
-    } else {
-      // Parse JSON array directly
-      return await res.json()
-    }
-  }
 
   useEffect(() => {
     // Load from static JSONL file built at build time
-    loadFromSource('/data/witnesses.jsonl', true)
-      .then(polyforms => {
+    fetch('/data/witnesses.jsonl')
+      .then(res => {
+        if (!res.ok) throw new Error(`Failed to load witnesses: ${res.status}`)
+        return res.text()
+      })
+      .then(text => {
+        const polyforms = text
+          .trim()
+          .split('\n')
+          .filter(line => line.length > 0)
+          .map(line => JSON.parse(line))
         setWitnesses(polyforms)
         setLoading(false)
       })
@@ -40,24 +30,6 @@ function App() {
         setLoading(false)
       })
   }, [])
-
-  const handleRefresh = async () => {
-    setRefreshing(true)
-    setError(null)
-    try {
-      const response = await loadFromSource(
-        'https://hloper--heesch-renderings-web.modal.run/list_full',
-        false
-      )
-      // Modal API returns {polyforms: [...]} not [...]
-      const polyforms = response.polyforms || []
-      setWitnesses(polyforms)
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setRefreshing(false)
-    }
-  }
 
   if (loading) {
     return <div className="app loading">Loading witnesses...</div>
@@ -77,13 +49,6 @@ function App() {
               Explore polyform tilings and their Heesch numbers
             </p>
           </div>
-          <button
-            className="refresh-button"
-            onClick={handleRefresh}
-            disabled={refreshing}
-          >
-            {refreshing ? 'Refreshing...' : 'Refresh from Modal'}
-          </button>
         </div>
       </header>
 

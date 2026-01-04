@@ -1,0 +1,80 @@
+{
+  "grid_type": "hex",
+  "coordinates": [
+    [
+      0,
+      0
+    ]
+  ],
+  "hash": "a2106a51",
+  "cell_count": 1,
+  "tile_boundary": [
+    [
+      [
+        0.5,
+        -0.288675
+      ],
+      [
+        0.5,
+        0.288675
+      ]
+    ],
+    [
+      [
+        0.5,
+        0.288675
+      ],
+      [
+        0.0,
+        0.57735
+      ]
+    ],
+    [
+      [
+        0.0,
+        0.57735
+      ],
+      [
+        -0.5,
+        0.288675
+      ]
+    ],
+    [
+      [
+        -0.5,
+        0.288675
+      ],
+      [
+        -0.5,
+        -0.288675
+      ]
+    ],
+    [
+      [
+        -0.5,
+        -0.288675
+      ],
+      [
+        0.0,
+        -0.57735
+      ]
+    ],
+    [
+      [
+        0.0,
+        -0.57735
+      ],
+      [
+        0.5,
+        -0.288675
+      ]
+    ]
+  ],
+  "inconclusive": false,
+  "heesch_connected": "infinity",
+  "heesch_with_holes": "infinity",
+  "tiles_isohedrally": true,
+  "tiles_periodically": false,
+  "witness_connected": null,
+  "witness_with_holes": null
+}
