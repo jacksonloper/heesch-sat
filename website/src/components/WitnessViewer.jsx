@@ -200,6 +200,13 @@ function WitnessViewer({ witness, onClose }) {
               </code>
             </div>
 
+            {witness.comments && (
+              <div className="info-row comments-row">
+                <label>Comments:</label>
+                <span className="comments-text">{witness.comments}</span>
+              </div>
+            )}
+
             {witness.witness_with_holes && (
               <div className="toggle-row">
                 <label>

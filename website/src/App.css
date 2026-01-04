@@ -92,3 +92,47 @@ main {
 code {
   font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
 }
+
+footer.attribution {
+  background: #fff;
+  border-top: 1px solid #ddd;
+  padding: 2rem;
+  margin-top: 2rem;
+  max-width: 1200px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+footer.attribution h3 {
+  margin: 0 0 0.75rem;
+  font-size: 1.1rem;
+  color: #2c5aa0;
+}
+
+footer.attribution h3:not(:first-child) {
+  margin-top: 1.5rem;
+}
+
+footer.attribution ul {
+  margin: 0;
+  padding-left: 1.5rem;
+  line-height: 1.6;
+}
+
+footer.attribution li {
+  margin-bottom: 0.5rem;
+}
+
+footer.attribution p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+footer.attribution a {
+  color: #4a90d9;
+  text-decoration: none;
+}
+
+footer.attribution a:hover {
+  text-decoration: underline;
+}

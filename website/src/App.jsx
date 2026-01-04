@@ -44,9 +44,9 @@ function App() {
       <header>
         <div className="header-content">
           <div>
-            <h1>Heesch Witness Browser</h1>
+            <h1>Heesch Witness Gallery</h1>
             <p className="subtitle">
-              Explore polyform tilings and their Heesch numbers
+              A gallery of interesting polyform tilings and their Heesch numbers
             </p>
           </div>
         </div>
@@ -66,6 +66,30 @@ function App() {
           />
         )}
       </main>
+
+      <footer className="attribution">
+        <h3>References</h3>
+        <ul>
+          <li>
+            Craig S. Kaplan. Heesch numbers of unmarked polyforms. <em>Contributions to Discrete Mathematics</em>, 17(2):150–171, 2022.{' '}
+            <a href="https://cdm.ucalgary.ca/article/view/72886" target="_blank" rel="noopener noreferrer">Available online</a>
+          </li>
+          <li>
+            Craig S. Kaplan. Detecting isohedral polyforms with a SAT solver. <em>GASCom 2024 Abstracts</em>, 118–122, 2024.{' '}
+            <a href="https://cgi.cse.unsw.edu.au/~eptcs/paper.cgi?GASCom2024.25" target="_blank" rel="noopener noreferrer">Available online</a>
+          </li>
+          <li>
+            Joseph Myers&apos;s web page about tiling properties of polyforms:{' '}
+            <a href="https://www.polyomino.org.uk/mathematics/polyform-tiling/" target="_blank" rel="noopener noreferrer">polyomino.org.uk</a>
+          </li>
+        </ul>
+        <h3>Acknowledgments</h3>
+        <p>
+          Thanks to <a href="https://bramcohen.com/" target="_blank" rel="noopener noreferrer">Bram Cohen</a> for the initial suggestion of using a SAT solver to compute Heesch numbers.
+          Thanks to <a href="https://www.avapun.com/" target="_blank" rel="noopener noreferrer">Ava Pun</a> for contributions to this code.
+          Thanks also to <a href="https://www.polyomino.org.uk/" target="_blank" rel="noopener noreferrer">Joseph Myers</a> for allowing use of his codebase and for helpful discussions.
+        </p>
+      </footer>
     </div>
   )
 }
