@@ -43,9 +43,19 @@ function main() {
     
     // Only include files that have required polyform fields
     if (data.coordinates && data.grid_type) {
+      // Check for matching .txt file with comments
+      const txtFile = file.replace(/\.json$/, '.txt');
+      const txtPath = path.join(renderingsDir, txtFile);
+      if (fs.existsSync(txtPath)) {
+        const comments = fs.readFileSync(txtPath, 'utf-8').trim();
+        data.comments = comments;
+        console.log(`  Added: ${file} (with comments from ${txtFile})`);
+      } else {
+        console.log(`  Added: ${file}`);
+      }
+      
       outputStream.write(JSON.stringify(data) + '\n');
       count++;
-      console.log(`  Added: ${file}`);
     } else {
       console.log(`  Skipped (not a polyform): ${file}`);
     }
