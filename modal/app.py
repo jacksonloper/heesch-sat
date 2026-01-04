@@ -873,15 +873,30 @@ def search_heesch_workflow(
         return {"status": "error", "message": f"Search failed: {str(e)}"}
 
 
-@app.function(image=image, volumes={VOLUME_PATH: volume}, timeout=14400)
+@app.function(
+    image=image,
+    volumes={VOLUME_PATH: volume},
+    timeout=14400,
+    secrets=[modal.Secret.from_name("heeschpass")]
+)
 @modal.asgi_app()
 def web():
     """Single FastAPI app with all endpoints."""
-    from fastapi import FastAPI, Request
+    from fastapi import FastAPI, Request, Header, HTTPException, Depends
     from fastapi.responses import JSONResponse
     from fastapi.middleware.cors import CORSMiddleware
 
     web_app = FastAPI(title="Heesch Polyform Data API")
+
+    # Password validation dependency
+    EXPECTED_PASSWORD = os.environ.get("runpass", "")
+
+    def verify_password(runpass: str = Header(None, alias="X-Run-Pass")):
+        """Verify the password from X-Run-Pass header."""
+        if not EXPECTED_PASSWORD:
+            raise HTTPException(status_code=500, detail="Server password not configured")
+        if runpass != EXPECTED_PASSWORD:
+            raise HTTPException(status_code=401, detail="Invalid or missing password")
 
     # Add CORS middleware to allow requests from any origin
     web_app.add_middleware(
@@ -892,7 +907,7 @@ def web():
         allow_headers=["*"],
     )
 
-    @web_app.get("/")
+    @web_app.get("/", dependencies=[Depends(verify_password)])
     def root():
         return {
             "message": "Heesch Polyform Data API",
@@ -909,10 +924,11 @@ def web():
             ],
             "post_endpoints": [
                 "POST /polyform - Store new polyform data"
-            ]
+            ],
+            "authentication": "All endpoints require X-Run-Pass header"
         }
 
-    @web_app.get("/grid_types")
+    @web_app.get("/grid_types", dependencies=[Depends(verify_password)])
     def get_grid_types():
         """List all supported grid types."""
         return {
@@ -922,7 +938,7 @@ def web():
             ]
         }
 
-    @web_app.get("/polyform")
+    @web_app.get("/polyform", dependencies=[Depends(verify_password)])
     def get_polyform(
         hash: Optional[str] = None,
         grid_type: Optional[str] = None,
@@ -973,7 +989,7 @@ def web():
             "message": "Provide either 'hash' or both 'grid_type' and 'coords'"
         }
 
-    @web_app.get("/compute")
+    @web_app.get("/compute", dependencies=[Depends(verify_password)])
     def compute_polyform(grid_type: str, coords: str, force: bool = False, timeout: int = 14400, maxlevel: int = 7):
         """
         Compute Heesch data for a polyform using the render_witness binary.
@@ -1049,7 +1065,7 @@ def web():
             "data": data
         }
 
-    @web_app.post("/polyform")
+    @web_app.post("/polyform", dependencies=[Depends(verify_password)])
     async def store_polyform(request: Request):
         """Store new polyform data."""
         try:
@@ -1101,7 +1117,7 @@ def web():
             "path": file_path
         }
 
-    @web_app.get("/list")
+    @web_app.get("/list", dependencies=[Depends(verify_password)])
     def list_polyforms(grid_type: Optional[str] = None):
         """List available polyforms."""
         volume.reload()
@@ -1121,7 +1137,7 @@ def web():
 
         return {"polyforms": list_all_polyforms(gt_filter)}
 
-    @web_app.get("/list_full")
+    @web_app.get("/list_full", dependencies=[Depends(verify_password)])
     def list_polyforms_full(grid_type: Optional[str] = None):
         """List available polyforms with full data (including tile_boundary, witness)."""
         volume.reload()
@@ -1163,7 +1179,7 @@ def web():
 
         return {"polyforms": result}
 
-    @web_app.get("/search_heesch")
+    @web_app.get("/search_heesch", dependencies=[Depends(verify_password)])
     def search_heesch_endpoint(
         grid_type: str,
         num_cells: int,
