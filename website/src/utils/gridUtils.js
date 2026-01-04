@@ -672,16 +672,17 @@ export function generateGridLines(gridType, minX, maxX, minY, maxY, offsetX, off
 // Translation vectors for each grid type (in grid coordinates)
 // These define the periodic lattice structure
 // V1 is the "horizontal" translation, V2 is the "vertical" translation
+// These must match the C++ definitions in src/*grid.h
 const translationVectors = {
   omino: { v1: [1, 0], v2: [0, 1] },
   hex: { v1: [1, 0], v2: [0, 1] },
   iamond: { v1: [3, 0], v2: [0, 3] },
   kite: { v1: [4, -2], v2: [2, 2] },
-  abolo: { v1: [2, 0], v2: [0, 2] },
-  trihex: { v1: [3, 0], v2: [0, 3] },
-  octasquare: { v1: [1, 0], v2: [0, 1] },
+  abolo: { v1: [4, 0], v2: [2, 2] },
+  trihex: { v1: [1, 1], v2: [-1, 2] },
+  octasquare: { v1: [2, 0], v2: [1, 1] },
   drafter: { v1: [7, 0], v2: [0, 7] },
-  halfcairo: { v1: [4, 0], v2: [0, 4] },
+  halfcairo: { v1: [3, 0], v2: [0, 3] },
   bevelhex: { v1: [6, 0], v2: [0, 6] },
 }
 
