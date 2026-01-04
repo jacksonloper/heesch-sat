@@ -25,7 +25,8 @@ function main() {
     process.exit(1);
   }
 
-  // Read all JSON files from local renderings directory (excluding summary files)
+  // Read all JSON files from local renderings directory
+  // Exclude search_* files which are summary/metadata files, not polyform data
   const jsonFiles = fs.readdirSync(renderingsDir)
     .filter(f => f.endsWith('.json') && !f.startsWith('search_'))
     .sort();
