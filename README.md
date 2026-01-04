@@ -1,6 +1,6 @@
 # heesch-sat
 
-This project aims to compute Heesch numbers of unmarked polyforms using a SAT solver.  It consists of several different tools for generating polyforms, computing their Heesch numbers if applicable, and repoting/visualizing the results.  The software is written in C++ and is built around a templated system that can enumerate and analyze polyforms in a number of common and unusual grids.  It can also check if a polyform tiles the plane isohedrally (but it will produce inconclusive results for anisohedral or aperiodic polyforms).
+This project aims to compute Heesch numbers of unmarked polyforms using a SAT solver.  It consists of several different tools for generating polyforms, computing their Heesch numbers if applicable, and reporting/visualizing the results.  The software is written in C++ and is built around a templated system that can enumerate and analyze polyforms in a number of common and unusual grids.  It can check if a polyform tiles the plane isohedrally (transitivity 1) or periodically/anisohedrally (transitivity > 1).
 
 **The code is experimental: use or study at your own risk.  I continue to debug, improve, and optimize the code from time to time.  In the meantime I'm making it publicly available if others want to play with it.**
 
@@ -38,7 +38,7 @@ As a typical example, `./gen -hex -size 6 -free -o 6hex.txt` will generate the 8
 
 ## Analyzing polyforms
 
-The `sat` tool reads in a sequence of polyforms and classifies them as non-tilers (in which case the Heesch number is reported) or isohedral tilers.  If a shape tiles the plane anisohedrally or aperiodically, the tool will classify it as "inconclusive".  The software can optionally output a "witness patch" for each shape that demonstrates its classification.  If the shape has a finite Heesch number, the patch will exhibit the largest possible number of coronas.  If it tiles isohedrally, no patch will be produced.  If it is inconclusive, the patch will contain a predetermined maximum number of coronas.
+The `sat` tool reads in a sequence of polyforms and classifies them as non-tilers (in which case the Heesch number is reported) or tilers.  The tool can check for isohedral tiling (transitivity 1) with the `-isohedral` flag, and for periodic/anisohedral tiling (including transitivity > 1) with the `-periodic` flag.  If neither flag is specified and a shape tiles the plane, the tool will classify it as "inconclusive".  The software can optionally output a "witness patch" for each shape that demonstrates its classification.  If the shape has a finite Heesch number, the patch will exhibit the largest possible number of coronas.  If it tiles isohedrally, no patch will be produced.  If it is inconclusive, the patch will contain a predetermined maximum number of coronas.
 
 The `sat` tool accepts the following command-line arguments.  Any other argument is assumed to be the name of a text file meant to be processed as input.  If no such argument is provided, text is processed from standard input.
 
@@ -46,7 +46,8 @@ The `sat` tool accepts the following command-line arguments.  Any other argument
  * `-maxlevel`: The maximum number of coronas to generate before giving up and labelling a shape as inconclusive.  (Default: 7)
  * `-translations`: Attempt to build patches using only translated copies of a tile
  * `-rotations`: Attempt to build patches using translated and rotated (but not reflected) copies of a tile
- * `-isohedral`: Include a check for isohedral tiling (this test is not run automatically by default)
+ * `-isohedral`: Include a check for isohedral tiling (transitivity 1).  This test is not run automatically by default
+ * `-periodic`: Include a check for periodic tiling, which can detect anisohedral tilings (transitivity > 1).  This test is not run automatically by default
  * `-noisohedral`: Explicitly disable isohedral checking (currently redundant)
  * `-update`: Perform the classification only on shapes in the input stream that are either unclassified or inconclusive; everything else is copied over unchanged
  * `-hh`: Include the computation of Heesch numbers where the outermost corona is permitted to have holes.  Disabled by default
@@ -74,7 +75,7 @@ Total: 81 shapes
   0 tile aperiodically
 ```
 
-Here, the inconclusive shape is the single 2-anisohedral 6-hex (the file format can store information about anisohedral and aperiodic polyforms, but the software doesn't know how to detect them, so the counts in the last two lines will always be zero).  The `Hc` and `Hh` counts correspond to Heesch numbers without and with holes in the outer corona, respectively.  Because the `-hh` switch was not enabled when `sat` was run, the counts will always be same.  In general, a given shape's `Hh` value might be equal to or one higher than its `Hc` value, meaning that `Hh` counts can be shifted somewhat towards higher Heesch numbers.
+Here, the inconclusive shape is the single 2-anisohedral 6-hex.  The file format can store information about anisohedral and aperiodic polyforms, and the software can detect periodic/anisohedral tilings with the `-periodic` flag.  The `Hc` and `Hh` counts correspond to Heesch numbers without and with holes in the outer corona, respectively.  Because the `-hh` switch was not enabled when `sat` was run, the counts will always be same.  In general, a given shape's `Hh` value might be equal to or one higher than its `Hc` value, meaning that `Hh` counts can be shifted somewhat towards higher Heesch numbers.
 
 ## Visualizing results
 
