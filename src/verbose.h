@@ -8,6 +8,9 @@
 // Global verbose flag - set from command line
 inline bool g_verbose = false;
 
+// Progress reporting interval in seconds (used for long-running loops)
+constexpr double VERBOSE_PROGRESS_INTERVAL_SECONDS = 2.0;
+
 // Verbose log macro - only logs when g_verbose is true
 #define VLOG(msg) do { if (g_verbose) { std::cerr << "[VERBOSE] " << msg << std::endl; } } while(0)
 #define VLOG_NOENDL(msg) do { if (g_verbose) { std::cerr << "[VERBOSE] " << msg; } } while(0)

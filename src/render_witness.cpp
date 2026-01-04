@@ -670,25 +670,32 @@ ProcessResult processShapeToJson(const vector<pair<typename grid::coord_t, typen
 	cerr << "Processing " << numCells << "-" << result.gridTypeName << endl;
 
 	// Build the shape
+	VLOG("Building shape from " << numCells << " coordinates...");
 	Shape<grid> shape;
 	for (const auto& c : coords) {
 		shape.add(c.first, c.second);
 	}
+	VLOG("Completing shape...");
 	shape.complete();
+	VLOG("Shape complete.");
 
 	if (!shape.simplyConnected()) {
 		cerr << "Warning: Shape has holes" << endl;
 	}
 
 	// Compute the set hash
+	VLOG("Computing set hash...");
 	size_t setHash = computeSetHash(shape);
 	stringstream hashStr;
 	hashStr << hex << setfill('0') << setw(8) << (setHash & 0xFFFFFFFF);
 	string hashSuffix = hashStr.str();
 	result.hash = hashSuffix;
+	VLOG("Hash: " << hashSuffix);
 
 	// Get the tile boundary segments
+	VLOG("Computing tile boundary...");
 	auto boundarySegments = getTileBoundarySegments(shape);
+	VLOG("Boundary has " << boundarySegments.size() << " segments.");
 
 	// Compute the witnesses using the modern solver.solve() pattern
 	cerr << "Computing witnesses..." << endl;

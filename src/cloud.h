@@ -181,7 +181,21 @@ Cloud<grid>::Cloud( const Shape<grid>& shape, Orientations ori,
 	// point of an oriented shape to a halo point of the main shape.
 	size_t adj_checks = 0;
 	size_t sc_checks = 0;
+	size_t halo_processed = 0;
+	size_t total_halo = halo_.size();
+	ManualTimer progressTimer;
+	double last_progress_time = 0.0;
 	for( auto hp : halo_ ) {
+		++halo_processed;
+		// Print progress periodically during long computations
+		double current_time = progressTimer.elapsed();
+		if (g_verbose && (current_time - last_progress_time) >= VERBOSE_PROGRESS_INTERVAL_SECONDS) {
+			std::cerr << "[VERBOSE]   Adjacency progress: " << halo_processed << "/" << total_halo 
+			          << " halo cells (" << adj_checks << " checks, " << sc_checks << " SC checks, "
+			          << adjacent_.size() << " adj, " << adjacent_hole_.size() << " hole-adj) @ "
+			          << std::fixed << std::setprecision(1) << current_time << "s" << std::endl;
+			last_progress_time = current_time;
+		}
 		bool found = false;
 
 		for( auto& ori : orientations_ ) {
@@ -454,8 +468,22 @@ void Cloud<grid>::reduceAdjacentsImpl()
 		++cur_size;
 	}
 
+	VLOG("  Reduction: starting with " << cur_size << " adjacents");
+	size_t iteration = 0;
+	ManualTimer reduceTimer;
+	double last_reduce_progress = 0.0;
+
 	while (true) {
+		++iteration;
 		for (size_t idx = 0; idx < cur_size; ++idx) {
+			// Print progress periodically during long reductions
+			double current_time = reduceTimer.elapsed();
+			if (g_verbose && (current_time - last_reduce_progress) >= VERBOSE_PROGRESS_INTERVAL_SECONDS) {
+				std::cerr << "[VERBOSE]   Reduction iteration " << iteration 
+				          << ": " << idx << "/" << cur_size << " transforms @ "
+				          << std::fixed << std::setprecision(1) << current_time << "s" << std::endl;
+				last_reduce_progress = current_time;
+			}
 			const xform_t& T = cur[idx].first;
 			bitset occ = cur[idx].second;
 
@@ -494,6 +522,8 @@ void Cloud<grid>::reduceAdjacentsImpl()
 				// std::cout << cur[idx].first << std::endl;
 			}
 		}
+
+		VLOG("  Reduction iteration " << iteration << ": " << cur_size << " -> " << next_size << " adjacents");
 
 		if (next_size < cur_size) {
 			xform_info *tmp = cur;
