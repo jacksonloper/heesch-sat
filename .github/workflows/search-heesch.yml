@@ -46,10 +46,21 @@ on:
 jobs:
   search:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 250
     steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Modal
+        run: pip install modal
+
       - name: Launch Heesch search job on Modal
         id: search
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
         run: |
           echo "Launching Heesch search job on Modal..."
           echo "Grid type: ${{ inputs.grid_type }}"
@@ -59,45 +70,68 @@ jobs:
           echo "Batch size: ${{ inputs.batch_size }}"
           echo "json_nup: ${{ inputs.json_nup }}"
 
-          # Build the API URL
-          API_URL="https://hloper--heesch-renderings-web.modal.run/search_heesch"
-          PARAMS="grid_type=${{ inputs.grid_type }}&num_cells=${{ inputs.num_cells }}&max_results=${{ inputs.max_results }}&wait=false"
-          PARAMS="${PARAMS}&batch_size=${{ inputs.batch_size }}&json_nup=${{ inputs.json_nup }}"
-          if [ "${{ inputs.force }}" = "true" ]; then
-            PARAMS="${PARAMS}&force=true"
-          fi
+          # Call Modal function directly using Python SDK
+          python3 << 'EOF'
+          from modal import Function
+          import json
+          import sys
+          import os
 
-          echo "Calling: ${API_URL}?${PARAMS}"
+          # Get reference to the deployed function
+          search_fn = Function.from_name("heesch-renderings", "search_heesch")
 
-          # Spawn the job with wait=false - it will run on Modal and store results to the volume
-          RESPONSE=$(curl -s -w "\n%{http_code}" --max-time 120 "${API_URL}?${PARAMS}")
-          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
-          BODY=$(echo "$RESPONSE" | sed '$d')
+          # Call the function with parameters (spawn for async execution)
+          # Use spawn() to launch the job and get function call ID
+          fc = search_fn.spawn(
+              grid_type="${{ inputs.grid_type }}",
+              num_cells=${{ inputs.num_cells }},
+              max_results=${{ inputs.max_results }},
+              force=${{ inputs.force == true && 'True' || 'False' }},
+              batch_size=${{ inputs.batch_size }},
+              json_nup=${{ inputs.json_nup }}
+          )
 
-          echo "HTTP Status: ${HTTP_CODE}"
-          echo "Response:"
-          echo "$BODY" | jq . || echo "$BODY"
+          function_call_id = fc.object_id
+          print(f"Search job spawned on Modal (ID: {function_call_id})")
 
-          STATUS=$(echo "$BODY" | jq -r '.status // "unknown"')
-          echo "status=${STATUS}" >> $GITHUB_OUTPUT
+          # Wait for results with timeout (4 hours max)
+          try:
+              result = fc.get(timeout=14400)
+              print("Response:")
+              print(json.dumps(result, indent=2))
 
-          if [ "$STATUS" = "cached" ]; then
-            # Results already exist
-            RESULTS_FOUND=$(echo "$BODY" | jq -r '.results_found // 0')
-            echo "results_found=${RESULTS_FOUND}" >> $GITHUB_OUTPUT
-            echo "::notice::Found ${RESULTS_FOUND} cached polyforms with Heesch >= ${{ inputs.json_nup }}"
-          elif [ "$STATUS" = "spawned" ]; then
-            # Job launched successfully
-            FUNCTION_CALL_ID=$(echo "$BODY" | jq -r '.function_call_id // "unknown"')
-            echo "function_call_id=${FUNCTION_CALL_ID}" >> $GITHUB_OUTPUT
-            echo "::notice::Search job spawned on Modal (ID: ${FUNCTION_CALL_ID}). Results will be stored automatically when complete."
-          elif [ "$STATUS" = "error" ]; then
-            MESSAGE=$(echo "$BODY" | jq -r '.message // "Unknown error"')
-            echo "::error::Failed to launch search: ${MESSAGE}"
-            exit 1
-          else
-            echo "::warning::Unexpected status: ${STATUS}"
-          fi
+              status = result.get("status", "unknown")
+              results_found = result.get("results_found", 0)
+
+              # Write outputs to GitHub
+              github_output = os.environ.get("GITHUB_OUTPUT", "")
+              if github_output:
+                  with open(github_output, "a") as f:
+                      f.write(f"status={status}\n")
+                      f.write(f"results_found={results_found}\n")
+                      f.write(f"function_call_id={function_call_id}\n")
+
+              if status == "cached":
+                  print(f"::notice::Found {results_found} cached polyforms with Heesch >= ${{ inputs.json_nup }}")
+              elif status == "completed":
+                  print(f"::notice::Search completed! Found {results_found} polyforms with Heesch >= ${{ inputs.json_nup }}")
+              elif status == "error":
+                  message = result.get("message", "Unknown error")
+                  print(f"::error::Search failed: {message}")
+                  sys.exit(1)
+              else:
+                  print(f"::notice::Search status: {status}")
+
+          except TimeoutError:
+              print(f"::warning::Search job timed out after 4 hours. Job may still be running on Modal.")
+              print(f"Function call ID: {function_call_id}")
+              # Write outputs even on timeout
+              github_output = os.environ.get("GITHUB_OUTPUT", "")
+              if github_output:
+                  with open(github_output, "a") as f:
+                      f.write(f"status=timeout\n")
+                      f.write(f"function_call_id={function_call_id}\n")
+          EOF
 
       - name: Summary
         run: |
@@ -112,11 +146,9 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           if [ "${{ steps.search.outputs.status }}" = "cached" ]; then
             echo "Results were already cached. Found **${{ steps.search.outputs.results_found }}** polyforms with Heesch >= ${{ inputs.json_nup }}." >> $GITHUB_STEP_SUMMARY
-          elif [ "${{ steps.search.outputs.status }}" = "spawned" ]; then
-            echo "Search job launched on Modal. Results will be stored to the volume when complete." >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Check results later via:" >> $GITHUB_STEP_SUMMARY
-            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-            echo "curl 'https://hloper--heesch-renderings-web.modal.run/search_heesch?grid_type=${{ inputs.grid_type }}&num_cells=${{ inputs.num_cells }}'" >> $GITHUB_STEP_SUMMARY
-            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ steps.search.outputs.status }}" = "completed" ]; then
+            echo "Search completed! Found **${{ steps.search.outputs.results_found }}** polyforms with Heesch >= ${{ inputs.json_nup }}." >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ steps.search.outputs.status }}" = "timeout" ]; then
+            echo "Search timed out. Job may still be running on Modal." >> $GITHUB_STEP_SUMMARY
+            echo "Function call ID: ${{ steps.search.outputs.function_call_id }}" >> $GITHUB_STEP_SUMMARY
           fi
