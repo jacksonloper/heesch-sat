@@ -132,17 +132,41 @@ GRPC_PROXY_DEBUG=1 PYTHONPATH=/usr/local/lib/python3.11/dist-packages modal depl
 
 ---
 
-## Modal Endpoint
+## Modal Functions (Authenticated)
 
-- **URL**: `https://hloper--heesch-renderings-web.modal.run/`
+All Modal functions require authentication. They can be called via the Modal Python SDK or CLI.
+
 - **Workspace**: `hloper`
 
-### Key Endpoints
+### Available Functions
 
-| Endpoint | Description |
+| Function | Description |
 |----------|-------------|
-| `/search_heesch?grid_type=hex&num_cells=6` | Search for polyforms with Heesch >= 1 (2hr timeout) |
-| `/search_heesch?grid_type=hex&num_cells=6&wait=false` | Spawn search job and return immediately |
-| `/compute?grid_type=hex&coords=0,0_1,0_0,1` | Compute Heesch for a specific polyform |
-| `/grid_types` | List supported grid types |
-| `/list?grid_type=hex` | List cached polyforms |
+| `get_grid_types()` | List supported grid types |
+| `get_polyform(hash, grid_type, coords)` | Get polyform data by hash or coordinates |
+| `compute_polyform(grid_type, coords, force, timeout, maxlevel)` | Compute Heesch for a specific polyform |
+| `store_polyform(data)` | Store new polyform data |
+| `list_polyforms(grid_type)` | List cached polyforms |
+| `list_polyforms_full(grid_type)` | List polyforms with full data |
+| `search_heesch(grid_type, num_cells, max_results, force, batch_size, json_nup)` | Search for polyforms with Heesch >= json_nup |
+
+### Example Usage
+
+```python
+import modal
+
+# Get reference to the deployed function
+search = modal.Function.lookup("heesch-renderings", "search_heesch")
+
+# Call the function (requires Modal auth)
+result = search.remote(grid_type="hex", num_cells=6)
+print(result)
+```
+
+### Download Volume Data
+
+To download all polyform JSON files from the Modal volume:
+```bash
+modal volume ls heesch-renderings-vol
+modal volume get heesch-renderings-vol <filename> <local_path>
+```
