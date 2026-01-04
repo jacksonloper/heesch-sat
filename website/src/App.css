@@ -128,6 +128,14 @@ footer.attribution p {
   line-height: 1.6;
 }
 
+footer.attribution .gallery-credit {
+  font-size: 1rem;
+  color: #444;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #eee;
+}
+
 footer.attribution a {
   color: #4a90d9;
   text-decoration: none;

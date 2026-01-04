@@ -68,8 +68,14 @@ function App() {
       </main>
 
       <footer className="attribution">
+        <p className="gallery-credit">
+          This gallery was produced by Jackson Loper to visualize examples from the work of Craig Kaplan.
+        </p>
         <h3>References</h3>
         <ul>
+          <li>
+            <a href="https://github.com/isohedral/heesch-sat" target="_blank" rel="noopener noreferrer">heesch-sat</a> — Source code for computing Heesch numbers of unmarked polyforms using a SAT solver
+          </li>
           <li>
             Craig S. Kaplan. Heesch numbers of unmarked polyforms. <em>Contributions to Discrete Mathematics</em>, 17(2):150–171, 2022.{' '}
             <a href="https://cdm.ucalgary.ca/article/view/72886" target="_blank" rel="noopener noreferrer">Available online</a>
@@ -83,12 +89,6 @@ function App() {
             <a href="https://www.polyomino.org.uk/mathematics/polyform-tiling/" target="_blank" rel="noopener noreferrer">polyomino.org.uk</a>
           </li>
         </ul>
-        <h3>Acknowledgments</h3>
-        <p>
-          Thanks to <a href="https://bramcohen.com/" target="_blank" rel="noopener noreferrer">Bram Cohen</a> for the initial suggestion of using a SAT solver to compute Heesch numbers.
-          Thanks to <a href="https://www.avapun.com/" target="_blank" rel="noopener noreferrer">Ava Pun</a> for contributions to this code.
-          Thanks also to <a href="https://www.polyomino.org.uk/" target="_blank" rel="noopener noreferrer">Joseph Myers</a> for allowing use of his codebase and for helpful discussions.
-        </p>
       </footer>
     </div>
   )
