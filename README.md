@@ -104,14 +104,57 @@ The `render_witness` tool generates SVG images of witness patches for individual
 ### Usage
 
 ```
-./render_witness x1 y1 x2 y2 ... xN yN
+./render_witness -grid x1 y1 x2 y2 ... xN yN
 ```
+
+Grid options: `-omino`, `-hex`, `-iamond`, `-octasquare`, `-trihex`, `-abolo`, `-drafter`, `-kite`, `-halfcairo`, `-bevelhex`
 
 Coordinates are given as space-separated x y pairs representing the cells of the polyiamond. The program computes the witness patch (up to Heesch number 5) and outputs:
 - An SVG file with the witness visualization
 - A text file with the coordinates and analysis results
 
 Output files are saved to the `renderings/` directory with filenames based on the polyiamond size and a set hash of the coordinates (ensuring consistent naming regardless of coordinate order).
+
+### Options
+
+ * `-maxlevel N`: Set the maximum corona level for Heesch computation (default: 7). Higher values allow computing higher Heesch numbers but take longer.
+ * `-verbose`: Enable detailed timing and progress logging to stderr. Useful for debugging slow polyforms.
+
+### Debugging slow computations
+
+If a polyform is taking a very long time to process, use the `-verbose` flag to see detailed progress:
+
+```
+./render_witness -verbose -kite -maxlevel 2 -3 2 -2 3 -1 1 -1 3 1 0 1 2 2 1 3 -1
+```
+
+The verbose output shows:
+- Shape construction progress
+- Boundary computation
+- Cloud construction phases (orientations, overlaps, adjacencies)
+- Reduction iterations
+- SAT solver progress for each Heesch level
+
+Example verbose output:
+```
+Processing 8-kite
+[VERBOSE] Building shape from 8 coordinates...
+[VERBOSE] Completing shape...
+[VERBOSE] Shape complete.
+[VERBOSE] Computing tile boundary...
+[VERBOSE] Cloud construction starting...
+[VERBOSE]   Shape size: 8 cells
+[VERBOSE]   Halo size: 22, Border size: 8
+[VERBOSE]   Orientations: 12
+[VERBOSE]   Phase: orientations took 0.0001s
+[VERBOSE]   Overlapping transforms: 37 (checked 768 pairs)
+[VERBOSE]   Phase: overlaps took 0.0000s
+[VERBOSE]   Adjacent transforms: 156
+[VERBOSE]   Phase: adjacencies took 0.0035s
+...
+```
+
+For long-running computations, progress updates are printed every 2 seconds showing the current phase and statistics.
 
 ### Examples
 
