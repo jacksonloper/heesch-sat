@@ -889,14 +889,16 @@ def web():
     web_app = FastAPI(title="Heesch Polyform Data API")
 
     # Password validation dependency
+    import secrets as secrets_module
     EXPECTED_PASSWORD = os.environ.get("runpass", "")
 
     def verify_password(runpass: str = Header(None, alias="X-Run-Pass")):
         """Verify the password from X-Run-Pass header."""
         if not EXPECTED_PASSWORD:
             raise HTTPException(status_code=500, detail="Server password not configured")
-        if runpass != EXPECTED_PASSWORD:
+        if runpass is None or not secrets_module.compare_digest(runpass, EXPECTED_PASSWORD):
             raise HTTPException(status_code=401, detail="Invalid or missing password")
+        return True
 
     # Add CORS middleware to allow requests from any origin
     web_app.add_middleware(
