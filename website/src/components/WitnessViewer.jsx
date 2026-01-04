@@ -14,6 +14,15 @@ const CORONA_COLORS = [
   '#34495e', // 7 - dark gray
 ]
 
+// Calculate the lower bound for inconclusive results from the maximum corona in the witness patch
+function getHeeschLowerBound(witness, showHoles = false) {
+  const patch = showHoles && witness.witness_with_holes
+    ? witness.witness_with_holes
+    : witness.witness_connected || []
+  if (patch.length === 0) return 0
+  return Math.max(...patch.map(tile => tile.corona))
+}
+
 // Generate a clean SVG string with only tiles using <use> notation
 function generateDownloadSvg(witness, patch) {
   const { tile_boundary } = witness
@@ -113,9 +122,11 @@ function WitnessViewer({ witness, onClose }) {
     URL.revokeObjectURL(url)
   }
 
-  const heeschValue = showHoles && witness.heesch_with_holes !== null
-    ? witness.heesch_with_holes
-    : witness.heesch_connected
+  const heeschValue = witness.inconclusive
+    ? getHeeschLowerBound(witness, showHoles)
+    : (showHoles && witness.heesch_with_holes !== null
+        ? witness.heesch_with_holes
+        : witness.heesch_connected)
 
   return (
     <div className="witness-viewer-overlay" onClick={onClose}>
