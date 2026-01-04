@@ -46,7 +46,7 @@ function App() {
           <div>
             <h1>Heesch Witness Gallery</h1>
             <p className="subtitle">
-              A gallery of interesting polyform tilings and their Heesch numbers
+              A gallery of some notable polyforms and their Heesch numbers
             </p>
           </div>
         </div>
