@@ -97,9 +97,9 @@ If none of the filtering switches (`-unknown`, `-holes`, `-inconclusive`, `-nont
 
 To close out the running example, executing `./viz 6hex_out.txt` will produce an 81-page PDF `out.pdf` containing drawings of the hole-free 6-hexes.  Those that don't tile will have (possibly trivial) patches exhibiting their Heesch numbers.  The isohedral tilers will show just a single copy of the shape.  The inconclusive (anisohedral) tile will show a number of coronas.
 
-## Generating SVG witness patches for polyiamonds
+## Generating jsons
 
-The `render_witness` tool takes a polyform (grid type and integer coordinates) and generates a json file suitable for the website.
+The `render_witness` tool takes a polyform (grid type and integer coordinates) and generates a json file, suitable for the website (see the website subdirectory), encoding information about it including its heesch number.
 
 # The grids
 
