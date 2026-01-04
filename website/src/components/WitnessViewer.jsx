@@ -143,7 +143,7 @@ function WitnessViewer({ witness, onClose }) {
             </div>
           )}
           {witness.tiles_periodically && (
-            <div className="plane-tiler-badge periodic" title={`This polyform tiles the plane periodically (anisohedral). Grid: ${witness.periodic_grid_size}×${witness.periodic_grid_size}, Translation: ${witness.periodic_translation_w}×V1 + ${witness.periodic_translation_h}×V2`}>
+            <div className="plane-tiler-badge periodic" title={`This polyform tiles the plane periodically. Note: (1) may or may not be isohedral, (2) translations are not necessarily minimal - they are just whatever the SAT solver found fastest. Grid: ${witness.periodic_grid_size}×${witness.periodic_grid_size}, Translation: ${witness.periodic_translation_w}×V1 + ${witness.periodic_translation_h}×V2`}>
               ♾️ Periodic Tiler
             </div>
           )}
@@ -187,8 +187,9 @@ function WitnessViewer({ witness, onClose }) {
               <div className="info-row">
                 <label>Periodic info:</label>
                 <span className="value">
-                  Grid: {witness.periodic_grid_size}×{witness.periodic_grid_size}, 
+                  Grid: {witness.periodic_grid_size}×{witness.periodic_grid_size},
                   Translation: {witness.periodic_translation_w}×V1 + {witness.periodic_translation_h}×V2
+                  <br /><small>(Note: may or may not be isohedral; translations are not necessarily minimal)</small>
                 </span>
               </div>
             )}
