@@ -18,9 +18,10 @@ const CORONA_COLORS = [
 function getHeeschLowerBound(witness, showHoles = false) {
   const patch = showHoles && witness.witness_with_holes
     ? witness.witness_with_holes
-    : witness.witness_connected || []
+    : (witness.witness_connected ?? [])
   if (patch.length === 0) return 0
-  return Math.max(...patch.map(tile => tile.corona))
+  const coronaValues = patch.map(tile => tile.corona ?? 0).filter(corona => typeof corona === 'number')
+  return coronaValues.length > 0 ? Math.max(...coronaValues) : 0
 }
 
 // Generate a clean SVG string with only tiles using <use> notation

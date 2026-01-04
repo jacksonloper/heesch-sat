@@ -2,9 +2,10 @@ import './WitnessList.css'
 
 // Calculate the lower bound for inconclusive results from the maximum corona in the witness patch
 function getHeeschLowerBound(witness) {
-  const patch = witness.witness_connected || []
+  const patch = witness.witness_connected ?? []
   if (patch.length === 0) return 0
-  return Math.max(...patch.map(tile => tile.corona))
+  const coronaValues = patch.map(tile => tile.corona ?? 0).filter(corona => typeof corona === 'number')
+  return coronaValues.length > 0 ? Math.max(...coronaValues) : 0
 }
 
 function WitnessList({ witnesses, selected, onSelect }) {
