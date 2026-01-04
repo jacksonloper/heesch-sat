@@ -1,5 +1,13 @@
 import './WitnessList.css'
 
+// Calculate the lower bound for inconclusive results from the maximum corona in the witness patch
+function getHeeschLowerBound(witness) {
+  const patch = witness.witness_connected ?? []
+  if (patch.length === 0) return 0
+  const coronaValues = patch.map(tile => tile.corona ?? 0).filter(corona => typeof corona === 'number')
+  return coronaValues.length > 0 ? Math.max(...coronaValues) : 0
+}
+
 function WitnessList({ witnesses, selected, onSelect }) {
   // Group witnesses by grid type
   const byGrid = witnesses.reduce((acc, w) => {
@@ -31,7 +39,7 @@ function WitnessList({ witnesses, selected, onSelect }) {
                   {(witness.tiles_isohedrally || witness.tiles_periodically) ? (
                     <span className="heesch plane-tiler" title={witness.tiles_isohedrally ? "Tiles the plane isohedrally" : "Tiles the plane periodically"}>H=∞</span>
                   ) : witness.inconclusive ? (
-                    <span className="heesch inconclusive" title="Inconclusive - hit max search level">H≥{witness.heesch_connected}</span>
+                    <span className="heesch inconclusive" title="Inconclusive - hit max search level">H≥{getHeeschLowerBound(witness)}</span>
                   ) : (
                     <span className="heesch">H={witness.heesch_connected}</span>
                   )}
