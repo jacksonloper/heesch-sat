@@ -19,6 +19,40 @@ const GRID_TYPES = [
 const SQRT3 = Math.sqrt(3)
 const SQRT3_2 = SQRT3 / 2
 
+// Drafter grid constants (from draftergrid.h)
+// Scale factor: vertexToGrid transforms pt / 6.0 * 3.5
+const DRAFTER_VERTEX_SCALE = 3.5 / 6.0
+// Vertex center scale factor: pTrans = (p + los) * 12 / 7
+const DRAFTER_VERTEX_CENTER_SCALE = 12 / 7
+
+// Origins of each of the 12 drafter triangle types within the 7x7 metahex period
+const DRAFTER_ORIGINS = [
+  [2, 1], [1, 2], [6, 3], [5, 3], [4, 2], [4, 1],
+  [5, 6], [6, 5], [1, 4], [2, 4], [3, 5], [3, 6]
+]
+
+// Local offset vectors from vertex center to vertices (from getVertexCentre in draftergrid.h)
+const DRAFTER_LOS = [
+  [-2, -1], [-1, -2], [1, -3], [2, -3], [3, -2], [3, -1],
+  [2, 1], [1, 2], [-1, 3], [-2, 3], [-3, 2], [-3, 1]
+]
+
+// Vertex triangles for each of the 12 drafter types (from draftergrid.h vertices array)
+const DRAFTER_VERTICES = [
+  [[0, 0], [6, 0], [4, 4]],        // type 0 at origin {2,1}
+  [[4, 4], [0, 6], [0, 0]],        // type 1 at origin {1,2}
+  [[0, 0], [0, 6], [-4, 8]],       // type 2 at origin {6,3}
+  [[0, 0], [-4, 8], [-6, 6]],      // type 3 at origin {5,3}
+  [[0, 0], [-6, 6], [-8, 4]],      // type 4 at origin {4,2}
+  [[0, 0], [-8, 4], [-6, 0]],      // type 5 at origin {4,1}
+  [[0, 0], [-6, 0], [-4, -4]],     // type 6 at origin {5,6}
+  [[0, 0], [-4, -4], [0, -6]],     // type 7 at origin {6,5}
+  [[0, 0], [0, -6], [4, -8]],      // type 8 at origin {1,4}
+  [[0, 0], [4, -8], [6, -6]],      // type 9 at origin {2,4}
+  [[0, 0], [6, -6], [8, -4]],      // type 10 at origin {3,5}
+  [[0, 0], [8, -4], [6, 0]],       // type 11 at origin {3,6}
+]
+
 // Grid-to-page transformations for each grid type
 const gridToPage = {
   omino: (x, y) => [x, y],
@@ -154,27 +188,9 @@ const getCellVertices = {
     }
   },
   drafter: (x, y, tileType) => {
-    // Drafter grid has 12 triangle types (30-60-90 triangles) arranged radially
-    // Each metahex (7x7 period) contains 12 triangles
-    // Vertices from draftergrid.h vertices array, scaled by vertexToGrid: pt / 6.0 * 3.5
-    const scale = 3.5 / 6.0
-    const drafterVertices = [
-      [[0, 0], [6, 0], [4, 4]],        // type 0 at origin {2,1}
-      [[4, 4], [0, 6], [0, 0]],        // type 1 at origin {1,2}
-      [[0, 0], [0, 6], [-4, 8]],       // type 2 at origin {6,3}
-      [[0, 0], [-4, 8], [-6, 6]],      // type 3 at origin {5,3}
-      [[0, 0], [-6, 6], [-8, 4]],      // type 4 at origin {4,2}
-      [[0, 0], [-8, 4], [-6, 0]],      // type 5 at origin {4,1}
-      [[0, 0], [-6, 0], [-4, -4]],     // type 6 at origin {5,6}
-      [[0, 0], [-4, -4], [0, -6]],     // type 7 at origin {6,5}
-      [[0, 0], [0, -6], [4, -8]],      // type 8 at origin {1,4}
-      [[0, 0], [4, -8], [6, -6]],      // type 9 at origin {2,4}
-      [[0, 0], [6, -6], [8, -4]],      // type 10 at origin {3,5}
-      [[0, 0], [8, -4], [6, 0]],       // type 11 at origin {3,6}
-    ]
-    
+    // Use shared DRAFTER_VERTICES constant
     const safeType = ((tileType % 12) + 12) % 12
-    return drafterVertices[safeType].map(([vx, vy]) => [vx * scale, vy * scale])
+    return DRAFTER_VERTICES[safeType].map(([vx, vy]) => [vx * DRAFTER_VERTEX_SCALE, vy * DRAFTER_VERTEX_SCALE])
   },
   halfcairo: (x, y) => {
     // Kites and triangles pattern
@@ -259,35 +275,7 @@ function generateCellPolygons(gridType, minX, maxX, minY, maxY) {
     }
   } else if (gridType === 'drafter') {
     // Drafter grid - 12 triangles per 7x7 metahex
-    // Origins of each triangle type within the 7x7 period (from draftergrid.h)
-    const drafterOrigins = [
-      [2, 1], [1, 2], [6, 3], [5, 3], [4, 2], [4, 1],
-      [5, 6], [6, 5], [1, 4], [2, 4], [3, 5], [3, 6]
-    ]
-    
-    // Local offset vectors from vertex center to vertices (from getVertexCentre)
-    // These are used to position vertices relative to the cell's grid position
-    const los = [
-      [-2, -1], [-1, -2], [1, -3], [2, -3], [3, -2], [3, -1],
-      [2, 1], [1, 2], [-1, 3], [-2, 3], [-3, 2], [-3, 1]
-    ]
-    
-    // Vertex triangles scaled by vertexToGrid (pt / 6.0 * 3.5)
-    const scale = 3.5 / 6.0
-    const drafterVertices = [
-      [[0, 0], [6, 0], [4, 4]],        // type 0
-      [[4, 4], [0, 6], [0, 0]],        // type 1
-      [[0, 0], [0, 6], [-4, 8]],       // type 2
-      [[0, 0], [-4, 8], [-6, 6]],      // type 3
-      [[0, 0], [-6, 6], [-8, 4]],      // type 4
-      [[0, 0], [-8, 4], [-6, 0]],      // type 5
-      [[0, 0], [-6, 0], [-4, -4]],     // type 6
-      [[0, 0], [-4, -4], [0, -6]],     // type 7
-      [[0, 0], [0, -6], [4, -8]],      // type 8
-      [[0, 0], [4, -8], [6, -6]],      // type 9
-      [[0, 0], [6, -6], [8, -4]],      // type 10
-      [[0, 0], [8, -4], [6, 0]],       // type 11
-    ]
+    // Uses shared constants: DRAFTER_ORIGINS, DRAFTER_LOS, DRAFTER_VERTICES
     
     // Iterate over metahex centers (period 7)
     const metaMinX = Math.floor(gMinX / 7) - 1
@@ -299,21 +287,21 @@ function generateCellPolygons(gridType, minX, maxX, minY, maxY) {
       for (let mj = metaMinY; mj <= metaMaxY; mj++) {
         // For each metahex, generate all 12 triangles
         for (let tileType = 0; tileType < 12; tileType++) {
-          const [ox, oy] = drafterOrigins[tileType]
+          const [ox, oy] = DRAFTER_ORIGINS[tileType]
           const gx = mi * 7 + ox
           const gy = mj * 7 + oy
           
           // Compute vertex center position (from getVertexCentre in draftergrid.h)
-          const [lox, loy] = los[tileType]
-          const pTransX = (gx + lox) * 12 / 7
-          const pTransY = (gy + loy) * 12 / 7
+          const [lox, loy] = DRAFTER_LOS[tileType]
+          const pTransX = (gx + lox) * DRAFTER_VERTEX_CENTER_SCALE
+          const pTransY = (gy + loy) * DRAFTER_VERTEX_CENTER_SCALE
           
           // Get scaled vertices and transform to page coordinates
-          const verts = drafterVertices[tileType]
+          const verts = DRAFTER_VERTICES[tileType]
           const pageVerts = verts.map(([vx, vy]) => {
             // Apply vertex scaling and add to vertex center
-            const gridX = (pTransX + vx) * scale
-            const gridY = (pTransY + vy) * scale
+            const gridX = (pTransX + vx) * DRAFTER_VERTEX_SCALE
+            const gridY = (pTransY + vy) * DRAFTER_VERTEX_SCALE
             return toPage(gridX, gridY)
           })
           
