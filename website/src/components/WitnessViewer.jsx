@@ -187,8 +187,12 @@ function WitnessViewer({ witness, onClose }) {
               <div className="info-row">
                 <label>Periodic info:</label>
                 <span className="value">
-                  Grid: {witness.periodic_grid_size}×{witness.periodic_grid_size}, 
+                  Grid: {witness.periodic_grid_size}×{witness.periodic_grid_size},
                   Translation: {witness.periodic_translation_w}×V1 + {witness.periodic_translation_h}×V2
+                  <br />
+                  <small style={{ opacity: 0.7 }}>
+                    Note: Translation vectors are found by a SAT solver and are not necessarily unique or minimal.
+                  </small>
                 </span>
               </div>
             )}
