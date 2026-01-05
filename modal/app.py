@@ -57,14 +57,22 @@ volume = modal.Volume.from_name("heesch-renderings-vol", create_if_missing=True)
 VOLUME_PATH = "/data"
 
 # Image with heesch-sat binaries compiled
-# Build timestamp: 2026-01-05T17:00:00Z - forces image rebuild (increased bitgrid size 128->512)
+# Build timestamp: 2026-01-05T21:00:00Z - build CryptoMiniSat with LARGEMEM for large polyforms
 image = (
     modal.Image.debian_slim(python_version="3.11")
-    .apt_install("build-essential", "libcryptominisat5-dev", "libboost-dev")
+    .apt_install("build-essential", "cmake", "git", "libboost-dev", "zlib1g-dev")
     .pip_install("fastapi", "psutil")
+    # Build CryptoMiniSat from source with LARGEMEM=ON to handle large polyforms
+    # This increases the max variable ID limit from 2^28-1 to 2^32-1 (16x larger)
+    .run_commands(
+        "git clone --depth 1 --branch 5.11.21 https://github.com/msoos/cryptominisat.git /tmp/cms",
+        "mkdir -p /tmp/cms/build && cd /tmp/cms/build && cmake -DLARGEMEM=ON -DCMAKE_INSTALL_PREFIX=/usr/local .. && make -j$(nproc) && make install",
+        "ldconfig",
+        "rm -rf /tmp/cms",
+    )
     .add_local_dir("../src", "/app/src", copy=True)
     .run_commands(
-        "echo 'Build: 2026-01-05T17:00:00Z' && cd /app/src && make clean render_witness gen",
+        "echo 'Build: 2026-01-05T21:00:00Z' && cd /app/src && make clean render_witness gen",
         "cp /app/src/render_witness /app/src/gen /usr/local/bin/",
     )
 )
