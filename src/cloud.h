@@ -47,7 +47,7 @@ public:
 	using coord_t = typename grid::coord_t;
 	using xform_t = typename grid::xform_t;
 	using point_t = typename grid::point_t;
-	using bitgrid_t = bitgrid<128>;
+	using bitgrid_t = bitgrid<512>;
 
 	Cloud( const Shape<grid>& shape, Orientations ori = ALL, bool filterSymmetries = false, bool reduce = false );
 
