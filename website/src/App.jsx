@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import WitnessList from './components/WitnessList'
 import WitnessViewer from './components/WitnessViewer'
+import GridExplorer from './components/GridExplorer'
 import './App.css'
 
 function App() {
@@ -8,6 +9,7 @@ function App() {
   const [selected, setSelected] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [showExplorer, setShowExplorer] = useState(false)
 
   useEffect(() => {
     // Load from static JSONL file built at build time
@@ -39,6 +41,11 @@ function App() {
     return <div className="app error">Error: {error}</div>
   }
 
+  // Show Grid Explorer view
+  if (showExplorer) {
+    return <GridExplorer onBack={() => setShowExplorer(false)} />
+  }
+
   return (
     <div className="app">
       <header>
@@ -49,6 +56,9 @@ function App() {
               A gallery of some notable polyforms and their Heesch numbers
             </p>
           </div>
+          <button className="explorer-button" onClick={() => setShowExplorer(true)}>
+            🔍 Grid Explorer
+          </button>
         </div>
       </header>
 
