@@ -54,35 +54,7 @@ header .subtitle {
   font-size: 1rem;
 }
 
-.refresh-button {
-  background: rgba(255, 255, 255, 0.2);
-  color: white;
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  padding: 0.75rem 1.5rem;
-  border-radius: 6px;
-  font-size: 0.95rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  white-space: nowrap;
-}
-
-.refresh-button:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.3);
-  border-color: rgba(255, 255, 255, 0.6);
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-}
-
-.refresh-button:active:not(:disabled) {
-  transform: translateY(0);
-}
-
-.refresh-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
+.refresh-button,
 .explorer-button {
   background: rgba(255, 255, 255, 0.2);
   color: white;
@@ -96,6 +68,7 @@ header .subtitle {
   white-space: nowrap;
 }
 
+.refresh-button:hover:not(:disabled),
 .explorer-button:hover {
   background: rgba(255, 255, 255, 0.3);
   border-color: rgba(255, 255, 255, 0.6);
@@ -103,8 +76,14 @@ header .subtitle {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
+.refresh-button:active:not(:disabled),
 .explorer-button:active {
   transform: translateY(0);
+}
+
+.refresh-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 main {

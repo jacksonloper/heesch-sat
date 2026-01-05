@@ -80,7 +80,9 @@ const getCellVertices = {
       [[0, 0], [-1, -1], [0, -2], [1, -2]],  // SW
       [[0, 0], [1, -2], [2, -2], [2, -1]],   // SE
     ]
-    return kiteVerts[cellType % 6]
+    // Use safe modulo to handle potential negative cellType values
+    const safeIndex = ((cellType % 6) + 6) % 6
+    return kiteVerts[safeIndex]
   },
   abolo: (x, y) => {
     // Right triangles - 4 types based on diagonal orientation
@@ -497,6 +499,7 @@ function GridExplorer({ onBack }) {
               <div className="coordinates-json">
                 <h4>JSON Format</h4>
                 <code className="json-text">
+                  {/* Output only x,y coordinates (exclude kite index for compatibility) */}
                   [{selectedCells.map(c => `[${c.slice(0, 2).join(',')}]`).join(', ')}]
                 </code>
               </div>
