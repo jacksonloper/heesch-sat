@@ -17,8 +17,8 @@ else
     CXX = g++
     OPT = -O3 -DNDEBUG
     CXXFLAGS = -std=c++17 -Wall -MMD $(INCLUDES) $(OPT)
-    # Link against /usr/local first (for custom LARGEMEM build), then fall back to system
-    LIBS = -L/usr/local/lib -Wl,-rpath,/usr/local/lib -lcryptominisat5
+    # Link against /usr/local first (for custom LARGEMEM build), then fall back to system /usr/lib
+    LIBS = -L/usr/local/lib -L/usr/lib -Wl,-rpath,/usr/local/lib -lcryptominisat5
     CAIROLIBS = $(shell pkg-config --libs cairo 2>/dev/null)
 endif
 
