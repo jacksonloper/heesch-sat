@@ -70,7 +70,7 @@ static bool computeSurrounds(TileInfo<grid> & tile)
 	using coord_t = typename grid::coord_t;
 	using point_t = typename grid::point_t;
 	using xform_t = typename grid::xform_t;
-	using bitgrid_t = bitgrid<128>;
+	using bitgrid_t = bitgrid<512>;
 
 	Cloud<grid> cloud {tile.getShape(), ori, true, reduce};
 	// FIXME -- could abort early here if cloud reports that the
