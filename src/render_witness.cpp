@@ -52,6 +52,9 @@ using namespace std;
 // Global maxLevel setting - can be set from command line
 size_t g_maxLevel = 7;
 
+// Global periodic grid size setting - can be set from command line
+size_t g_periodicGridSize = 16;
+
 // Convert grid-space transform to page-space transform
 // For page coords P and grid coords G with gridToPage M: P = M * G
 // A grid transform T becomes page transform: M * T * M^(-1)
@@ -701,6 +704,7 @@ ProcessResult processShapeToJson(const vector<pair<typename grid::coord_t, typen
 	solver.setCheckIsohedral(true);
 	solver.setCheckPeriodic(true);
 	solver.setCheckHoleCoronas(true);
+	solver.setPeriodicGridSize(g_periodicGridSize);
 	solver.solve(true, maxLevel, info);
 
 	// Extract results from TileInfo
@@ -1262,6 +1266,14 @@ int main(int argc, char **argv)
 			} else {
 				cerr << "Warning: Invalid maxlevel value, using default (" << g_maxLevel << ")" << endl;
 			}
+		} else if (strcmp(argv[i], "-periodic_gridsize") == 0 && i + 1 < argc) {
+			int val = atoi(argv[++i]);
+			if (val > 0) {
+				g_periodicGridSize = val;
+				cerr << "Periodic grid size set to " << g_periodicGridSize << endl;
+			} else {
+				cerr << "Warning: Invalid periodic_gridsize value, using default (" << g_periodicGridSize << ")" << endl;
+			}
 		} else if (strcmp(argv[i], "-verbose") == 0) {
 			g_verbose = true;
 		}
@@ -1277,7 +1289,7 @@ int main(int argc, char **argv)
 	}
 
 	// Single mode: original behavior
-	// First remove -verbose and -maxlevel from the argument list if present
+	// First remove -verbose, -maxlevel, and -periodic_gridsize from the argument list if present
 	for (int i = 1; i < argc; ++i) {
 		if (strcmp(argv[i], "-verbose") == 0) {
 			// Splice out -verbose
@@ -1288,6 +1300,13 @@ int main(int argc, char **argv)
 			--i;  // Check this position again
 		} else if (strcmp(argv[i], "-maxlevel") == 0 && i + 1 < argc) {
 			// Splice out -maxlevel and its argument (already parsed above)
+			for (int j = i; j < argc - 2; ++j) {
+				argv[j] = argv[j + 2];
+			}
+			argc -= 2;
+			--i;  // Check this position again
+		} else if (strcmp(argv[i], "-periodic_gridsize") == 0 && i + 1 < argc) {
+			// Splice out -periodic_gridsize and its argument (already parsed above)
 			for (int j = i; j < argc - 2; ++j) {
 				argv[j] = argv[j + 2];
 			}
