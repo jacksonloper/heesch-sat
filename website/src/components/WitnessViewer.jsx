@@ -123,6 +123,22 @@ function WitnessViewer({ witness, onClose }) {
     URL.revokeObjectURL(url)
   }
 
+  const handleCopyCoordinates = async () => {
+    const coords = witness.coordinates || []
+    const json = `[${coords.map(c => `[${c.join(',')}]`).join(', ')}]`
+    try {
+      await navigator.clipboard.writeText(json)
+    } catch {
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea')
+      textArea.value = json
+      document.body.appendChild(textArea)
+      textArea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textArea)
+    }
+  }
+
   const heeschValue = witness.inconclusive
     ? getHeeschLowerBound(witness, showHoles)
     : (showHoles && witness.heesch_with_holes !== null
@@ -197,11 +213,20 @@ function WitnessViewer({ witness, onClose }) {
               </div>
             )}
 
-            <div className="info-row">
+            <div className="info-row coords-row">
               <label>Coordinates:</label>
-              <code className="coords">
-                {witness.coordinates.map(([x, y]) => `(${x},${y})`).join(' ')}
-              </code>
+              <div className="coords-container">
+                <code className="coords">
+                  {witness.coordinates.map(([x, y]) => `(${x},${y})`).join(' ')}
+                </code>
+                <button
+                  className="copy-coords-btn"
+                  onClick={handleCopyCoordinates}
+                  title="Copy coordinates as JSON"
+                >
+                  📋 Copy
+                </button>
+              </div>
             </div>
 
             {witness.comments && (

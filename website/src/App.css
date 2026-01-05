@@ -54,7 +54,8 @@ header .subtitle {
   font-size: 1rem;
 }
 
-.refresh-button {
+.refresh-button,
+.explorer-button {
   background: rgba(255, 255, 255, 0.2);
   color: white;
   border: 1px solid rgba(255, 255, 255, 0.4);
@@ -67,14 +68,16 @@ header .subtitle {
   white-space: nowrap;
 }
 
-.refresh-button:hover:not(:disabled) {
+.refresh-button:hover:not(:disabled),
+.explorer-button:hover {
   background: rgba(255, 255, 255, 0.3);
   border-color: rgba(255, 255, 255, 0.6);
   transform: translateY(-1px);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
-.refresh-button:active:not(:disabled) {
+.refresh-button:active:not(:disabled),
+.explorer-button:active {
   transform: translateY(0);
 }
 

@@ -158,6 +158,33 @@
   word-break: break-word;
 }
 
+.coords-row .coords-container {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.coords-row .coords {
+  flex: 1;
+}
+
+.copy-coords-btn {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #4a90d9;
+  border-radius: 4px;
+  background: #4a90d9;
+  color: white;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.copy-coords-btn:hover {
+  background: #2c5aa0;
+  border-color: #2c5aa0;
+}
+
 .comments-row .comments-text {
   font-size: 0.95rem;
   color: #444;

@@ -19,7 +19,7 @@ on:
           - halfcairo
           - bevelhex
       coords:
-        description: 'Coordinates: "(0,-1) (1,-1)" OR "0,0_1,0_0,1" OR "-3,2 -3,4" OR "-3 2 -3 4"'
+        description: 'Coordinates: "(0,-1) (1,-1)" OR "0,0_1,0_0,1" OR "[[0,0], [1,0]]" (JSON)'
         required: true
         type: string
       force:
@@ -72,8 +72,32 @@ jobs:
           #   - Underscore format: 0,0_1,0_0,1
           #   - Comma-space format: -3,2 -3,4 -2,2
           #   - Pure space format: -3 2 -3 4 -2 2 (pairs of numbers)
+          #   - JSON format: [[0,0], [1,0], [0,1]] or [[0,-1],[1,-1]]
           normalize_coords() {
             local input="$1"
+
+            # Check if JSON format (starts with [ and contains [)
+            if [[ "$input" == "["* ]] && [[ "$input" == *"["*"]"* ]]; then
+              # Parse JSON array and convert to underscore format
+              # [[0,0], [1,0]] -> "0,0_1,0"
+              local result=$(echo "$input" | python3 -c "
+import sys, json
+try:
+    data = json.loads(sys.stdin.read())
+    if isinstance(data, list):
+        coords = ['%d,%d' % (c[0], c[1]) for c in data]
+        print('_'.join(coords))
+except Exception as e:
+    print('Error: ' + str(e), file=sys.stderr)
+    sys.exit(1)
+")
+              if [ $? -ne 0 ]; then
+                echo "Error: invalid JSON format" >&2
+                return 1
+              fi
+              echo "$result"
+              return
+            fi
 
             # If parenthetical format like "(0,-1) (1,-1) (-1,0)", extract and convert
             if [[ "$input" == *"("* ]]; then
