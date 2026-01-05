@@ -444,6 +444,8 @@ function GridExplorer({ onBack }) {
   const [gridType, setGridType] = useState('omino')
   const [selectedCells, setSelectedCells] = useState([])
   const [zoomLevel, setZoomLevel] = useState(1)
+  const [jsonInput, setJsonInput] = useState('')
+  const [jsonError, setJsonError] = useState('')
   const svgRef = useRef(null)
 
   // Base view bounds (at zoom level 1)
@@ -506,12 +508,72 @@ function GridExplorer({ onBack }) {
   // Clear all selections
   const handleClear = () => {
     setSelectedCells([])
+    setJsonInput('')
+    setJsonError('')
   }
 
   // Change grid type
   const handleGridChange = (newType) => {
     setGridType(newType)
     setSelectedCells([])
+    setJsonInput('')
+    setJsonError('')
+  }
+
+  // Parse and validate JSON coordinates input
+  const handleJsonInput = (value) => {
+    setJsonInput(value)
+    setJsonError('')
+    
+    if (!value.trim()) {
+      return
+    }
+
+    try {
+      const parsed = JSON.parse(value)
+      
+      // Validate it's an array
+      if (!Array.isArray(parsed)) {
+        setJsonError('Input must be a JSON array of coordinates')
+        return
+      }
+
+      // Validate each coordinate
+      const coords = []
+      for (let i = 0; i < parsed.length; i++) {
+        const coord = parsed[i]
+        if (!Array.isArray(coord) || coord.length < 2) {
+          setJsonError(`Invalid coordinate at index ${i}: must be [x, y] or [x, y, z]`)
+          return
+        }
+        if (!coord.every(n => typeof n === 'number' && Number.isInteger(n))) {
+          setJsonError(`Invalid coordinate at index ${i}: values must be integers`)
+          return
+        }
+        coords.push(coord)
+      }
+
+      // Valid! Update selected cells
+      setSelectedCells(coords)
+    } catch {
+      setJsonError('Invalid JSON format')
+    }
+  }
+
+  // Copy coordinates to clipboard
+  const handleCopyCoords = async () => {
+    const json = `[${selectedCells.map(c => `[${c.slice(0, 2).join(',')}]`).join(', ')}]`
+    try {
+      await navigator.clipboard.writeText(json)
+    } catch {
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea')
+      textArea.value = json
+      document.body.appendChild(textArea)
+      textArea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textArea)
+    }
   }
 
   // Format coordinates for display
@@ -585,13 +647,23 @@ function GridExplorer({ onBack }) {
           <div className="coordinates-panel">
             <div className="coordinates-header">
               <h3>Selected Coordinates</h3>
-              <button
-                className="clear-btn"
-                onClick={handleClear}
-                disabled={selectedCells.length === 0}
-              >
-                Clear All
-              </button>
+              <div className="coordinates-actions">
+                <button
+                  className="copy-btn"
+                  onClick={handleCopyCoords}
+                  disabled={selectedCells.length === 0}
+                  title="Copy to clipboard"
+                >
+                  📋 Copy
+                </button>
+                <button
+                  className="clear-btn"
+                  onClick={handleClear}
+                  disabled={selectedCells.length === 0}
+                >
+                  Clear All
+                </button>
+              </div>
             </div>
             <div className="coordinates-count">
               {selectedCells.length} cell{selectedCells.length !== 1 ? 's' : ''} selected
@@ -605,9 +677,22 @@ function GridExplorer({ onBack }) {
                 </code>
               )}
             </div>
+            
+            <div className="json-input-section">
+              <h4>Set Coordinates (JSON)</h4>
+              <textarea
+                className={`json-input ${jsonError ? 'error' : ''}`}
+                placeholder='Enter JSON array, e.g.: [[0,0], [1,0], [0,1]]'
+                value={jsonInput}
+                onChange={(e) => handleJsonInput(e.target.value)}
+                rows={3}
+              />
+              {jsonError && <p className="json-error">{jsonError}</p>}
+            </div>
+
             {selectedCells.length > 0 && (
               <div className="coordinates-json">
-                <h4>JSON Format</h4>
+                <h4>JSON Output</h4>
                 <code className="json-text">
                   {/* Output only x,y coordinates (exclude kite index for compatibility) */}
                   [{selectedCells.map(c => `[${c.slice(0, 2).join(',')}]`).join(', ')}]

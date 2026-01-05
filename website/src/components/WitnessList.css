@@ -26,6 +26,10 @@
   gap: 0.75rem;
 }
 
+.witness-card-wrapper {
+  position: relative;
+}
+
 .witness-card {
   display: flex;
   flex-direction: column;
@@ -47,6 +51,34 @@
 .witness-card.selected {
   border-color: #2c5aa0;
   background: #f0f7ff;
+}
+
+.copy-coords-btn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  font-size: 0.7rem;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.witness-card-wrapper:hover .copy-coords-btn {
+  opacity: 1;
+}
+
+.copy-coords-btn:hover {
+  background: #4a90d9;
+  border-color: #2c5aa0;
 }
 
 .tile-thumbnail {

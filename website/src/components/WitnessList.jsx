@@ -8,6 +8,24 @@ function getHeeschLowerBound(witness) {
   return coronaValues.length > 0 ? Math.max(...coronaValues) : 0
 }
 
+// Copy coordinates to clipboard
+async function copyCoordinates(witness, e) {
+  e.stopPropagation() // Prevent card selection
+  const coords = witness.cell_list || []
+  const json = `[${coords.map(c => `[${c.join(',')}]`).join(', ')}]`
+  try {
+    await navigator.clipboard.writeText(json)
+  } catch {
+    // Fallback for older browsers
+    const textArea = document.createElement('textarea')
+    textArea.value = json
+    document.body.appendChild(textArea)
+    textArea.select()
+    document.execCommand('copy')
+    document.body.removeChild(textArea)
+  }
+}
+
 function WitnessList({ witnesses, selected, onSelect }) {
   // Group witnesses by grid type
   const byGrid = witnesses.reduce((acc, w) => {
@@ -28,23 +46,31 @@ function WitnessList({ witnesses, selected, onSelect }) {
           <h3>{gridType}</h3>
           <div className="witness-cards">
             {byGrid[gridType].map(witness => (
-              <button
-                key={witness.hash}
-                className={`witness-card ${selected?.hash === witness.hash ? 'selected' : ''}`}
-                onClick={() => onSelect(witness)}
-              >
-                <TileThumbnail witness={witness} />
-                <div className="witness-info">
-                  <span className="cell-count">{witness.cell_count} cells</span>
-                  {(witness.tiles_isohedrally || witness.tiles_periodically) ? (
-                    <span className="heesch plane-tiler" title={witness.tiles_isohedrally ? "Tiles the plane isohedrally" : "Tiles the plane periodically"}>H=∞</span>
-                  ) : witness.inconclusive ? (
-                    <span className="heesch inconclusive" title="Inconclusive - hit max search level">H≥{getHeeschLowerBound(witness)}</span>
-                  ) : (
-                    <span className="heesch">H={witness.heesch_connected}</span>
-                  )}
-                </div>
-              </button>
+              <div key={witness.hash} className="witness-card-wrapper">
+                <button
+                  className={`witness-card ${selected?.hash === witness.hash ? 'selected' : ''}`}
+                  onClick={() => onSelect(witness)}
+                >
+                  <TileThumbnail witness={witness} />
+                  <div className="witness-info">
+                    <span className="cell-count">{witness.cell_count} cells</span>
+                    {(witness.tiles_isohedrally || witness.tiles_periodically) ? (
+                      <span className="heesch plane-tiler" title={witness.tiles_isohedrally ? "Tiles the plane isohedrally" : "Tiles the plane periodically"}>H=∞</span>
+                    ) : witness.inconclusive ? (
+                      <span className="heesch inconclusive" title="Inconclusive - hit max search level">H≥{getHeeschLowerBound(witness)}</span>
+                    ) : (
+                      <span className="heesch">H={witness.heesch_connected}</span>
+                    )}
+                  </div>
+                </button>
+                <button
+                  className="copy-coords-btn"
+                  onClick={(e) => copyCoordinates(witness, e)}
+                  title="Copy coordinates to clipboard"
+                >
+                  📋
+                </button>
+              </div>
             ))}
           </div>
         </div>
