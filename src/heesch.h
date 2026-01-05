@@ -1089,22 +1089,22 @@ void HeeschSolver<grid>::solve(
 			std::vector<xform_t> per_solution;
 			Periodic::SolutionInfo sol_info;
 			
-			// Try with maxtranslation 16 first
-			PeriodicSolver<grid> per16 {shape_, 16, 16};
-			auto result = get_solution ? per16.solve(&per_solution, &sol_info) : per16.solve(nullptr, &sol_info);
-			VLOG("  Periodic solver (16x16) returned " << 
+			// Try with grid size 64 first (increased from 16 to handle large polyforms)
+			PeriodicSolver<grid> per64 {shape_, 64, 64};
+			auto result = get_solution ? per64.solve(&per_solution, &sol_info) : per64.solve(nullptr, &sol_info);
+			VLOG("  Periodic solver (64x64) returned " << 
 				(result == Periodic::Result::YES ? "YES" : 
 				 result == Periodic::Result::NO ? "NO" : "INCONCLUSIVE") <<
 				" in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
 			
 			if (result != Periodic::Result::YES) {
-				// Try again with maxtranslation 32
-				VLOG("  Retrying with 32x32...");
+				// Try again with grid size 128
+				VLOG("  Retrying with 128x128...");
 				perTimer.reset();
 				per_solution.clear();
-				PeriodicSolver<grid> per32 {shape_, 32, 32};
-				result = get_solution ? per32.solve(&per_solution, &sol_info) : per32.solve(nullptr, &sol_info);
-				VLOG("  Periodic solver (32x32) returned " << 
+				PeriodicSolver<grid> per128 {shape_, 128, 128};
+				result = get_solution ? per128.solve(&per_solution, &sol_info) : per128.solve(nullptr, &sol_info);
+				VLOG("  Periodic solver (128x128) returned " << 
 					(result == Periodic::Result::YES ? "YES" : 
 					 result == Periodic::Result::NO ? "NO" : "INCONCLUSIVE") <<
 					" in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
@@ -1148,22 +1148,22 @@ void HeeschSolver<grid>::solve(
 			std::vector<xform_t> per_solution;
 			Periodic::SolutionInfo sol_info;
 			
-			// Try with maxtranslation 16 first
-			PeriodicSolver<grid> per16 {shape_, 16, 16};
-			auto result = get_solution ? per16.solve(&per_solution, &sol_info) : per16.solve(nullptr, &sol_info);
-			VLOG("  Periodic solver (16x16) returned " << 
+			// Try with grid size 64 first (increased from 16 to handle large polyforms)
+			PeriodicSolver<grid> per64 {shape_, 64, 64};
+			auto result = get_solution ? per64.solve(&per_solution, &sol_info) : per64.solve(nullptr, &sol_info);
+			VLOG("  Periodic solver (64x64) returned " << 
 				(result == Periodic::Result::YES ? "YES" : 
 				 result == Periodic::Result::NO ? "NO" : "INCONCLUSIVE") <<
 				" in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
 			
 			if (result != Periodic::Result::YES) {
-				// Try again with maxtranslation 32
-				VLOG("  Retrying with 32x32...");
+				// Try again with grid size 128
+				VLOG("  Retrying with 128x128...");
 				perTimer.reset();
 				per_solution.clear();
-				PeriodicSolver<grid> per32 {shape_, 32, 32};
-				result = get_solution ? per32.solve(&per_solution, &sol_info) : per32.solve(nullptr, &sol_info);
-				VLOG("  Periodic solver (32x32) returned " << 
+				PeriodicSolver<grid> per128 {shape_, 128, 128};
+				result = get_solution ? per128.solve(&per_solution, &sol_info) : per128.solve(nullptr, &sol_info);
+				VLOG("  Periodic solver (128x128) returned " << 
 					(result == Periodic::Result::YES ? "YES" : 
 					 result == Periodic::Result::NO ? "NO" : "INCONCLUSIVE") <<
 					" in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");

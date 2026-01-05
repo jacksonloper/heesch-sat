@@ -57,7 +57,7 @@ volume = modal.Volume.from_name("heesch-renderings-vol", create_if_missing=True)
 VOLUME_PATH = "/data"
 
 # Image with heesch-sat binaries compiled
-# Build timestamp: 2026-01-05T21:00:00Z - build CryptoMiniSat with LARGEMEM for large polyforms
+# Build timestamp: 2026-01-05T22:00:00Z - increased periodic grid size from 16/32 to 64/128
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("build-essential", "cmake", "git", "libboost-dev", "zlib1g-dev")
