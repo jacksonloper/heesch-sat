@@ -437,16 +437,22 @@ function pointInPolygon(px, py, vertices) {
   return inside
 }
 
+// Available zoom levels (1 = most zoomed in, up to 10 = most zoomed out)
+const ZOOM_LEVELS = [1, 1.5, 2, 3, 4, 5, 6, 7, 8, 10]
+
 function GridExplorer({ onBack }) {
   const [gridType, setGridType] = useState('omino')
   const [selectedCells, setSelectedCells] = useState([])
+  const [zoomLevel, setZoomLevel] = useState(1)
   const svgRef = useRef(null)
 
-  // View bounds
-  const viewMinX = -8
-  const viewMaxX = 8
-  const viewMinY = -8
-  const viewMaxY = 8
+  // Base view bounds (at zoom level 1)
+  const baseExtent = 8
+  // Apply zoom factor to view bounds
+  const viewMinX = -baseExtent * zoomLevel
+  const viewMaxX = baseExtent * zoomLevel
+  const viewMinY = -baseExtent * zoomLevel
+  const viewMaxY = baseExtent * zoomLevel
   const viewWidth = viewMaxX - viewMinX
   const viewHeight = viewMaxY - viewMinY
 
@@ -539,6 +545,41 @@ function GridExplorer({ onBack }) {
                 </button>
               ))}
             </div>
+          </div>
+
+          <div className="zoom-selector">
+            <h3>Zoom Level</h3>
+            <div className="zoom-controls">
+              <button
+                className="zoom-btn"
+                onClick={() => {
+                  const idx = ZOOM_LEVELS.indexOf(zoomLevel)
+                  if (idx > 0) setZoomLevel(ZOOM_LEVELS[idx - 1])
+                }}
+                disabled={zoomLevel === ZOOM_LEVELS[0]}
+              >
+                + Zoom In
+              </button>
+              <span className="zoom-value">{zoomLevel}×</span>
+              <button
+                className="zoom-btn"
+                onClick={() => {
+                  const idx = ZOOM_LEVELS.indexOf(zoomLevel)
+                  if (idx < ZOOM_LEVELS.length - 1) setZoomLevel(ZOOM_LEVELS[idx + 1])
+                }}
+                disabled={zoomLevel === ZOOM_LEVELS[ZOOM_LEVELS.length - 1]}
+              >
+                − Zoom Out
+              </button>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max={ZOOM_LEVELS.length - 1}
+              value={ZOOM_LEVELS.indexOf(zoomLevel)}
+              onChange={(e) => setZoomLevel(ZOOM_LEVELS[parseInt(e.target.value)])}
+              className="zoom-slider"
+            />
           </div>
 
           <div className="coordinates-panel">
