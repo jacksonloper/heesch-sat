@@ -37,6 +37,16 @@ on:
         required: false
         type: number
         default: 7
+      periodic_gridsize:
+        description: 'Periodic solver grid size (default: 16). Increase for large polyforms.'
+        required: false
+        type: number
+        default: 16
+      memory_gb:
+        description: 'Reserved RAM in GB (optional). Leave blank for default.'
+        required: false
+        type: string
+        default: ''
 
 jobs:
   compute:
@@ -148,13 +158,19 @@ jobs:
           # Get reference to the deployed function
           compute_fn = Function.from_name("heesch-renderings", "compute_polyform")
 
+          # Parse optional memory parameter
+          memory_str = "${{ inputs.memory_gb }}"
+          memory = int(float(memory_str) * 1024) if memory_str.strip() else None
+
           # Call the function with parameters
           result = compute_fn.remote(
               grid_type="${{ inputs.grid_type }}",
               coords="${COORDS}",
               force=${{ inputs.force == true && 'True' || 'False' }},
               timeout=${{ inputs.timeout }},
-              maxlevel=${{ inputs.maxlevel }}
+              maxlevel=${{ inputs.maxlevel }},
+              periodic_gridsize=${{ inputs.periodic_gridsize }},
+              memory=memory
           )
 
           print("Response:")
@@ -184,4 +200,6 @@ jobs:
           echo "- **Normalized Coordinates:** \`${{ steps.compute.outputs.coords }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Timeout:** ${{ inputs.timeout }} seconds" >> $GITHUB_STEP_SUMMARY
           echo "- **Max Level:** ${{ inputs.maxlevel }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Periodic Grid Size:** ${{ inputs.periodic_gridsize }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Memory (GB):** ${{ inputs.memory_gb || 'default' }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Status:** ${{ steps.compute.outputs.status }}" >> $GITHUB_STEP_SUMMARY

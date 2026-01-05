@@ -12,11 +12,13 @@ ifeq ($(UNAME_S),Darwin)
     CAIROLIBS = -L/opt/local/lib -lcairo
 else
     # Linux settings
-    INCLUDES = -I/usr/include/cryptominisat5 $(shell pkg-config --cflags cairo 2>/dev/null)
+    # Include both /usr/local (for custom LARGEMEM build) and /usr (for system package)
+    INCLUDES = -I/usr/local/include/cryptominisat5 -I/usr/include/cryptominisat5 $(shell pkg-config --cflags cairo 2>/dev/null)
     CXX = g++
     OPT = -O3 -DNDEBUG
     CXXFLAGS = -std=c++17 -Wall -MMD $(INCLUDES) $(OPT)
-    LIBS = -lcryptominisat5
+    # Link against /usr/local first (for custom LARGEMEM build), then fall back to system /usr/lib
+    LIBS = -L/usr/local/lib -L/usr/lib -Wl,-rpath,/usr/local/lib -lcryptominisat5
     CAIROLIBS = $(shell pkg-config --libs cairo 2>/dev/null)
 endif
 

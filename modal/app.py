@@ -57,14 +57,22 @@ volume = modal.Volume.from_name("heesch-renderings-vol", create_if_missing=True)
 VOLUME_PATH = "/data"
 
 # Image with heesch-sat binaries compiled
-# Build timestamp: 2026-01-05T17:00:00Z - forces image rebuild (increased bitgrid size 128->512)
+# Build timestamp: 2026-01-05T23:00:00Z - added -periodic_gridsize argument
 image = (
     modal.Image.debian_slim(python_version="3.11")
-    .apt_install("build-essential", "libcryptominisat5-dev", "libboost-dev")
+    .apt_install("build-essential", "cmake", "git", "libboost-dev", "zlib1g-dev")
     .pip_install("fastapi", "psutil")
+    # Build CryptoMiniSat from source with LARGEMEM=ON to handle large polyforms
+    # This increases the max variable ID limit from 2^28-1 to 2^32-1 (16x larger)
+    .run_commands(
+        "git clone --depth 1 --branch 5.11.21 https://github.com/msoos/cryptominisat.git /tmp/cms",
+        "mkdir -p /tmp/cms/build && cd /tmp/cms/build && cmake -DLARGEMEM=ON -DCMAKE_INSTALL_PREFIX=/usr/local .. && make -j$(nproc) && make install",
+        "ldconfig",
+        "rm -rf /tmp/cms",
+    )
     .add_local_dir("../src", "/app/src", copy=True)
     .run_commands(
-        "echo 'Build: 2026-01-05T17:00:00Z' && cd /app/src && make clean render_witness gen",
+        "echo 'Build: 2026-01-05T23:00:00Z' && cd /app/src && make clean render_witness gen",
         "cp /app/src/render_witness /app/src/gen /usr/local/bin/",
     )
 )
@@ -256,7 +264,7 @@ def list_all_polyforms(grid_type_filter: Optional[str] = None) -> List[dict]:
     return result
 
 
-def run_render_witness(grid_type: str, coords: List[Tuple[int, int]], timeout: int = 14400, maxlevel: int = 7) -> dict:
+def run_render_witness(grid_type: str, coords: List[Tuple[int, int]], timeout: int = 14400, maxlevel: int = 7, periodic_gridsize: int = 16) -> dict:
     """Run the render_witness binary to compute Heesch data.
 
     Parameters:
@@ -264,18 +272,19 @@ def run_render_witness(grid_type: str, coords: List[Tuple[int, int]], timeout: i
     - coords: List of (x, y) coordinates
     - timeout: Timeout in seconds (default 14400 = 4 hours)
     - maxlevel: Maximum corona level for Heesch computation (default 7)
+    - periodic_gridsize: Grid size for periodic solver (default 16)
     """
     import tempfile
     import threading
     import time
     import psutil
 
-    # Build command: render_witness -gridtype -maxlevel N x1 y1 x2 y2 ...
-    cmd = ["render_witness", f"-{grid_type}", "-maxlevel", str(maxlevel)]
+    # Build command: render_witness -gridtype -maxlevel N -periodic_gridsize M x1 y1 x2 y2 ...
+    cmd = ["render_witness", f"-{grid_type}", "-maxlevel", str(maxlevel), "-periodic_gridsize", str(periodic_gridsize)]
     for x, y in coords:
         cmd.extend([str(x), str(y)])
 
-    print(f"Starting render_witness for {len(coords)} {grid_type} cells (maxlevel={maxlevel})...")
+    print(f"Starting render_witness for {len(coords)} {grid_type} cells (maxlevel={maxlevel}, periodic_gridsize={periodic_gridsize})...")
     print(f"Command: {' '.join(cmd)}")
 
     # Create temp directory for output (render_witness writes to ../renderings/)
@@ -938,7 +947,9 @@ def compute_polyform(
     coords: str,
     force: bool = False,
     timeout: int = 14400,
-    maxlevel: int = 7
+    maxlevel: int = 7,
+    periodic_gridsize: int = 16,
+    memory: int = None
 ) -> dict:
     """
     Compute Heesch data for a polyform using the render_witness binary.
@@ -950,11 +961,15 @@ def compute_polyform(
     - force: If True, recompute even if already exists (useful for updating old computations)
     - timeout: Computation timeout in seconds (default 14400 = 4 hours)
     - maxlevel: Maximum corona level for Heesch computation (default 7)
+    - periodic_gridsize: Grid size for periodic solver (default 16)
+    - memory: Memory reserved in MB (optional, currently informational only)
     """
     # Clamp timeout to reasonable range (10 seconds to 4 hours)
     timeout = max(10, min(timeout, 14400))
     # Clamp maxlevel to reasonable range (1 to 20)
     maxlevel = max(1, min(maxlevel, 20))
+    # Clamp periodic_gridsize to reasonable range (8 to 256)
+    periodic_gridsize = max(8, min(periodic_gridsize, 256))
 
     # Normalize grid_type (accept both abbreviation and full name)
     gt = grid_type
@@ -994,7 +1009,7 @@ def compute_polyform(
 
     # Compute using render_witness
     try:
-        data = run_render_witness(gt, parsed, timeout=timeout, maxlevel=maxlevel)
+        data = run_render_witness(gt, parsed, timeout=timeout, maxlevel=maxlevel, periodic_gridsize=periodic_gridsize)
     except Exception as e:
         return {
             "status": "error",
