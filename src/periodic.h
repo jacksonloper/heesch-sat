@@ -558,64 +558,57 @@ void PeriodicSolver<grid>::addSubgridClauses(CMSat::SATSolver& solver) const
 	}
 	
 	// If max_period_ is set, add constraints to forbid periods where x + y >= max_period
-	// Period x in V1 direction is encoded as: h_vars[x-1] is true AND (x == w_ OR h_vars[x] is false)
-	// Period y in V2 direction is encoded as: v_vars[y-1] is true AND (y == h_ OR v_vars[y] is false)
-	// We forbid (x, y) where x + y >= max_period
+	// 
+	// The period is (px, py) when:
+	// - unit_vars[(py-1) * w_ + (px-1)] is true (the corner unit is active)
+	// - unit_vars[py * w_ + (px-1)] is false (the row below is not active) - if py < h_
+	// - unit_vars[(py-1) * w_ + px] is false (the column to the right is not active) - if px < w_
+	//
+	// To forbid period (px, py), we add:
+	// NOT unit_vars[(py-1) * w_ + (px-1)] OR unit_vars[py * w_ + (px-1)] OR unit_vars[(py-1) * w_ + px]
+	//
+	// This says: if the corner is active, then either the row below or column to the right must also be active
 	if (max_period_ > 0) {
-		std::vector<CMSat::Lit> cl4;
-		cl4.resize(4);
+		std::vector<CMSat::Lit> cl3;
+		cl3.resize(3);
 		
 		std::vector<CMSat::Lit> cl2;
 		cl2.resize(2);
 		
-		// For periods where x + y >= max_period, we need to forbid:
-		// h_vars[x-1] AND NOT h_vars[x] AND v_vars[y-1] AND NOT v_vars[y]
-		
-		for (size_t i = 0; i < w_; ++i) {
-			for (size_t j = 0; j < h_; ++j) {
-				size_t period_x = i + 1;
-				size_t period_y = j + 1;
-				if (period_x + period_y >= max_period_) {
-					// Forbid: h_vars[i] AND NOT h_vars[i+1] AND v_vars[j] AND NOT v_vars[j+1]
+		for (size_t px = 1; px <= w_; ++px) {
+			for (size_t py = 1; py <= h_; ++py) {
+				if (px + py >= max_period_) {
+					// Forbid period (px, py)
+					// Corner unit is at (px-1, py-1)
+					var_id corner = unit_vars_[(py - 1) * w_ + (px - 1)];
 					
-					// At the boundary (i+1 >= w_ or j+1 >= h_), the condition simplifies:
-					// - If i+1 >= w_: condition is just "h_vars[i] AND v_vars[j] AND NOT v_vars[j+1]"
-					// - If j+1 >= h_: condition is just "h_vars[i] AND NOT h_vars[i+1] AND v_vars[j]"
-					// - If both: condition is just "h_vars[i] AND v_vars[j]"
-					
-					if (i + 1 >= w_ && j + 1 >= h_) {
-						// Forbid: h_vars[i] AND v_vars[j]
-						// Clause: NOT h_vars[i] OR NOT v_vars[j]
-						cl2[0] = neg(h_vars_[i]);
-						cl2[1] = neg(v_vars_[j]);
+					if (px < w_ && py < h_) {
+						// Normal case: both next row and next column exist
+						var_id next_row = unit_vars_[py * w_ + (px - 1)];
+						var_id next_col = unit_vars_[(py - 1) * w_ + px];
+						cl3[0] = neg(corner);
+						cl3[1] = pos(next_row);
+						cl3[2] = pos(next_col);
+						solver.add_clause(cl3);
+					} else if (px < w_) {
+						// Only next column exists (py == h_)
+						var_id next_col = unit_vars_[(py - 1) * w_ + px];
+						cl2[0] = neg(corner);
+						cl2[1] = pos(next_col);
 						solver.add_clause(cl2);
-					} else if (i + 1 >= w_) {
-						// Forbid: h_vars[i] AND v_vars[j] AND NOT v_vars[j+1]
-						// Clause: NOT h_vars[i] OR NOT v_vars[j] OR v_vars[j+1]
-						std::vector<CMSat::Lit> cl3;
-						cl3.resize(3);
-						cl3[0] = neg(h_vars_[i]);
-						cl3[1] = neg(v_vars_[j]);
-						cl3[2] = pos(v_vars_[j + 1]);
-						solver.add_clause(cl3);
-					} else if (j + 1 >= h_) {
-						// Forbid: h_vars[i] AND NOT h_vars[i+1] AND v_vars[j]
-						// Clause: NOT h_vars[i] OR h_vars[i+1] OR NOT v_vars[j]
-						std::vector<CMSat::Lit> cl3;
-						cl3.resize(3);
-						cl3[0] = neg(h_vars_[i]);
-						cl3[1] = pos(h_vars_[i + 1]);
-						cl3[2] = neg(v_vars_[j]);
-						solver.add_clause(cl3);
+					} else if (py < h_) {
+						// Only next row exists (px == w_)
+						var_id next_row = unit_vars_[py * w_ + (px - 1)];
+						cl2[0] = neg(corner);
+						cl2[1] = pos(next_row);
+						solver.add_clause(cl2);
 					} else {
-						// Normal case: both i+1 < w_ and j+1 < h_
-						// Forbid: h_vars[i] AND NOT h_vars[i+1] AND v_vars[j] AND NOT v_vars[j+1]
-						// Clause: NOT h_vars[i] OR h_vars[i+1] OR NOT v_vars[j] OR v_vars[j+1]
-						cl4[0] = neg(h_vars_[i]);
-						cl4[1] = pos(h_vars_[i + 1]);
-						cl4[2] = neg(v_vars_[j]);
-						cl4[3] = pos(v_vars_[j + 1]);
-						solver.add_clause(cl4);
+						// Both at boundary (px == w_ and py == h_)
+						// Forbid the corner unit entirely
+						cl.resize(1);
+						cl[0] = neg(corner);
+						solver.add_clause(cl);
+						cl.resize(2);  // Reset for other uses
 					}
 				}
 			}
@@ -720,82 +713,74 @@ void PeriodicSolver<grid>::addWraparoundClauses(CMSat::SATSolver& solver) const
 {
 	std::vector<CMSat::Lit> cl;
 	
-	// New implementation based on problem statement:
-	// For each tile placement p, for each valid period (px, py), if p is salient:
-	//   For each cardinal direction translation (±px*V1, ±py*V2):
-	//     If translated tile q is also salient, add clause: 
-	//       period_condition AND p_active → q_active
+	// Implementation based on problem statement:
+	// For each valid period (px, py) where px + py < max_period:
+	//   For each tile placement p that is salient for period (px, py):
+	//     For each cardinal direction translation (±px*V1, ±py*V2):
+	//       If translated tile q exists and is also salient:
+	//         Add clause: period_condition AND p_active → q_active
 	//
-	// Period (px, py) is encoded as: 
-	//   h_vars[px-1] true AND h_vars[px] false (width is px)
-	//   v_vars[py-1] true AND v_vars[py] false (height is py)
+	// The period (px, py) is encoded using unit_vars:
+	// - Period is (px, py) when unit (px-1, py-1) is active AND 
+	//   unit (px, py-1) is NOT active AND unit (px-1, py) is NOT active
 	//
-	// The clause for "period is (px, py) AND p active → q active":
-	//   NOT h_vars[px-1] OR h_vars[px] OR NOT v_vars[py-1] OR v_vars[py] OR NOT p OR q
+	// We use the corner unit as the key indicator:
+	// - corner = unit_vars[(py-1) * w_ + (px-1)]
+	// - If px < w_: next_col = unit_vars[(py-1) * w_ + px] should be false
+	// - If py < h_: next_row = unit_vars[py * w_ + (px-1)] should be false
+	//
+	// The clause "period is (px,py) AND p → q" becomes:
+	// NOT corner OR next_col OR next_row OR NOT p OR q
+	// (where missing variables are omitted)
 	
-	cl.resize(6);
+	// Determine max period to check
+	size_t max_x = (max_period_ > 0) ? max_period_ - 1 : w_;
+	size_t max_y = (max_period_ > 0) ? max_period_ - 1 : h_;
 	
-	for (const auto& tinfo: tilemap_) {
-		const xform_t& T = tinfo.first;
-		var_id p_var = tinfo.second;
-		
-		// Determine max period to check
-		size_t max_x = (max_period_ > 0) ? max_period_ : w_;
-		size_t max_y = (max_period_ > 0) ? max_period_ : h_;
-		
-		for (size_t px = 1; px <= max_x && px <= w_; ++px) {
-			for (size_t py = 1; py <= max_y && py <= h_; ++py) {
-				// Check max_period constraint
-				if (max_period_ > 0 && px + py >= max_period_) {
-					continue;
-				}
+	// Iterate over all valid periods
+	for (size_t px = 1; px <= max_x && px <= w_; ++px) {
+		for (size_t py = 1; py <= max_y && py <= h_; ++py) {
+			// Check max_period constraint: px + py < max_period
+			if (max_period_ > 0 && px + py >= max_period_) {
+				continue;
+			}
+			
+			// Skip boundary periods - these would be INCONCLUSIVE
+			if (px >= w_ || py >= h_) {
+				continue;
+			}
+			
+			// Corner unit variable for period (px, py)
+			var_id corner = unit_vars_[(py - 1) * w_ + (px - 1)];
+			var_id next_col = unit_vars_[(py - 1) * w_ + px];
+			var_id next_row = unit_vars_[py * w_ + (px - 1)];
+			
+			// Translation vectors for period (px, py)
+			point_t trans_x {0, 0};
+			for (size_t k = 0; k < px; ++k) trans_x = trans_x + grid::translationV1;
+			
+			point_t trans_y {0, 0};
+			for (size_t k = 0; k < py; ++k) trans_y = trans_y + grid::translationV2;
+			
+			// Four cardinal direction translations
+			point_t translations[4] = {
+				trans_x,                                                    // +px*V1
+				point_t{(coord_t)(-trans_x.x_), (coord_t)(-trans_x.y_)},   // -px*V1
+				trans_y,                                                    // +py*V2
+				point_t{(coord_t)(-trans_y.x_), (coord_t)(-trans_y.y_)}    // -py*V2
+			};
+			
+			// Iterate over all tiles
+			for (const auto& tinfo: tilemap_) {
+				const xform_t& T = tinfo.first;
+				var_id p_var = tinfo.second;
 				
 				// Check if this tile is salient for period (px, py)
 				if (!isTileSalient(T, px, py)) {
 					continue;
 				}
 				
-				// Build the period condition literals
-				// Period (px, py) means: h_vars[px-1] AND NOT h_vars[px] AND v_vars[py-1] AND NOT v_vars[py]
-				// So the negation is: NOT h_vars[px-1] OR h_vars[px] OR NOT v_vars[py-1] OR v_vars[py]
-				
-				// Set up base clause: NOT period OR NOT p OR q
-				// Which is: NOT h_vars[px-1] OR h_vars[px] OR NOT v_vars[py-1] OR v_vars[py] OR NOT p OR q
-				cl[0] = neg(h_vars_[px - 1]);
-				cl[1] = (px < w_) ? pos(h_vars_[px]) : neg(h_vars_[px - 1]); // Handle boundary
-				cl[2] = neg(v_vars_[py - 1]);
-				cl[3] = (py < h_) ? pos(v_vars_[py]) : neg(v_vars_[py - 1]); // Handle boundary
-				cl[4] = neg(p_var);
-				
-				// If at boundary (px == w_ or py == h_), the period selection is determined by
-				// h_vars[px-1] being true (no higher index to check). But since we check for
-				// INCONCLUSIVE at boundary, we can skip these cases.
-				if (px >= w_ || py >= h_) {
-					continue;
-				}
-				
-				// Re-set the base clause properly
-				cl[0] = neg(h_vars_[px - 1]);
-				cl[1] = pos(h_vars_[px]);
-				cl[2] = neg(v_vars_[py - 1]);
-				cl[3] = pos(v_vars_[py]);
-				cl[4] = neg(p_var);
-				
-				// Translation vectors for period (px, py)
-				point_t trans_x = grid::translationV1;
-				for (size_t k = 1; k < px; ++k) trans_x = trans_x + grid::translationV1;
-				
-				point_t trans_y = grid::translationV2;
-				for (size_t k = 1; k < py; ++k) trans_y = trans_y + grid::translationV2;
-				
-				// Four cardinal direction translations
-				point_t translations[4] = {
-					trans_x,                                                    // +px*V1
-					point_t{(coord_t)(-trans_x.x_), (coord_t)(-trans_x.y_)},   // -px*V1
-					trans_y,                                                    // +py*V2
-					point_t{(coord_t)(-trans_y.x_), (coord_t)(-trans_y.y_)}    // -py*V2
-				};
-				
+				// For each cardinal direction translation
 				for (const auto& trans : translations) {
 					xform_t NT = T.translate(trans);
 					
@@ -811,7 +796,15 @@ void PeriodicSolver<grid>::addWraparoundClauses(CMSat::SATSolver& solver) const
 					}
 					
 					// Add clause: period condition AND p active → q active
-					cl[5] = pos(it->second);
+					// Clause: NOT corner OR next_col OR next_row OR NOT p OR q
+					// The period condition is: corner AND NOT next_col AND NOT next_row
+					// Its negation is: NOT corner OR next_col OR next_row
+					cl.clear();
+					cl.push_back(neg(corner));
+					cl.push_back(pos(next_col));
+					cl.push_back(pos(next_row));
+					cl.push_back(neg(p_var));
+					cl.push_back(pos(it->second));
 					solver.add_clause(cl);
 				}
 			}

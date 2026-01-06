@@ -1024,6 +1024,10 @@ void printUsage(const char *prog)
 	cerr << "  -maxlevel N: Set the maximum corona level for Heesch computation (default: 7)." << endl;
 	cerr << "               Higher values allow computing higher Heesch numbers but take longer." << endl;
 	cerr << endl;
+	cerr << "  -periodic_gridsize N: Set the max_period for the periodic tiling solver (default: 16)." << endl;
+	cerr << "               The solver tries all translation pairs (x,y) where x+y < N." << endl;
+	cerr << "               Larger values allow finding periodic tilings with larger translation vectors." << endl;
+	cerr << endl;
 	cerr << "  -verbose:    Enable detailed timing and progress logging to stderr." << endl;
 	cerr << "               Useful for debugging slow polyforms." << endl;
 }

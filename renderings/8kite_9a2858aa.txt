@@ -1,1 +1,0 @@
-Periodic tiling checker does not find minimal or unique periods.  Compare with polykite f7a20f33 (which is congruent to this one).

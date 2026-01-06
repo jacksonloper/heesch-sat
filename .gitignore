@@ -13,4 +13,5 @@ src/gen
 src/tile
 src/report
 src/render_witness
+renderings/
 _codeql_detected_source_root
