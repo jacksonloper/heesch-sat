@@ -184,9 +184,15 @@ public:
 		check_periodic_ = b;
 	}
 
+	void setMaxTranslation( size_t sz )
+	{
+		max_translation_ = sz;
+	}
+
+	// Legacy alias for backwards compatibility
 	void setPeriodicGridSize( size_t sz )
 	{
-		periodic_grid_size_ = sz;
+		max_translation_ = sz;
 	}
 
 	void setCheckHoleCoronas( bool b )
@@ -252,7 +258,7 @@ private:
 	bool check_hh_;
 	bool tiles_isohedrally_;
 	bool reduce_;
-	size_t periodic_grid_size_;  // Grid size for periodic solver (default 16)
+	size_t max_translation_;  // Max translation to test for periodic solver (default 16)
 };
 
 template<typename grid, typename coord>
@@ -314,7 +320,7 @@ HeeschSolver<grid>::HeeschSolver( const Shape<grid>& shape, Orientations ori, bo
 	, check_hh_ { false }
 	, tiles_isohedrally_ { false }
 	, reduce_ {reduce}
-	, periodic_grid_size_ { 16 }  // Default to 16 for backwards compatibility
+	, max_translation_ { 16 }  // Default to 16 for backwards compatibility
 {
 	VLOG("HeeschSolver constructed");
 	VLOG("  Surroundable: " << (cloud_.surroundable_ ? "yes" : "no"));
@@ -1090,39 +1096,39 @@ void HeeschSolver<grid>::solve(
 		}
 
 		// Check for periodic tiling only at level 2
-		// Use the configured periodic grid size; fail if inconclusive (no backoff)
+		// Use the configured max_translation; fail if inconclusive (no backoff)
 		if (check_periodic_ && (level_ == 2)) {
-			VLOG("  Checking periodic tiling at level " << level_ << " (grid size " << periodic_grid_size_ << ")...");
+			VLOG("  Checking periodic tiling at level " << level_ << " (max_translation " << max_translation_ << ")...");
 			ManualTimer perTimer;
 			std::vector<xform_t> per_solution;
 			Periodic::SolutionInfo sol_info;
-			
-			// Use configured grid size
-			PeriodicSolver<grid> perSolver {shape_, periodic_grid_size_, periodic_grid_size_};
+
+			// Use configured max_translation
+			PeriodicSolver<grid> perSolver {shape_, max_translation_};
 			auto result = get_solution ? perSolver.solve(&per_solution, &sol_info) : perSolver.solve(nullptr, &sol_info);
-			VLOG("  Periodic solver (" << periodic_grid_size_ << "x" << periodic_grid_size_ << ") returned " << 
-				(result == Periodic::Result::YES ? "YES" : 
+			VLOG("  Periodic solver (max_trans=" << max_translation_ << ") returned " <<
+				(result == Periodic::Result::YES ? "YES" :
 				 result == Periodic::Result::NO ? "NO" : "INCONCLUSIVE") <<
 				" in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
-			
-			// If INCONCLUSIVE, fail instead of backing off to larger grid
+
+			// If INCONCLUSIVE, fail instead of backing off to larger max_translation
 			if (result == Periodic::Result::INCONCLUSIVE) {
-				std::cerr << "ERROR: Periodic solver returned INCONCLUSIVE with grid size " << periodic_grid_size_ 
+				std::cerr << "ERROR: Periodic solver returned INCONCLUSIVE with max_translation " << max_translation_
 				          << ". Increase -periodic_gridsize and retry." << std::endl;
-				throw std::runtime_error("Periodic grid size insufficient - increase -periodic_gridsize");
+				throw std::runtime_error("Max translation insufficient - increase -periodic_gridsize");
 			}
-			
+
 			if (result == Periodic::Result::YES) {
 				// Found periodic tiling
-				VLOG("  Translation: " << sol_info.translation_w << "×V1 + " << sol_info.translation_h << "×V2 (grid: " << sol_info.grid_width << "×" << sol_info.grid_height << ")");
+				VLOG("  Translation: " << sol_info.translation_w << "×V1 + " << sol_info.translation_h << "×V2 (max_trans: " << sol_info.max_translation << ")");
 				if (get_solution) {
 					patch_t demo;
 					for (const auto& T: per_solution) {
 						demo.push_back(std::make_pair(0, T));
 					}
-					info.setPeriodic(2, &demo, sol_info.grid_width, sol_info.translation_w, sol_info.translation_h);
+					info.setPeriodic(2, &demo, sol_info.max_translation, sol_info.translation_w, sol_info.translation_h);
 				} else {
-					info.setPeriodic(2, nullptr, sol_info.grid_width, sol_info.translation_w, sol_info.translation_h);
+					info.setPeriodic(2, nullptr, sol_info.max_translation, sol_info.translation_w, sol_info.translation_h);
 				}
 				VLOG("  TILES PERIODICALLY (detected at level " << level_ << ")");
 				return;
@@ -1143,38 +1149,38 @@ void HeeschSolver<grid>::solve(
 		// We iterated above to failure.  First, we might have blown past
 		// maxlevel.  If so, the tile is inconclusive.
 
-		// Last ditch check for anisohedral - use configured grid size
+		// Last ditch check for anisohedral - use configured max_translation
 		if (check_periodic_) {
-			VLOG("Checking periodic tiling (grid size " << periodic_grid_size_ << ")...");
+			VLOG("Checking periodic tiling (max_translation " << max_translation_ << ")...");
 			ManualTimer perTimer;
 			std::vector<xform_t> per_solution;
 			Periodic::SolutionInfo sol_info;
-			
-			// Use configured grid size
-			PeriodicSolver<grid> perSolver {shape_, periodic_grid_size_, periodic_grid_size_};
+
+			// Use configured max_translation
+			PeriodicSolver<grid> perSolver {shape_, max_translation_};
 			auto result = get_solution ? perSolver.solve(&per_solution, &sol_info) : perSolver.solve(nullptr, &sol_info);
-			VLOG("  Periodic solver (" << periodic_grid_size_ << "x" << periodic_grid_size_ << ") returned " << 
-				(result == Periodic::Result::YES ? "YES" : 
+			VLOG("  Periodic solver (max_trans=" << max_translation_ << ") returned " <<
+				(result == Periodic::Result::YES ? "YES" :
 				 result == Periodic::Result::NO ? "NO" : "INCONCLUSIVE") <<
 				" in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
-			
-			// If INCONCLUSIVE, fail instead of backing off to larger grid
+
+			// If INCONCLUSIVE, fail instead of backing off to larger max_translation
 			if (result == Periodic::Result::INCONCLUSIVE) {
-				std::cerr << "ERROR: Periodic solver returned INCONCLUSIVE with grid size " << periodic_grid_size_ 
+				std::cerr << "ERROR: Periodic solver returned INCONCLUSIVE with max_translation " << max_translation_
 				          << ". Increase -periodic_gridsize and retry." << std::endl;
-				throw std::runtime_error("Periodic grid size insufficient - increase -periodic_gridsize");
+				throw std::runtime_error("Max translation insufficient - increase -periodic_gridsize");
 			}
-			
+
 			if (result == Periodic::Result::YES) {
-				VLOG("  Translation: " << sol_info.translation_w << "×V1 + " << sol_info.translation_h << "×V2 (grid: " << sol_info.grid_width << "×" << sol_info.grid_height << ")");
+				VLOG("  Translation: " << sol_info.translation_w << "×V1 + " << sol_info.translation_h << "×V2 (max_trans: " << sol_info.max_translation << ")");
 				if (get_solution) {
 					patch_t demo;
 					for (const auto& T: per_solution) {
 						demo.push_back(std::make_pair(0, T));
 					}
-					info.setPeriodic(2, &demo, sol_info.grid_width, sol_info.translation_w, sol_info.translation_h);
+					info.setPeriodic(2, &demo, sol_info.max_translation, sol_info.translation_w, sol_info.translation_h);
 				} else {
-					info.setPeriodic(2, nullptr, sol_info.grid_width, sol_info.translation_w, sol_info.translation_h);
+					info.setPeriodic(2, nullptr, sol_info.max_translation, sol_info.translation_w, sol_info.translation_h);
 				}
 				VLOG("TILES PERIODICALLY");
 				return;
