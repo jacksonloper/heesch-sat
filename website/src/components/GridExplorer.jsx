@@ -589,7 +589,7 @@ function GridExplorer({ onBack }) {
       <div className="explorer-header">
         <button className="back-btn" onClick={onBack}>← Back to Gallery</button>
         <h2>Grid Explorer</h2>
-        <p className="instructions">Click on cells to select them. Click again to deselect.</p>
+        <p className="instructions">Click on cells to select them. Click again to deselect.  Currently broken for iamond, half cairo, abolo, and bevelhex.</p>
       </div>
 
       <div className="explorer-content">
