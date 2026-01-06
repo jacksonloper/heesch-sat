@@ -4,7 +4,7 @@
 
 namespace Periodic {
 
-const bool DEBUG = false;
+const bool DEBUG = true;  // Enable debug output
 
 // Result type for periodic solver
 enum class Result {
@@ -62,10 +62,12 @@ public:
 
 	using cell_info_t = Periodic::cell_info<grid>;
 
-	PeriodicSolver(const Shape<grid>& shape, size_t w, size_t h)
+	PeriodicSolver(const Shape<grid>& shape, size_t w, size_t h, size_t build_extent = 0)
 		: shape_ {shape}
 		, w_ {w}
 		, h_ {h}
+		, build_extent_ {build_extent > 0 ? build_extent : w + 1}  // Default: build to w+1
+		, build_extent_h_ {build_extent > 0 ? build_extent : h + 1}  // Default: build to h+1
 	{
 		// FIXME -- take advantage of grid::num_tile_shapes and 
 		// grid::getTileShape to filter out shapes that definitely
@@ -128,11 +130,14 @@ private:
 	void addWraparoundClauses(CMSat::SATSolver& solver) const;
 
 	void debugSolution(CMSat::SATSolver& solver) const;
+	void debugMissingTiles(CMSat::SATSolver& solver) const;
 
 	Shape<grid> shape_;
 
 	size_t w_;
 	size_t h_;
+	size_t build_extent_;
+	size_t build_extent_h_;
 	var_id next_var_;
 
 	var_id *unit_vars_;
@@ -180,6 +185,7 @@ Periodic::Result PeriodicSolver<grid>::solve(std::vector<xform_t>* patch,
 		std::cerr << "-----" << std::endl;
 		std::cerr << "SOLVED" << std::endl;
 		debugSolution(solver);
+		debugMissingTiles(solver);
 	}
 
 	// Valid solution found - extract patch if requested
@@ -220,10 +226,10 @@ template<typename grid>
 void PeriodicSolver<grid>::buildCells() {
 	point_t row_start {0, 0};
 
-	// Build cells out to w_+1 by h_+1 to ensure wraparound tiles exist
-	for (size_t y = 0; y <= h_; ++y) {
+	// Build cells out to build_extent_ by build_extent_h_ to ensure wraparound tiles exist
+	for (size_t y = 0; y < build_extent_h_; ++y) {
 		point_t O = row_start;
-		for (size_t x = 0; x <= w_; ++x) {
+		for (size_t x = 0; x < build_extent_; ++x) {
 			// Map to unit coordinates (wrapping to the base w_ by h_ region)
 			point_t u {(int16_t)(x % w_), (int16_t)(y % h_)};
 			for (const auto& p: grid::origins) {
@@ -592,4 +598,76 @@ void PeriodicSolver<grid>::debugSolution(CMSat::SATSolver& solver) const
 			std::cerr << std::endl;
 		}
 	}
+}
+
+template<typename grid>
+void PeriodicSolver<grid>::debugMissingTiles(CMSat::SATSolver& solver) const
+{
+	const std::vector<CMSat::lbool>& model = solver.get_model();
+	
+	std::cerr << "=== DEBUG: Missing tile analysis ===" << std::endl;
+	std::cerr << "w_=" << w_ << ", h_=" << h_ << ", build_extent=" << build_extent_ << std::endl;
+	
+	// Helper to check if a tile has presence in active unit cells (units 0..w_-1, 0..h_-1)
+	auto tileHasActivePresence = [this](const xform_t& T) -> bool {
+		for (const auto& p: shape_) {
+			point_t tp = T * p;
+			auto ci = cellmap_.find(tp);
+			if (ci != cellmap_.end()) {
+				const point_t& unit = ci->second.unit_;
+				if (unit.x_ >= 0 && unit.x_ < (int16_t)w_ && 
+				    unit.y_ >= 0 && unit.y_ < (int16_t)h_) {
+					return true;
+				}
+			}
+		}
+		return false;
+	};
+	
+	// Collect active tiles that have presence in active units
+	std::vector<std::pair<xform_t, var_id>> activeTilesInUnit;
+	for (const auto& ti: tilemap_) {
+		if (model[ti.second] == CMSat::l_True && tileHasActivePresence(ti.first)) {
+			activeTilesInUnit.push_back(ti);
+		}
+	}
+	
+	std::cerr << "Active tiles with presence in active units: " << activeTilesInUnit.size() << std::endl;
+	
+	// For each active tile with active presence, check for missing translated tiles
+	point_t V1 = grid::translationV1;
+	point_t V2 = grid::translationV2;
+	
+	for (const auto& ti: activeTilesInUnit) {
+		const xform_t& T = ti.first;
+		std::cerr << "Tile " << T << ":" << std::endl;
+		
+		// Check translations in cardinal directions
+		std::vector<std::pair<std::string, point_t>> translations = {
+			{"+V1", V1},
+			{"-V1", -V1},
+			{"+V2", V2},
+			{"-V2", -V2}
+		};
+		
+		for (const auto& trans: translations) {
+			xform_t T_translated = T.translate(trans.second);
+			
+			// Check if this translated tile should have presence in active units
+			if (!tileHasActivePresence(T_translated)) {
+				continue;  // Skip - not in active region
+			}
+			
+			// Check if it's in tilemap
+			auto found = tilemap_.find(T_translated);
+			if (found == tilemap_.end()) {
+				std::cerr << "  MISSING in tilemap: " << trans.first << " -> " << T_translated << std::endl;
+			} else if (model[found->second] != CMSat::l_True) {
+				std::cerr << "  NOT ACTIVE: " << trans.first << " -> " << T_translated 
+				          << " (var " << found->second << ")" << std::endl;
+			}
+		}
+	}
+	
+	std::cerr << "=== END DEBUG ===" << std::endl;
 }
