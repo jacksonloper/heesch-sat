@@ -9,8 +9,7 @@ const bool DEBUG = false;
 // Result type for periodic solver
 enum class Result {
 	YES,          // Tiles periodically with valid translation
-	NO,           // Cannot tile periodically
-	INCONCLUSIVE  // Result is unreliable (solution at boundary)
+	NO            // Cannot tile periodically
 };
 
 // Information about a periodic tiling solution
@@ -174,28 +173,13 @@ Periodic::Result PeriodicSolver<grid>::solve(std::vector<xform_t>* patch,
 		return Periodic::Result::NO;
 	}
 
-	// SAT found a solution - check if it's at the boundary
+	// SAT found a solution
 	const std::vector<CMSat::lbool>& model = solver.get_model();
-
-	// Check if the solution uses the maximum width (h_vars_[w_-1] is true)
-	// or maximum height (v_vars_[h_-1] is true). If so, the result is
-	// inconclusive because the periodic tiling may require a larger domain.
-	bool at_boundary = false;
-	if (w_ > 0 && model[h_vars_[w_ - 1]] == CMSat::l_True) {
-		at_boundary = true;
-	}
-	if (h_ > 0 && model[v_vars_[h_ - 1]] == CMSat::l_True) {
-		at_boundary = true;
-	}
 
 	if (Periodic::DEBUG) {
 		std::cerr << "-----" << std::endl;
-		std::cerr << "SOLVED" << (at_boundary ? " (AT BOUNDARY - INCONCLUSIVE)" : "") << std::endl;
+		std::cerr << "SOLVED" << std::endl;
 		debugSolution(solver);
-	}
-
-	if (at_boundary) {
-		return Periodic::Result::INCONCLUSIVE;
 	}
 
 	// Valid solution found - extract patch if requested
@@ -410,27 +394,12 @@ void PeriodicSolver<grid>::addOccupancyClauses(CMSat::SATSolver& solver) const
 		var_id cv = ci.id_;
 		var_id uv = unit_vars_[ci.unit_.y_ * w_ + ci.unit_.x_];
 
-/*
-		std::cerr << "Cell " << pa.first << " [" << cv << "] <=> unit "
-			<< ci.unit_ << " [" << uv << "]" << std::endl;
-			*/
-
-/*
-		cl[0] = neg(cv);
-		cl[1] = pos(uv);
-		solver.add_clause(cl);
-		*/
-
 		cl[0] = neg(uv);
 		cl[1] = pos(cv);
 		solver.add_clause(cl);
 	}
-	
-	// Keep track of cells outside the cellmap, where we'd also like
-	// to suppress overlaps.
-	point_set<coord_t> extra_cells;
 
-	// Every tile forces all of its cells
+	// Every tile forces all of its cells (that are in the cellmap)
 	for (const auto& tinfo: tilemap_) {
 		const xform_t& T = tinfo.first;
 		var_id v = tinfo.second;
@@ -442,8 +411,6 @@ void PeriodicSolver<grid>::addOccupancyClauses(CMSat::SATSolver& solver) const
 			if (i != cellmap_.end()) {
 				cl[1] = pos(i->second.id_);
 				solver.add_clause(cl);
-			} else {
-				extra_cells.insert(tp);
 			}
 		}
 	}
@@ -473,118 +440,89 @@ void PeriodicSolver<grid>::addOccupancyClauses(CMSat::SATSolver& solver) const
 			}
 		}
 	}
-
-	for (const auto& cp: extra_cells) {
-		tiles_at_cell.clear();
-		getTilesAtCell(cp, tiles_at_cell);
-
-		for (size_t idx = 0; idx < tiles_at_cell.size(); ++idx) {
-			cl[0] = neg(tiles_at_cell[idx].second);
-			for (size_t jdx = 0; jdx < idx; ++jdx) {
-				cl[1] = neg(tiles_at_cell[jdx].second);
-				solver.add_clause(cl);
-			}
-		}
-	}
 }
 
 template<typename grid>
 void PeriodicSolver<grid>::addWraparoundClauses(CMSat::SATSolver& solver) const
 {
-	std::vector<std::pair<xform_t, var_id>> tiles_at_cell;
 	std::vector<CMSat::Lit> cl;
-	cl.resize(5);
+	cl.resize(3);
 
-	point_t v2 {0, 0};
-	for (size_t y = 0; y < h_; ++y) {
-		cl[0] = neg(v_vars_[y]);
+	// For each possible period y in the V2 direction:
+	// If v_vars_[y] is true (meaning y is the period) and tile T is active,
+	// then T + yV2 and T - yV2 must also be active (if they exist in tilemap)
+	for (size_t y = 1; y < h_; ++y) {
+		point_t v2_offset = grid::translationV2;
+		for (size_t i = 1; i < y; ++i) {
+			v2_offset = v2_offset + grid::translationV2;
+		}
+		// Now v2_offset = y * V2
 
-		// Find all cells in the translation unit translated by y*V2
-		xform_set<coord_t> handled;
+		for (const auto& tinfo: tilemap_) {
+			const xform_t& T = tinfo.first;
+			var_id tv = tinfo.second;
 
-		for (const auto& p: grid::origins) {
-			point_t cp = p + v2;
-			// Find all tiles that might occupy that cell
-			tiles_at_cell.clear();
-			getTilesAtCell(cp, tiles_at_cell);
-			for (const auto& tac: tiles_at_cell) {
-				if (handled.find(tac.first) != handled.end()) {
-					// Seen this tile along the left edge at this y value.
-					continue;
-				}
-				handled.insert(tac.first);
-				cl[3] = neg(tac.second);
+			// Check T + yV2
+			xform_t T_plus = T.translate(v2_offset);
+			auto i_plus = tilemap_.find(T_plus);
+			if (i_plus != tilemap_.end()) {
+				// Clause: NOT v_vars_[y] OR NOT tv OR T_plus
+				// i.e., v_vars_[y] AND tv → T_plus
+				cl[0] = neg(v_vars_[y]);
+				cl[1] = neg(tv);
+				cl[2] = pos(i_plus->second);
+				solver.add_clause(cl);
+			}
 
-				// For every i, add a clause that causes wraparound at
-				// that multiple of V1
-				point v1 = grid::translationV1;
-				for (size_t idx = 1; idx < w_; ++idx) {
-					xform_t NT = tac.first.translate(v1);
-					const auto i = tilemap_.find(NT);
-					if (i == tilemap_.end()) {
-						// Tile not found - this can happen with large grids
-						// where the translated tile falls outside the built cells
-						v1 += grid::translationV1;
-						continue;
-					}
-
-					cl[1] = neg(h_vars_[idx-1]);
-					cl[2] = pos(h_vars_[idx]);
-					cl[4] = pos(i->second);
-					solver.add_clause(cl);
-
-					v1 += grid::translationV1;
-				}
+			// Check T - yV2
+			xform_t T_minus = T.translate(-v2_offset);
+			auto i_minus = tilemap_.find(T_minus);
+			if (i_minus != tilemap_.end()) {
+				// Clause: NOT v_vars_[y] OR NOT tv OR T_minus
+				cl[0] = neg(v_vars_[y]);
+				cl[1] = neg(tv);
+				cl[2] = pos(i_minus->second);
+				solver.add_clause(cl);
 			}
 		}
-
-		v2 += grid::translationV2;
 	}
 
-	point_t v1 {0, 0};
-	for (size_t x = 0; x < w_; ++x) {
-		cl[0] = neg(h_vars_[x]);
+	// For each possible period x in the V1 direction:
+	// If h_vars_[x] is true (meaning x is the period) and tile T is active,
+	// then T + xV1 and T - xV1 must also be active (if they exist in tilemap)
+	for (size_t x = 1; x < w_; ++x) {
+		point_t v1_offset = grid::translationV1;
+		for (size_t i = 1; i < x; ++i) {
+			v1_offset = v1_offset + grid::translationV1;
+		}
+		// Now v1_offset = x * V1
 
-		// Find all cells in the translation unit translated by y*V2
-		xform_set<coord_t> handled;
+		for (const auto& tinfo: tilemap_) {
+			const xform_t& T = tinfo.first;
+			var_id tv = tinfo.second;
 
-		for (const auto& p: grid::origins) {
-			point_t cp = p + v1;
-			// Find all tiles that might occupy that cell
-			tiles_at_cell.clear();
-			getTilesAtCell(cp, tiles_at_cell);
-			for (const auto& tac: tiles_at_cell) {
-				if (handled.find(tac.first) != handled.end()) {
-					// Seen this tile along the left edge at this y value.
-					continue;
-				}
-				handled.insert(tac.first);
-				cl[3] = neg(tac.second);
+			// Check T + xV1
+			xform_t T_plus = T.translate(v1_offset);
+			auto i_plus = tilemap_.find(T_plus);
+			if (i_plus != tilemap_.end()) {
+				// Clause: NOT h_vars_[x] OR NOT tv OR T_plus
+				cl[0] = neg(h_vars_[x]);
+				cl[1] = neg(tv);
+				cl[2] = pos(i_plus->second);
+				solver.add_clause(cl);
+			}
 
-				// For every j, add a clause that causes wraparound at
-				// that multiple of V2
-				point v2 = grid::translationV2;
-				for (size_t jdx = 1; jdx < h_; ++jdx) {
-					xform_t NT = tac.first.translate(v2);
-					const auto i = tilemap_.find(NT);
-					if (i == tilemap_.end()) {
-						// Tile not found - this can happen with large grids
-						// where the translated tile falls outside the built cells
-						v2 += grid::translationV2;
-						continue;
-					}
-
-					cl[1] = neg(v_vars_[jdx-1]);
-					cl[2] = pos(v_vars_[jdx]);
-					cl[4] = pos(i->second);
-					solver.add_clause(cl);
-
-					v2 += grid::translationV2;
-				}
+			// Check T - xV1
+			xform_t T_minus = T.translate(-v1_offset);
+			auto i_minus = tilemap_.find(T_minus);
+			if (i_minus != tilemap_.end()) {
+				// Clause: NOT h_vars_[x] OR NOT tv OR T_minus
+				cl[0] = neg(h_vars_[x]);
+				cl[1] = neg(tv);
+				cl[2] = pos(i_minus->second);
+				solver.add_clause(cl);
 			}
 		}
-
-		v1 += grid::translationV1;
 	}
 }
 
