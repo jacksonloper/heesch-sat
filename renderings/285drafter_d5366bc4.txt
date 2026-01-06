@@ -1,0 +1,1 @@
+We can actually create a 6-coronoa patch from this tile, i.e., Heesch=6 (cf. wonderful article doi.org:10.1007/s00283-020-10034-w).  However, I didn't run it all the way to the max level :).  
