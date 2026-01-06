@@ -160,7 +160,7 @@ Periodic::Result PeriodicSolver<grid>::solve(std::vector<xform_t>* patch,
 	buildCells();
 	buildTiles();
 	
-	if (Periodic::DEBUG || true) {  // Always print for now
+	if (Periodic::DEBUG) {
 		std::cerr << "Built " << cellmap_.size() << " cells and " << tilemap_.size() << " tiles" << std::endl;
 	}
 

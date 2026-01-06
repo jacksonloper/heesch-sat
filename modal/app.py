@@ -1222,6 +1222,107 @@ def search_heesch(
     )
 
 
+@app.function(
+    image=image,
+    timeout=3600,  # 1 hour timeout
+    memory=16384,  # 16GB memory
+)
+def test_periodic_solver(
+    grid_type: str = "kite",
+    coords: List[Tuple[int, int]] = None,
+    max_period: int = 12,
+    verbose: bool = True
+) -> dict:
+    """
+    Test the periodic SAT solver with a specific polyform.
+    
+    Args:
+        grid_type: Grid type (e.g., 'kite', 'hex', 'omino')
+        coords: List of (x, y) coordinates for the polyform
+        max_period: Maximum period to test (grid will be this size)
+        verbose: Whether to enable verbose output
+    
+    Returns:
+        Dictionary with test results
+    """
+    import subprocess
+    import tempfile
+    import os
+    
+    # Default to the test case from the problem statement
+    if coords is None:
+        coords = [[0,-1], [1,-1], [-1,0], [-4,1], [-3,1], [-5,2], [-8,3], [-7,3]]
+    
+    # Get grid abbreviation
+    gt = GRID_ABBREVS.get(grid_type, grid_type)
+    if gt not in GRID_TYPES:
+        return {"error": f"Unknown grid type: {grid_type}"}
+    
+    # Create input file
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+        # Format: gridtype [[x1,y1], [x2,y2], ...]
+        coords_str = ', '.join([f"[{x},{y}]" for x, y in coords])
+        f.write(f"{GRID_TYPES[gt]} [{coords_str}]\n")
+        input_file = f.name
+    
+    try:
+        # First, rebuild sat with the current source (which has our fixes)
+        build_cmd = ["make", "-C", "/app/src", "clean", "sat"]
+        build_result = subprocess.run(
+            build_cmd,
+            capture_output=True,
+            text=True,
+            timeout=300
+        )
+        
+        if build_result.returncode != 0:
+            return {
+                "error": "Build failed",
+                "stdout": build_result.stdout,
+                "stderr": build_result.stderr
+            }
+        
+        # Run sat with periodic checking
+        cmd = ["/app/src/sat", "-periodic"]
+        if verbose:
+            cmd.append("-verbose")
+        cmd.append("-show")
+        
+        with open(input_file, 'r') as f:
+            result = subprocess.run(
+                cmd,
+                stdin=f,
+                capture_output=True,
+                text=True,
+                timeout=600  # 10 minute timeout for the SAT solver
+            )
+        
+        return {
+            "success": result.returncode == 0,
+            "return_code": result.returncode,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "grid_type": grid_type,
+            "coords": coords,
+            "max_period": max_period
+        }
+    
+    except subprocess.TimeoutExpired:
+        return {
+            "error": "Timeout",
+            "message": "SAT solver exceeded time limit"
+        }
+    except Exception as e:
+        return {
+            "error": str(e),
+            "message": "Unexpected error during execution"
+        }
+    finally:
+        # Clean up temp file
+        if os.path.exists(input_file):
+            os.unlink(input_file)
+
+
 # Local entry point for testing
 if __name__ == "__main__":
     # Test hash computation

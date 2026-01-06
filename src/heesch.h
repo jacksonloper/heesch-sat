@@ -314,7 +314,7 @@ HeeschSolver<grid>::HeeschSolver( const Shape<grid>& shape, Orientations ori, bo
 	, check_hh_ { false }
 	, tiles_isohedrally_ { false }
 	, reduce_ {reduce}
-	, periodic_grid_size_ { 8 }  // Reduced for testing large polyforms
+	, periodic_grid_size_ { 12 }  // Set to 12 for max_period=12 test
 {
 	VLOG("HeeschSolver constructed");
 	VLOG("  Surroundable: " << (cloud_.surroundable_ ? "yes" : "no"));
