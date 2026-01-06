@@ -1,1 +1,3 @@
 We can actually create a 6-coronoa patch from this tile: as an object in the plane it has Heesch=6 (cf. wonderful article doi.org:10.1007/s00283-020-10034-w).  However, this patch cannot be created when we are constrained to the drafter grid, so this polyform in this grid system actually has Heesch 0.
+
+Note: See 285drafter (hash d5366bc4) which is the same shape rendered at a larger scale in the drafter grid. The larger scale ensures that all needed placements are possible, allowing it to achieve Heesch=6 within the drafter grid constraints.

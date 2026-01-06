@@ -1,1 +1,3 @@
-We can actually create a 6-coronoa patch from this tile, i.e., Heesch=6 (cf. wonderful article doi.org:10.1007/s00283-020-10034-w).  However, I didn't run it all the way to the max level :).  
+In fact Heesch=6 (cf. wonderful article doi.org:10.1007/s00283-020-10034-w).  However, I didn't run it all the way to the max level :).
+
+Note: This is the same shape as 95drafter (hash fbb93cf3), but rendered at a larger scale in the drafter grid. The larger scale ensures that all needed placements are possible within the grid constraints, allowing this version to achieve suitable patches in the drafter grid, whereas the smaller 95-cell version has Heesch=0 due to placement limitations.  
