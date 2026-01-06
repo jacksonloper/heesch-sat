@@ -451,11 +451,9 @@ void PeriodicSolver<grid>::addWraparoundClauses(CMSat::SATSolver& solver) const
 	// For each possible period y in the V2 direction:
 	// If v_vars_[y] is true (meaning y is the period) and tile T is active,
 	// then T + yV2 and T - yV2 must also be active (if they exist in tilemap)
+	point_t v2_offset {0, 0};
 	for (size_t y = 1; y < h_; ++y) {
-		point_t v2_offset = grid::translationV2;
-		for (size_t i = 1; i < y; ++i) {
-			v2_offset = v2_offset + grid::translationV2;
-		}
+		v2_offset = v2_offset + grid::translationV2;
 		// Now v2_offset = y * V2
 
 		for (const auto& tinfo: tilemap_) {
@@ -490,11 +488,9 @@ void PeriodicSolver<grid>::addWraparoundClauses(CMSat::SATSolver& solver) const
 	// For each possible period x in the V1 direction:
 	// If h_vars_[x] is true (meaning x is the period) and tile T is active,
 	// then T + xV1 and T - xV1 must also be active (if they exist in tilemap)
+	point_t v1_offset {0, 0};
 	for (size_t x = 1; x < w_; ++x) {
-		point_t v1_offset = grid::translationV1;
-		for (size_t i = 1; i < x; ++i) {
-			v1_offset = v1_offset + grid::translationV1;
-		}
+		v1_offset = v1_offset + grid::translationV1;
 		// Now v1_offset = x * V1
 
 		for (const auto& tinfo: tilemap_) {
