@@ -368,7 +368,7 @@ void PeriodicSolver<grid>::addSubgridClauses(CMSat::SATSolver& solver) const
 
 	// Exclude illegal v1 translations
 	point_t v1 = grid::translationV1;
-	for (size_t idx = 1; idx < shape_.size(); ++idx) {
+	for (size_t idx = 1; idx < std::min(shape_.size(), w_); ++idx) {
 		if (hasSelfOverlap(v1)) {
 			// We're not allowed to have h(idx-1) true and h(idx) false,
 			// i.e., this can't be the changeover point.
@@ -381,7 +381,7 @@ void PeriodicSolver<grid>::addSubgridClauses(CMSat::SATSolver& solver) const
 
 	// Exclude illegal v2 translations
 	point_t v2 = grid::translationV2;
-	for (size_t idx = 1; idx < shape_.size(); ++idx) {
+	for (size_t idx = 1; idx < std::min(shape_.size(), h_); ++idx) {
 		if (hasSelfOverlap(v2)) {
 			cl[0] = neg(v_vars_[idx-1]);
 			cl[1] = pos(v_vars_[idx]);
