@@ -186,7 +186,7 @@ public:
 
 	void setPeriodicGridSize( size_t sz )
 	{
-		periodic_grid_size_ = sz;
+		periodic_max_period_ = sz;
 	}
 
 	void setCheckHoleCoronas( bool b )
@@ -252,7 +252,7 @@ private:
 	bool check_hh_;
 	bool tiles_isohedrally_;
 	bool reduce_;
-	size_t periodic_grid_size_;  // Grid size for periodic solver (default 16)
+	size_t periodic_max_period_;  // Max period for periodic solver (default 16)
 };
 
 template<typename grid, typename coord>
@@ -314,7 +314,7 @@ HeeschSolver<grid>::HeeschSolver( const Shape<grid>& shape, Orientations ori, bo
 	, check_hh_ { false }
 	, tiles_isohedrally_ { false }
 	, reduce_ {reduce}
-	, periodic_grid_size_ { 16 }  // Default to 16 for backwards compatibility
+	, periodic_max_period_ { 16 }  // Default to max_period 16 for backwards compatibility
 {
 	VLOG("HeeschSolver constructed");
 	VLOG("  Surroundable: " << (cloud_.surroundable_ ? "yes" : "no"));
@@ -1090,26 +1090,26 @@ void HeeschSolver<grid>::solve(
 		}
 
 		// Check for periodic tiling only at level 2
-		// Use the configured periodic grid size; fail if inconclusive (no backoff)
+		// Use the configured max_period; fail if inconclusive (no backoff)
 		if (check_periodic_ && (level_ == 2)) {
-			VLOG("  Checking periodic tiling at level " << level_ << " (grid size " << periodic_grid_size_ << ")...");
+			VLOG("  Checking periodic tiling at level " << level_ << " (max_period " << periodic_max_period_ << ")...");
 			ManualTimer perTimer;
 			std::vector<xform_t> per_solution;
 			Periodic::SolutionInfo sol_info;
 			
-			// Use configured grid size
-			PeriodicSolver<grid> perSolver {shape_, periodic_grid_size_, periodic_grid_size_};
+			// Use configured max_period (single parameter constructor)
+			PeriodicSolver<grid> perSolver {shape_, periodic_max_period_};
 			auto result = get_solution ? perSolver.solve(&per_solution, &sol_info) : perSolver.solve(nullptr, &sol_info);
-			VLOG("  Periodic solver (" << periodic_grid_size_ << "x" << periodic_grid_size_ << ") returned " << 
+			VLOG("  Periodic solver (max_period=" << periodic_max_period_ << ") returned " << 
 				(result == Periodic::Result::YES ? "YES" : 
 				 result == Periodic::Result::NO ? "NO" : "INCONCLUSIVE") <<
 				" in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
 			
 			// If INCONCLUSIVE, fail instead of backing off to larger grid
 			if (result == Periodic::Result::INCONCLUSIVE) {
-				std::cerr << "ERROR: Periodic solver returned INCONCLUSIVE with grid size " << periodic_grid_size_ 
+				std::cerr << "ERROR: Periodic solver returned INCONCLUSIVE with max_period " << periodic_max_period_ 
 				          << ". Increase -periodic_gridsize and retry." << std::endl;
-				throw std::runtime_error("Periodic grid size insufficient - increase -periodic_gridsize");
+				throw std::runtime_error("Periodic max_period insufficient - increase -periodic_gridsize");
 			}
 			
 			if (result == Periodic::Result::YES) {
@@ -1143,26 +1143,26 @@ void HeeschSolver<grid>::solve(
 		// We iterated above to failure.  First, we might have blown past
 		// maxlevel.  If so, the tile is inconclusive.
 
-		// Last ditch check for anisohedral - use configured grid size
+		// Last ditch check for anisohedral - use configured max_period
 		if (check_periodic_) {
-			VLOG("Checking periodic tiling (grid size " << periodic_grid_size_ << ")...");
+			VLOG("Checking periodic tiling (max_period " << periodic_max_period_ << ")...");
 			ManualTimer perTimer;
 			std::vector<xform_t> per_solution;
 			Periodic::SolutionInfo sol_info;
 			
-			// Use configured grid size
-			PeriodicSolver<grid> perSolver {shape_, periodic_grid_size_, periodic_grid_size_};
+			// Use configured max_period (single parameter constructor)
+			PeriodicSolver<grid> perSolver {shape_, periodic_max_period_};
 			auto result = get_solution ? perSolver.solve(&per_solution, &sol_info) : perSolver.solve(nullptr, &sol_info);
-			VLOG("  Periodic solver (" << periodic_grid_size_ << "x" << periodic_grid_size_ << ") returned " << 
+			VLOG("  Periodic solver (max_period=" << periodic_max_period_ << ") returned " << 
 				(result == Periodic::Result::YES ? "YES" : 
 				 result == Periodic::Result::NO ? "NO" : "INCONCLUSIVE") <<
 				" in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
 			
 			// If INCONCLUSIVE, fail instead of backing off to larger grid
 			if (result == Periodic::Result::INCONCLUSIVE) {
-				std::cerr << "ERROR: Periodic solver returned INCONCLUSIVE with grid size " << periodic_grid_size_ 
+				std::cerr << "ERROR: Periodic solver returned INCONCLUSIVE with max_period " << periodic_max_period_ 
 				          << ". Increase -periodic_gridsize and retry." << std::endl;
-				throw std::runtime_error("Periodic grid size insufficient - increase -periodic_gridsize");
+				throw std::runtime_error("Periodic max_period insufficient - increase -periodic_gridsize");
 			}
 			
 			if (result == Periodic::Result::YES) {
