@@ -1101,16 +1101,8 @@ void HeeschSolver<grid>::solve(
 			PeriodicSolver<grid> perSolver {shape_, periodic_grid_size_, periodic_grid_size_};
 			auto result = get_solution ? perSolver.solve(&per_solution, &sol_info) : perSolver.solve(nullptr, &sol_info);
 			VLOG("  Periodic solver (" << periodic_grid_size_ << "x" << periodic_grid_size_ << ") returned " << 
-				(result == Periodic::Result::YES ? "YES" : 
-				 result == Periodic::Result::NO ? "NO" : "INCONCLUSIVE") <<
+				(result == Periodic::Result::YES ? "YES" : "NO") <<
 				" in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
-			
-			// If INCONCLUSIVE, fail instead of backing off to larger grid
-			if (result == Periodic::Result::INCONCLUSIVE) {
-				std::cerr << "ERROR: Periodic solver returned INCONCLUSIVE with grid size " << periodic_grid_size_ 
-				          << ". Increase -periodic_gridsize and retry." << std::endl;
-				throw std::runtime_error("Periodic grid size insufficient - increase -periodic_gridsize");
-			}
 			
 			if (result == Periodic::Result::YES) {
 				// Found periodic tiling
@@ -1154,16 +1146,8 @@ void HeeschSolver<grid>::solve(
 			PeriodicSolver<grid> perSolver {shape_, periodic_grid_size_, periodic_grid_size_};
 			auto result = get_solution ? perSolver.solve(&per_solution, &sol_info) : perSolver.solve(nullptr, &sol_info);
 			VLOG("  Periodic solver (" << periodic_grid_size_ << "x" << periodic_grid_size_ << ") returned " << 
-				(result == Periodic::Result::YES ? "YES" : 
-				 result == Periodic::Result::NO ? "NO" : "INCONCLUSIVE") <<
+				(result == Periodic::Result::YES ? "YES" : "NO") <<
 				" in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
-			
-			// If INCONCLUSIVE, fail instead of backing off to larger grid
-			if (result == Periodic::Result::INCONCLUSIVE) {
-				std::cerr << "ERROR: Periodic solver returned INCONCLUSIVE with grid size " << periodic_grid_size_ 
-				          << ". Increase -periodic_gridsize and retry." << std::endl;
-				throw std::runtime_error("Periodic grid size insufficient - increase -periodic_gridsize");
-			}
 			
 			if (result == Periodic::Result::YES) {
 				VLOG("  Translation: " << sol_info.translation_w << "×V1 + " << sol_info.translation_h << "×V2 (grid: " << sol_info.grid_width << "×" << sol_info.grid_height << ")");

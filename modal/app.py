@@ -57,7 +57,7 @@ volume = modal.Volume.from_name("heesch-renderings-vol", create_if_missing=True)
 VOLUME_PATH = "/data"
 
 # Image with heesch-sat binaries compiled
-# Build timestamp: 2026-01-05T23:00:00Z - added -periodic_gridsize argument
+# Build timestamp: 2026-01-06T19:20:00Z - fixed periodic solver
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("build-essential", "cmake", "git", "libboost-dev", "zlib1g-dev")
@@ -72,7 +72,9 @@ image = (
     )
     .add_local_dir("../src", "/app/src", copy=True)
     .run_commands(
-        "echo 'Build: 2026-01-05T23:00:00Z' && cd /app/src && make clean render_witness gen",
+        # Clean dependency files (they may contain paths from local system)
+        "rm -f /app/src/*.d /app/src/*.o",
+        "echo 'Build: 2026-01-06T19:20:00Z' && cd /app/src && make render_witness gen",
         "cp /app/src/render_witness /app/src/gen /usr/local/bin/",
     )
 )
