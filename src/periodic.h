@@ -4,7 +4,7 @@
 
 namespace Periodic {
 
-const bool DEBUG = true;  // Enable debug output
+const bool DEBUG = false;  // Disable debug output for cleaner testing
 
 // Result type for periodic solver
 enum class Result {
@@ -169,6 +169,15 @@ Periodic::Result PeriodicSolver<grid>::solve(std::vector<xform_t>* patch,
 	addSubgridClauses(solver);
 	addOccupancyClauses(solver);
 	addWraparoundClauses(solver);
+
+	// Force the last h_var and v_var to be FALSE
+	// This ensures the period is strictly less than w_ and h_
+	// (i.e., we actually have wraparound within the grid)
+	std::vector<CMSat::Lit> unit_clause(1);
+	unit_clause[0] = neg(h_vars_[w_ - 1]);
+	solver.add_clause(unit_clause);
+	unit_clause[0] = neg(v_vars_[h_ - 1]);
+	solver.add_clause(unit_clause);
 
 	if (solver.solve() != CMSat::l_True) {
 		if (Periodic::DEBUG) {
