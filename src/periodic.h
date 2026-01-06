@@ -220,10 +220,12 @@ template<typename grid>
 void PeriodicSolver<grid>::buildCells() {
 	point_t row_start {0, 0};
 
-	for (size_t y = 0; y < h_; ++y) {
+	// Build cells out to w_+1 by h_+1 to ensure wraparound tiles exist
+	for (size_t y = 0; y <= h_; ++y) {
 		point_t O = row_start;
-		for (size_t x = 0; x < w_; ++x) {
-			point_t u {(int16_t)x, (int16_t)y};
+		for (size_t x = 0; x <= w_; ++x) {
+			// Map to unit coordinates (wrapping to the base w_ by h_ region)
+			point_t u {(int16_t)(x % w_), (int16_t)(y % h_)};
 			for (const auto& p: grid::origins) {
 				point_t op = O + p;
 				var_id v = declareVariable();
