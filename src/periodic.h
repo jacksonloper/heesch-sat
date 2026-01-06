@@ -118,8 +118,8 @@ public:
 	
 	// Legacy constructor for backwards compatibility (grid size w x h)
 	// Note: This constructor does not call computeTileExtent() because it uses fixed
-	// grid dimensions (w, h) directly. The tile_extent_* members are set to 0 and
-	// are not used in legacy mode (max_period_ == 0).
+	// grid dimensions (w, h) directly. The tile_extent_* members are initialized to 0
+	// as they are not computed or used when max_period_ == 0 (legacy mode).
 	PeriodicSolver(const Shape<grid>& shape, size_t w, size_t h)
 		: shape_ {shape}
 		, w_ {w}
@@ -778,13 +778,14 @@ void PeriodicSolver<grid>::addWraparoundClauses(CMSat::SATSolver& solver) const
 					}
 					
 					// Translated tile is salient - it MUST exist in tilemap
-					// If it doesn't, the grid was not built large enough (program error)
+					// If it doesn't, there's a bug in tile extent calculation or grid construction
 					auto it = tilemap_.find(NT);
 					if (it == tilemap_.end()) {
 						std::cerr << "FATAL ERROR: Translated tile not found in tilemap!" << std::endl;
 						std::cerr << "  Original tile T activates cells at period (" << px << ", " << py << ")" << std::endl;
 						std::cerr << "  Translation: (" << trans.x_ << ", " << trans.y_ << ")" << std::endl;
-						std::cerr << "  This indicates the grid size is insufficient for the tile extent." << std::endl;
+						std::cerr << "  This indicates the tile extent calculation is incorrect," << std::endl;
+						std::cerr << "  or the grid was not built large enough for max_period=" << max_period_ << std::endl;
 						throw std::runtime_error("Periodic solver: translated salient tile not found in tilemap");
 					}
 					
