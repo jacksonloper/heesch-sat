@@ -218,17 +218,12 @@ Periodic::Result PeriodicSolver<grid>::solve(std::vector<xform_t>* patch,
 
 template<typename grid>
 void PeriodicSolver<grid>::buildCells() {
-	// Build cells for a region that's twice the size in each direction.
-	// This ensures that for any tile T in the base region (0 to w_-1, 0 to h_-1),
-	// the translated tiles T+xV1 and T+yV2 (for any period x < w_, y < h_)
-	// will also have their cells in the cellmap.
 	point_t row_start {0, 0};
 
-	for (size_t y = 0; y < 2 * h_; ++y) {
+	for (size_t y = 0; y < h_; ++y) {
 		point_t O = row_start;
-		for (size_t x = 0; x < 2 * w_; ++x) {
-			// Map to unit coordinates (wrapping to the base region)
-			point_t u {(int16_t)(x % w_), (int16_t)(y % h_)};
+		for (size_t x = 0; x < w_; ++x) {
+			point_t u {(int16_t)x, (int16_t)y};
 			for (const auto& p: grid::origins) {
 				point_t op = O + p;
 				var_id v = declareVariable();
@@ -454,7 +449,8 @@ void PeriodicSolver<grid>::addWraparoundClauses(CMSat::SATSolver& solver) const
 	cl.resize(4);
 
 	// For each possible period y in the V2 direction:
-	// Period is y when v_vars_[y-1]=FALSE and v_vars_[y]=TRUE (the changeover point)
+	// v_vars_[i] = TRUE means period is at least i+1
+	// Period is exactly y when v_vars_[y-1]=TRUE and v_vars_[y]=FALSE
 	// If period is y and tile T is active, then T + yV2 must also be active
 	point_t v2_offset {0, 0};
 	for (size_t y = 1; y < h_; ++y) {
@@ -469,10 +465,10 @@ void PeriodicSolver<grid>::addWraparoundClauses(CMSat::SATSolver& solver) const
 			xform_t T_plus = T.translate(v2_offset);
 			auto i_plus = tilemap_.find(T_plus);
 			if (i_plus != tilemap_.end()) {
-				// Clause: v_vars_[y-1]=T OR v_vars_[y]=F OR tile=inactive OR T_plus=active
-				// i.e., (period=y AND tile active) → T_plus active
-				cl[0] = pos(v_vars_[y - 1]);
-				cl[1] = neg(v_vars_[y]);
+				// Clause fires when: v_vars_[y-1]=T AND v_vars_[y]=F AND tile=active
+				// Clause: v_vars_[y-1]=F OR v_vars_[y]=T OR tile=inactive OR T_plus=active
+				cl[0] = neg(v_vars_[y - 1]);
+				cl[1] = pos(v_vars_[y]);
 				cl[2] = neg(tv);
 				cl[3] = pos(i_plus->second);
 				solver.add_clause(cl);
@@ -482,9 +478,9 @@ void PeriodicSolver<grid>::addWraparoundClauses(CMSat::SATSolver& solver) const
 			xform_t T_minus = T.translate(-v2_offset);
 			auto i_minus = tilemap_.find(T_minus);
 			if (i_minus != tilemap_.end()) {
-				// Clause: v_vars_[y-1]=T OR v_vars_[y]=F OR tile=inactive OR T_minus=active
-				cl[0] = pos(v_vars_[y - 1]);
-				cl[1] = neg(v_vars_[y]);
+				// Clause fires when: v_vars_[y-1]=T AND v_vars_[y]=F AND tile=active
+				cl[0] = neg(v_vars_[y - 1]);
+				cl[1] = pos(v_vars_[y]);
 				cl[2] = neg(tv);
 				cl[3] = pos(i_minus->second);
 				solver.add_clause(cl);
@@ -493,7 +489,8 @@ void PeriodicSolver<grid>::addWraparoundClauses(CMSat::SATSolver& solver) const
 	}
 
 	// For each possible period x in the V1 direction:
-	// Period is x when h_vars_[x-1]=FALSE and h_vars_[x]=TRUE (the changeover point)
+	// h_vars_[i] = TRUE means period is at least i+1
+	// Period is exactly x when h_vars_[x-1]=TRUE and h_vars_[x]=FALSE
 	// If period is x and tile T is active, then T + xV1 must also be active
 	point_t v1_offset {0, 0};
 	for (size_t x = 1; x < w_; ++x) {
@@ -508,9 +505,10 @@ void PeriodicSolver<grid>::addWraparoundClauses(CMSat::SATSolver& solver) const
 			xform_t T_plus = T.translate(v1_offset);
 			auto i_plus = tilemap_.find(T_plus);
 			if (i_plus != tilemap_.end()) {
-				// Clause: h_vars_[x-1]=T OR h_vars_[x]=F OR tile=inactive OR T_plus=active
-				cl[0] = pos(h_vars_[x - 1]);
-				cl[1] = neg(h_vars_[x]);
+				// Clause fires when: h_vars_[x-1]=T AND h_vars_[x]=F AND tile=active
+				// Clause: h_vars_[x-1]=F OR h_vars_[x]=T OR tile=inactive OR T_plus=active
+				cl[0] = neg(h_vars_[x - 1]);
+				cl[1] = pos(h_vars_[x]);
 				cl[2] = neg(tv);
 				cl[3] = pos(i_plus->second);
 				solver.add_clause(cl);
@@ -520,9 +518,9 @@ void PeriodicSolver<grid>::addWraparoundClauses(CMSat::SATSolver& solver) const
 			xform_t T_minus = T.translate(-v1_offset);
 			auto i_minus = tilemap_.find(T_minus);
 			if (i_minus != tilemap_.end()) {
-				// Clause: h_vars_[x-1]=T OR h_vars_[x]=F OR tile=inactive OR T_minus=active
-				cl[0] = pos(h_vars_[x - 1]);
-				cl[1] = neg(h_vars_[x]);
+				// Clause fires when: h_vars_[x-1]=T AND h_vars_[x]=F AND tile=active
+				cl[0] = neg(h_vars_[x - 1]);
+				cl[1] = pos(h_vars_[x]);
 				cl[2] = neg(tv);
 				cl[3] = pos(i_minus->second);
 				solver.add_clause(cl);
