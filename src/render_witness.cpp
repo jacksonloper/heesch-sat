@@ -738,15 +738,71 @@ ProcessResult processShapeToJson(const vector<pair<typename grid::coord_t, typen
 		holesPatch = info.getPatch(1);
 	}
 
-	// For periodic tilers, output all tiles without filtering
-	// (Filtering disabled for debugging - to see all tiles placed by the solver)
+	// For periodic tilers, filter the patch to only include tiles that have
+	// at least one cell inside the active unit area
+	// We use two approaches and verify they agree:
+	// 1. Parallelogram-based (isPointInActiveUnitArea)
+	// 2. Unit-based (same as SAT solver's cell/unit mapping)
 	vector<typename grid::point_t> activeUnitCells;
 	if (tilesPeriodically && result.periodicTranslationW > 0 && result.periodicTranslationH > 0) {
-		cerr << "Periodic patch has " << connectedPatch.size() << " tiles (no filtering applied)" << endl;
+		size_t originalSize = connectedPatch.size();
+
+		// Approach 1: Parallelogram-based filtering
+		patch_t filteredByParallelogram = filterPatchToActiveUnitArea<grid>(
+			shape, connectedPatch,
+			result.periodicTranslationW, result.periodicTranslationH);
+
+		// Approach 2: Unit-based filtering (same as SAT solver)
+		patch_t filteredByUnits = filterPatchByActiveUnits<grid>(
+			shape, connectedPatch,
+			result.periodicTranslationW, result.periodicTranslationH);
+
+		// Compare the two approaches - check both count and content
+		bool approachesMatch = true;
+		if (filteredByParallelogram.size() != filteredByUnits.size()) {
+			approachesMatch = false;
+		} else {
+			// Check that both have the same tiles (by transform)
+			xform_set<coord_t> paraTransforms, unitTransforms;
+			for (const auto& t : filteredByParallelogram) {
+				paraTransforms.insert(t.second);
+			}
+			for (const auto& t : filteredByUnits) {
+				unitTransforms.insert(t.second);
+			}
+			if (paraTransforms != unitTransforms) {
+				approachesMatch = false;
+			}
+		}
+
+		if (!approachesMatch) {
+			cerr << "NOTE: Filtering approaches differ: "
+			     << "parallelogram=" << filteredByParallelogram.size()
+			     << " tiles, units=" << filteredByUnits.size() << " tiles" << endl;
+		}
+
+		// Use the unit-based approach as primary (matches SAT solver's logic)
+		connectedPatch = filteredByUnits;
+
+		// Deduplicate: remove tiles that are periodic copies of other tiles
+		connectedPatch = deduplicatePeriodicCopies<grid, coord_t>(
+			connectedPatch,
+			result.periodicTranslationW, result.periodicTranslationH);
+
+		cerr << "Filtered periodic patch from " << originalSize << " to " 
+		     << connectedPatch.size() << " tiles (active unit area)" << endl;
 
 		// Generate the active unit cells for visualization
 		activeUnitCells = getActiveUnitCells<grid>(
 			result.periodicTranslationW, result.periodicTranslationH);
+
+		// Validate that translated copies behave correctly
+		bool valid = validatePeriodicTranslations<grid>(
+			shape, connectedPatch,
+			result.periodicTranslationW, result.periodicTranslationH);
+		if (!valid) {
+			cerr << "WARNING: Periodic translation validation failed!" << endl;
+		}
 	}
 
 	// For non-tilers with hc=0 and no patch, create a trivial patch
