@@ -127,6 +127,7 @@ private:
 	void addSubgridClauses(CMSat::SATSolver& solver) const;
 	void addOccupancyClauses(CMSat::SATSolver& solver) const;
 	void addWraparoundClauses(CMSat::SATSolver& solver) const;
+	bool isSalient(const xform_t& T, size_t x_period, size_t y_period) const;
 
 	void debugSolution(CMSat::SATSolver& solver) const;
 
@@ -158,6 +159,10 @@ Periodic::Result PeriodicSolver<grid>::solve(std::vector<xform_t>* patch,
 {
 	buildCells();
 	buildTiles();
+	
+	if (Periodic::DEBUG || true) {  // Always print for now
+		std::cerr << "Built " << cellmap_.size() << " cells and " << tilemap_.size() << " tiles" << std::endl;
+	}
 
 	CMSat::SATSolver solver;
 	solver.new_vars(next_var_);
@@ -491,101 +496,121 @@ void PeriodicSolver<grid>::addOccupancyClauses(CMSat::SATSolver& solver) const
 template<typename grid>
 void PeriodicSolver<grid>::addWraparoundClauses(CMSat::SATSolver& solver) const
 {
-	std::vector<std::pair<xform_t, var_id>> tiles_at_cell;
-	std::vector<CMSat::Lit> cl;
-	cl.resize(5);
-
-	point_t v2 {0, 0};
-	for (size_t y = 0; y < h_; ++y) {
-		cl[0] = neg(v_vars_[y]);
-
-		// Find all cells in the translation unit translated by y*V2
-		xform_set<coord_t> handled;
-
-		for (const auto& p: grid::origins) {
-			point_t cp = p + v2;
-			// Find all tiles that might occupy that cell
-			tiles_at_cell.clear();
-			getTilesAtCell(cp, tiles_at_cell);
-			for (const auto& tac: tiles_at_cell) {
-				if (handled.find(tac.first) != handled.end()) {
-					// Seen this tile along the left edge at this y value.
+	// For each possible period (x_period, y_period) where x_period + y_period < max_period
+	// The problem statement says: try all translation pairs (x*V1, y*V2) where x+y < max_period
+	// If we're called with w_=h_=max_period (e.g., 12), we want to try all (x,y) where x+y < 12
+	
+	size_t max_period = std::min(w_, h_);  // Assume w_ == h_
+	
+	for (size_t x_period = 1; x_period < max_period; ++x_period) {
+		for (size_t y_period = 1; y_period < max_period; ++y_period) {
+			if (x_period + y_period >= max_period) {
+				continue;  // Try all periods where x+y < max_period
+			}
+			
+			// Build the translation vectors for this period
+			point_t x_trans {0, 0};
+			for (size_t i = 0; i < x_period; ++i) {
+				x_trans = x_trans + grid::translationV1;
+			}
+			
+			point_t y_trans {0, 0};
+			for (size_t j = 0; j < y_period; ++j) {
+				y_trans = y_trans + grid::translationV2;
+			}
+			
+			// For each tile in the tilemap
+			for (const auto& tile_pair: tilemap_) {
+				const xform_t& T = tile_pair.first;
+				var_id t_var = tile_pair.second;
+				
+				// Check if this tile is salient for period (x_period, y_period)
+				if (!isSalient(T, x_period, y_period)) {
 					continue;
 				}
-				handled.insert(tac.first);
-				cl[3] = neg(tac.second);
-
-				// For every i, add a clause that causes wraparound at
-				// that multiple of V1
-				point v1 = grid::translationV1;
-				for (size_t idx = 1; idx < w_; ++idx) {
-					xform_t NT = tac.first.translate(v1);
-					const auto i = tilemap_.find(NT);
-					if (i == tilemap_.end()) {
-						// Tile not found - this can happen with large grids
-						// where the translated tile falls outside the built cells
-						v1 += grid::translationV1;
+				
+				// This tile is salient. Check the four cardinal translations.
+				point_t translations[4] = {
+					x_trans,                                                    // +x*V1
+					point_t{(int16_t)(-x_trans.x_), (int16_t)(-x_trans.y_)},  // -x*V1
+					y_trans,                                                    // +y*V2
+					point_t{(int16_t)(-y_trans.x_), (int16_t)(-y_trans.y_)}   // -y*V2
+				};
+				
+				for (int dir = 0; dir < 4; ++dir) {
+					xform_t T_trans = T.translate(translations[dir]);
+					
+					// Check if the translated tile exists in tilemap
+					auto it = tilemap_.find(T_trans);
+					if (it == tilemap_.end()) {
 						continue;
 					}
-
-					cl[1] = neg(h_vars_[idx-1]);
-					cl[2] = pos(h_vars_[idx]);
-					cl[4] = pos(i->second);
-					solver.add_clause(cl);
-
-					v1 += grid::translationV1;
+					
+					// Check if the translated tile is also salient for this period
+					if (!isSalient(T_trans, x_period, y_period)) {
+						continue;
+					}
+					
+					// Add the wraparound clause for this specific period
+					// The clause says: if the period is (x_period, y_period) AND T is placed,
+					// THEN T_trans must be placed
+					std::vector<CMSat::Lit> clause;
+					
+					// Condition: period is NOT (x_period, y_period) OR T is not placed OR T_trans is placed
+					// Period is (x_period, y_period) means:
+					//   h_vars_[x_period-1] is true AND (x_period==w_ OR h_vars_[x_period] is false)
+					//   AND v_vars_[y_period-1] is true AND (y_period==h_ OR v_vars_[y_period] is false)
+					
+					// To negate "period is (x_period, y_period)", we need:
+					//   h_vars_[x_period-1] is false OR (x_period<w_ AND h_vars_[x_period] is true)
+					//   OR v_vars_[y_period-1] is false OR (y_period<h_ AND v_vars_[y_period] is true)
+					
+					clause.push_back(neg(h_vars_[x_period - 1]));
+					if (x_period < w_) {
+						clause.push_back(pos(h_vars_[x_period]));
+					}
+					clause.push_back(neg(v_vars_[y_period - 1]));
+					if (y_period < h_) {
+						clause.push_back(pos(v_vars_[y_period]));
+					}
+					
+					// Tile conditions
+					clause.push_back(neg(t_var));
+					clause.push_back(pos(it->second));
+					
+					solver.add_clause(clause);
 				}
 			}
 		}
-
-		v2 += grid::translationV2;
 	}
+}
 
-	point_t v1 {0, 0};
-	for (size_t x = 0; x < w_; ++x) {
-		cl[0] = neg(h_vars_[x]);
-
-		// Find all cells in the translation unit translated by y*V2
-		xform_set<coord_t> handled;
-
-		for (const auto& p: grid::origins) {
-			point_t cp = p + v1;
-			// Find all tiles that might occupy that cell
-			tiles_at_cell.clear();
-			getTilesAtCell(cp, tiles_at_cell);
-			for (const auto& tac: tiles_at_cell) {
-				if (handled.find(tac.first) != handled.end()) {
-					// Seen this tile along the left edge at this y value.
-					continue;
-				}
-				handled.insert(tac.first);
-				cl[3] = neg(tac.second);
-
-				// For every j, add a clause that causes wraparound at
-				// that multiple of V2
-				point v2 = grid::translationV2;
-				for (size_t jdx = 1; jdx < h_; ++jdx) {
-					xform_t NT = tac.first.translate(v2);
-					const auto i = tilemap_.find(NT);
-					if (i == tilemap_.end()) {
-						// Tile not found - this can happen with large grids
-						// where the translated tile falls outside the built cells
-						v2 += grid::translationV2;
-						continue;
-					}
-
-					cl[1] = neg(v_vars_[jdx-1]);
-					cl[2] = pos(v_vars_[jdx]);
-					cl[4] = pos(i->second);
-					solver.add_clause(cl);
-
-					v2 += grid::translationV2;
-				}
-			}
+template<typename grid>
+bool PeriodicSolver<grid>::isSalient(const xform_t& T, size_t x_period, size_t y_period) const
+{
+	// A tile is salient for period (x_period, y_period) if any of its cells
+	// fall within the fundamental domain [0, x_period) by [0, y_period) in unit space
+	
+	for (const auto& p: shape_) {
+		point_t tp = T * p;
+		
+		// Check if this cell is in cellmap_
+		auto it = cellmap_.find(tp);
+		if (it == cellmap_.end()) {
+			continue;  // Cell not in our grid
 		}
-
-		v1 += grid::translationV1;
+		
+		const cell_info_t& ci = it->second;
+		const point_t& unit = ci.unit_;
+		
+		// Check if unit coordinates are in [0, x_period) by [0, y_period)
+		if (unit.x_ >= 0 && unit.x_ < (int16_t)x_period &&
+		    unit.y_ >= 0 && unit.y_ < (int16_t)y_period) {
+			return true;
+		}
 	}
+	
+	return false;
 }
 
 template<typename grid>
