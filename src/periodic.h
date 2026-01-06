@@ -218,12 +218,17 @@ Periodic::Result PeriodicSolver<grid>::solve(std::vector<xform_t>* patch,
 
 template<typename grid>
 void PeriodicSolver<grid>::buildCells() {
+	// Build cells for a region that's twice the size in each direction.
+	// This ensures that for any tile T in the base region (0 to w_-1, 0 to h_-1),
+	// the translated tiles T+xV1 and T+yV2 (for any period x < w_, y < h_)
+	// will also have their cells in the cellmap.
 	point_t row_start {0, 0};
 
-	for (size_t y = 0; y < h_; ++y) {
+	for (size_t y = 0; y < 2 * h_; ++y) {
 		point_t O = row_start;
-		for (size_t x = 0; x < w_; ++x) {
-			point_t u {(int16_t)x, (int16_t)y};
+		for (size_t x = 0; x < 2 * w_; ++x) {
+			// Map to unit coordinates (wrapping to the base region)
+			point_t u {(int16_t)(x % w_), (int16_t)(y % h_)};
 			for (const auto& p: grid::origins) {
 				point_t op = O + p;
 				var_id v = declareVariable();
