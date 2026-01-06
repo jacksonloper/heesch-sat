@@ -1090,7 +1090,7 @@ void HeeschSolver<grid>::solve(
 		}
 
 		// Check for periodic tiling only at level 2
-		// Use the configured max_period; fail if inconclusive (no backoff)
+		// Use the configured max_period
 		if (check_periodic_ && (level_ == 2)) {
 			VLOG("  Checking periodic tiling at level " << level_ << " (max_period " << periodic_max_period_ << ")...");
 			ManualTimer perTimer;
@@ -1101,16 +1101,8 @@ void HeeschSolver<grid>::solve(
 			PeriodicSolver<grid> perSolver {shape_, periodic_max_period_};
 			auto result = get_solution ? perSolver.solve(&per_solution, &sol_info) : perSolver.solve(nullptr, &sol_info);
 			VLOG("  Periodic solver (max_period=" << periodic_max_period_ << ") returned " << 
-				(result == Periodic::Result::YES ? "YES" : 
-				 result == Periodic::Result::NO ? "NO" : "INCONCLUSIVE") <<
+				(result == Periodic::Result::YES ? "YES" : "NO") <<
 				" in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
-			
-			// If INCONCLUSIVE, fail instead of backing off to larger grid
-			if (result == Periodic::Result::INCONCLUSIVE) {
-				std::cerr << "ERROR: Periodic solver returned INCONCLUSIVE with max_period " << periodic_max_period_ 
-				          << ". Increase -periodic_gridsize and retry." << std::endl;
-				throw std::runtime_error("Periodic max_period insufficient - increase -periodic_gridsize");
-			}
 			
 			if (result == Periodic::Result::YES) {
 				// Found periodic tiling
@@ -1154,16 +1146,8 @@ void HeeschSolver<grid>::solve(
 			PeriodicSolver<grid> perSolver {shape_, periodic_max_period_};
 			auto result = get_solution ? perSolver.solve(&per_solution, &sol_info) : perSolver.solve(nullptr, &sol_info);
 			VLOG("  Periodic solver (max_period=" << periodic_max_period_ << ") returned " << 
-				(result == Periodic::Result::YES ? "YES" : 
-				 result == Periodic::Result::NO ? "NO" : "INCONCLUSIVE") <<
+				(result == Periodic::Result::YES ? "YES" : "NO") <<
 				" in " << std::fixed << std::setprecision(4) << perTimer.elapsed() << "s");
-			
-			// If INCONCLUSIVE, fail instead of backing off to larger grid
-			if (result == Periodic::Result::INCONCLUSIVE) {
-				std::cerr << "ERROR: Periodic solver returned INCONCLUSIVE with max_period " << periodic_max_period_ 
-				          << ". Increase -periodic_gridsize and retry." << std::endl;
-				throw std::runtime_error("Periodic max_period insufficient - increase -periodic_gridsize");
-			}
 			
 			if (result == Periodic::Result::YES) {
 				VLOG("  Translation: " << sol_info.translation_w << "×V1 + " << sol_info.translation_h << "×V2 (grid: " << sol_info.grid_width << "×" << sol_info.grid_height << ")");

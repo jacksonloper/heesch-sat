@@ -9,8 +9,7 @@ const bool DEBUG = false;
 // Result type for periodic solver
 enum class Result {
 	YES,          // Tiles periodically with valid translation
-	NO,           // Cannot tile periodically
-	INCONCLUSIVE  // Result is unreliable (solution at boundary)
+	NO            // Cannot tile periodically
 };
 
 // Information about a periodic tiling solution
@@ -118,6 +117,9 @@ public:
 	}
 	
 	// Legacy constructor for backwards compatibility (grid size w x h)
+	// Note: This constructor does not call computeTileExtent() because it uses fixed
+	// grid dimensions (w, h) directly. The tile_extent_* members are set to 0 and
+	// are not used in legacy mode (max_period_ == 0).
 	PeriodicSolver(const Shape<grid>& shape, size_t w, size_t h)
 		: shape_ {shape}
 		, w_ {w}
@@ -336,28 +338,13 @@ Periodic::Result PeriodicSolver<grid>::solve(std::vector<xform_t>* patch,
 		return Periodic::Result::NO;
 	}
 
-	// SAT found a solution - check if it's at the boundary
+	// SAT found a solution
 	const std::vector<CMSat::lbool>& model = solver.get_model();
-
-	// Check if the solution uses the maximum width (h_vars_[w_-1] is true)
-	// or maximum height (v_vars_[h_-1] is true). If so, the result is
-	// inconclusive because the periodic tiling may require a larger domain.
-	bool at_boundary = false;
-	if (w_ > 0 && model[h_vars_[w_ - 1]] == CMSat::l_True) {
-		at_boundary = true;
-	}
-	if (h_ > 0 && model[v_vars_[h_ - 1]] == CMSat::l_True) {
-		at_boundary = true;
-	}
 
 	if (Periodic::DEBUG) {
 		std::cerr << "-----" << std::endl;
-		std::cerr << "SOLVED" << (at_boundary ? " (AT BOUNDARY - INCONCLUSIVE)" : "") << std::endl;
+		std::cerr << "SOLVED" << std::endl;
 		debugSolution(solver);
-	}
-
-	if (at_boundary) {
-		return Periodic::Result::INCONCLUSIVE;
 	}
 
 	// Valid solution found - extract patch if requested
@@ -784,15 +771,21 @@ void PeriodicSolver<grid>::addWraparoundClauses(CMSat::SATSolver& solver) const
 				for (const auto& trans : translations) {
 					xform_t NT = T.translate(trans);
 					
-					// Check if translated tile exists in tilemap
-					auto it = tilemap_.find(NT);
-					if (it == tilemap_.end()) {
+					// Check if translated tile is salient
+					// If not salient, we don't need a wraparound constraint for this direction
+					if (!isTileSalient(NT, px, py)) {
 						continue;
 					}
 					
-					// Check if translated tile is also salient
-					if (!isTileSalient(NT, px, py)) {
-						continue;
+					// Translated tile is salient - it MUST exist in tilemap
+					// If it doesn't, the grid was not built large enough (program error)
+					auto it = tilemap_.find(NT);
+					if (it == tilemap_.end()) {
+						std::cerr << "FATAL ERROR: Translated tile not found in tilemap!" << std::endl;
+						std::cerr << "  Original tile T activates cells at period (" << px << ", " << py << ")" << std::endl;
+						std::cerr << "  Translation: (" << trans.x_ << ", " << trans.y_ << ")" << std::endl;
+						std::cerr << "  This indicates the grid size is insufficient for the tile extent." << std::endl;
+						throw std::runtime_error("Periodic solver: translated salient tile not found in tilemap");
 					}
 					
 					// Add clause: period condition AND p active → q active
