@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import JSZip from 'jszip'
 import './PunchoutGenerator.css'
 
 // Default image path
@@ -27,7 +28,7 @@ function PunchoutGenerator({ witness, onClose }) {
   const [imageError, setImageError] = useState(null)
   const [generating, setGenerating] = useState(false)
   const [nickSize, setNickSize] = useState(NICK_SIZE)
-  const [previewMode, setPreviewMode] = useState('combined') // 'combined', 'cuts', 'pieces'
+  const [previewMode, setPreviewMode] = useState('combined') // 'combined', 'cuts', 'pieces', 'individual'
   const fileInputRef = useRef(null)
   const canvasRef = useRef(null)
   const imageRef = useRef(null)
@@ -107,6 +108,33 @@ function PunchoutGenerator({ witness, onClose }) {
   const width = maxX - minX + padding * 2
   const height = maxY - minY + padding * 2
   const viewBox = `${minX - padding} ${minY - padding} ${width} ${height}`
+
+  // Compute individual piece bounds for the "individual" preview mode
+  const pieceBounds = useMemo(() => {
+    if (!hasValidData) return []
+    
+    return patch.map(tile => {
+      let pMinX = Infinity, pMaxX = -Infinity
+      let pMinY = Infinity, pMaxY = -Infinity
+      
+      tile_boundary.forEach(([[x1, y1]]) => {
+        const [tx, ty] = transformPoint([x1, y1], tile.transform)
+        pMinX = Math.min(pMinX, tx)
+        pMaxX = Math.max(pMaxX, tx)
+        pMinY = Math.min(pMinY, ty)
+        pMaxY = Math.max(pMaxY, ty)
+      })
+      
+      return {
+        minX: pMinX,
+        maxX: pMaxX,
+        minY: pMinY,
+        maxY: pMaxY,
+        width: pMaxX - pMinX,
+        height: pMaxY - pMinY
+      }
+    })
+  }, [patch, tile_boundary, hasValidData])
 
   // Convert from C++ xform [a,b,c,d,e,f] to SVG matrix(a,b,c,d,e,f)
   const getSvgTransform = ([a, b, c, d, e, f]) =>
@@ -346,40 +374,32 @@ function PunchoutGenerator({ witness, onClose }) {
   const handleDownloadAll = async () => {
     setGenerating(true)
     try {
-      // Generate cut SVGs
+      const zip = new JSZip()
+      
+      // Generate cut SVGs and add to zip
       const cutSvgs = generateCutSvgFiles()
-      
-      // Generate piece PNGs
-      const piecePngs = await generatePiecePngs()
-      
-      // Download each file individually (since we don't have a zip library)
-      // First, download SVGs
+      const cutsFolder = zip.folder('cuts')
       for (const file of cutSvgs) {
-        const blob = new Blob([file.content], { type: 'image/svg+xml' })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = file.name
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-        URL.revokeObjectURL(url)
-        // Small delay between downloads
-        await new Promise(resolve => setTimeout(resolve, 100))
+        cutsFolder.file(file.name, file.content)
       }
       
-      // Then, download PNGs
+      // Generate piece PNGs and add to zip
+      const piecePngs = await generatePiecePngs()
+      const piecesFolder = zip.folder('pieces')
       for (const file of piecePngs) {
-        const url = URL.createObjectURL(file.blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = file.name
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-        URL.revokeObjectURL(url)
-        await new Promise(resolve => setTimeout(resolve, 100))
+        piecesFolder.file(file.name, file.blob)
       }
+      
+      // Generate and download the zip file
+      const zipBlob = await zip.generateAsync({ type: 'blob' })
+      const url = URL.createObjectURL(zipBlob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${witness.cell_count}-${witness.grid_type}-${witness.hash}_punchout.zip`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
     } catch (error) {
       console.error('Error generating punchout assets:', error)
       alert(`Error generating assets: ${error.message}`)
@@ -531,58 +551,60 @@ function PunchoutGenerator({ witness, onClose }) {
                   <option value="combined">Combined</option>
                   <option value="cuts">Cut Lines Only</option>
                   <option value="pieces">Image Pieces</option>
+                  <option value="individual">Individual Pieces</option>
                 </select>
               </label>
             </div>
             
-            <div className="preview-container">
-              <svg viewBox={viewBox} className="preview-svg">
-                <defs>
-                  <path id={`punchout-tile-${witness.hash}`} d={tilePath} />
-                  {imageLoaded && (
-                    <pattern 
-                      id="image-pattern" 
-                      patternUnits="userSpaceOnUse"
-                      x={minX - padding}
-                      y={minY - padding}
-                      width={width}
-                      height={height}
-                    >
-                      <image 
-                        href={imageUrl}
-                        x={padding}
-                        y={padding}
-                        width={maxX - minX}
-                        height={maxY - minY}
-                        preserveAspectRatio="xMidYMid slice"
-                      />
-                    </pattern>
-                  )}
-                </defs>
-
-                {/* Draw pieces with image or color */}
-                {(previewMode === 'combined' || previewMode === 'pieces') && (
-                  <g className="pieces-layer">
-                    {patch.map((tile, i) => (
-                      <use
-                        key={i}
-                        href={`#punchout-tile-${witness.hash}`}
-                        transform={getSvgTransform(tile.transform)}
-                        fill={imageLoaded ? 'url(#image-pattern)' : '#e0e0e0'}
-                        stroke="#999"
-                        strokeWidth={0.02}
-                      />
-                    ))}
-                  </g>
-                )}
-
-                {/* Draw cut lines with nicks */}
-                {(previewMode === 'combined' || previewMode === 'cuts') && (
-                  <g className="cuts-layer">
-                    {patch.map((tile, idx) => {
-                      const segments = generatePathWithNicks(tile_boundary, tile.transform, nickSize)
-                      return (
-                        <g key={idx}>
+            {/* Individual pieces preview - shows each piece in its own box */}
+            {previewMode === 'individual' ? (
+              <div className="individual-preview-container">
+                {patch.map((tile, idx) => {
+                  const pBounds = pieceBounds[idx]
+                  if (!pBounds) return null
+                  
+                  const pPad = 0.5
+                  const pViewBox = `${pBounds.minX - pPad} ${pBounds.minY - pPad} ${pBounds.width + pPad * 2} ${pBounds.height + pPad * 2}`
+                  const segments = generatePathWithNicks(tile_boundary, tile.transform, nickSize)
+                  
+                  return (
+                    <div key={idx} className="individual-piece-card">
+                      <svg viewBox={pViewBox} className="individual-piece-svg">
+                        <defs>
+                          {/* Create a clip path for this specific piece */}
+                          <clipPath id={`piece-clip-${idx}`}>
+                            <use
+                              href={`#punchout-tile-${witness.hash}`}
+                              transform={getSvgTransform(tile.transform)}
+                            />
+                          </clipPath>
+                        </defs>
+                        
+                        {/* Draw piece with clipped image */}
+                        {imageLoaded && (
+                          <g clipPath={`url(#piece-clip-${idx})`}>
+                            <image
+                              href={imageUrl}
+                              x={minX}
+                              y={minY}
+                              width={maxX - minX}
+                              height={maxY - minY}
+                              preserveAspectRatio="xMidYMid slice"
+                            />
+                          </g>
+                        )}
+                        
+                        {/* Piece outline */}
+                        <use
+                          href={`#punchout-tile-${witness.hash}`}
+                          transform={getSvgTransform(tile.transform)}
+                          fill={imageLoaded ? 'none' : '#e0e0e0'}
+                          stroke="#999"
+                          strokeWidth={0.02}
+                        />
+                        
+                        {/* Cut lines with nicks */}
+                        <g className="cuts-layer">
                           {segments.map((seg, segIdx) => (
                             <line
                               key={segIdx}
@@ -594,12 +616,79 @@ function PunchoutGenerator({ witness, onClose }) {
                             />
                           ))}
                         </g>
-                      )
-                    })}
-                  </g>
-                )}
-              </svg>
-            </div>
+                      </svg>
+                      <span className="piece-label">Piece {idx + 1}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="preview-container">
+                <svg viewBox={viewBox} className="preview-svg">
+                  <defs>
+                    <path id={`punchout-tile-${witness.hash}`} d={tilePath} />
+                    {imageLoaded && (
+                      <pattern 
+                        id="image-pattern" 
+                        patternUnits="userSpaceOnUse"
+                        x={minX}
+                        y={minY}
+                        width={maxX - minX}
+                        height={maxY - minY}
+                      >
+                        <image 
+                          href={imageUrl}
+                          x={0}
+                          y={0}
+                          width={maxX - minX}
+                          height={maxY - minY}
+                          preserveAspectRatio="xMidYMid slice"
+                        />
+                      </pattern>
+                    )}
+                  </defs>
+
+                  {/* Draw pieces with image or color */}
+                  {(previewMode === 'combined' || previewMode === 'pieces') && (
+                    <g className="pieces-layer">
+                      {patch.map((tile, i) => (
+                        <use
+                          key={i}
+                          href={`#punchout-tile-${witness.hash}`}
+                          transform={getSvgTransform(tile.transform)}
+                          fill={imageLoaded ? 'url(#image-pattern)' : '#e0e0e0'}
+                          stroke="#999"
+                          strokeWidth={0.02}
+                        />
+                      ))}
+                    </g>
+                  )}
+
+                  {/* Draw cut lines with nicks */}
+                  {(previewMode === 'combined' || previewMode === 'cuts') && (
+                    <g className="cuts-layer">
+                      {patch.map((tile, idx) => {
+                        const segments = generatePathWithNicks(tile_boundary, tile.transform, nickSize)
+                        return (
+                          <g key={idx}>
+                            {segments.map((seg, segIdx) => (
+                              <line
+                                key={segIdx}
+                                x1={seg.x1}
+                                y1={seg.y1}
+                                x2={seg.x2}
+                                y2={seg.y2}
+                                className={seg.type === 'cut' ? 'cut-line' : 'nick-line'}
+                              />
+                            ))}
+                          </g>
+                        )
+                      })}
+                    </g>
+                  )}
+                </svg>
+              </div>
+            )}
           </div>
 
           <div className="controls-section">

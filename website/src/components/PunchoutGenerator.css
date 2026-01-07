@@ -119,17 +119,54 @@
   max-height: 500px;
 }
 
-.preview-svg .cut-line {
+.preview-svg .cut-line,
+.individual-piece-svg .cut-line {
   stroke: #ff0000;
   stroke-width: 0.08;
   fill: none;
 }
 
-.preview-svg .nick-line {
+.preview-svg .nick-line,
+.individual-piece-svg .nick-line {
   stroke: #00cc00;
   stroke-width: 0.08;
   stroke-dasharray: 0.15 0.08;
   fill: none;
+}
+
+/* Individual pieces preview */
+.individual-preview-container {
+  background: #f8f8f8;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 1rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 0.75rem;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.individual-piece-card {
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.individual-piece-svg {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+}
+
+.piece-label {
+  font-size: 0.7rem;
+  color: #666;
 }
 
 /* Controls Section */
