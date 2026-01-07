@@ -57,10 +57,10 @@ volume = modal.Volume.from_name("heesch-renderings-vol", create_if_missing=True)
 VOLUME_PATH = "/data"
 
 # Image with heesch-sat binaries compiled
-# Build timestamp: 2026-01-06T19:20:00Z - fixed periodic solver
+# Build timestamp: 2026-01-07T01:20:00Z - added debug build with backtrace support
 image = (
     modal.Image.debian_slim(python_version="3.11")
-    .apt_install("build-essential", "cmake", "git", "libboost-dev", "zlib1g-dev")
+    .apt_install("build-essential", "cmake", "git", "libboost-dev", "zlib1g-dev", "gdb")
     .pip_install("fastapi", "psutil")
     # Build CryptoMiniSat from source with LARGEMEM=ON to handle large polyforms
     # This increases the max variable ID limit from 2^28-1 to 2^32-1 (16x larger)
@@ -68,14 +68,20 @@ image = (
         "git clone --depth 1 --branch 5.11.21 https://github.com/msoos/cryptominisat.git /tmp/cms",
         "mkdir -p /tmp/cms/build && cd /tmp/cms/build && cmake -DLARGEMEM=ON -DCMAKE_INSTALL_PREFIX=/usr/local .. && make -j$(nproc) && make install",
         "ldconfig",
-        "rm -rf /tmp/cms",
     )
     .add_local_dir("../src", "/app/src", copy=True)
     .run_commands(
         # Clean dependency files (they may contain paths from local system)
         "rm -f /app/src/*.d /app/src/*.o",
-        "echo 'Build: 2026-01-06T19:20:00Z' && cd /app/src && make render_witness gen",
+        # Build release versions
+        "echo 'Build: 2026-01-07T01:20:00Z' && cd /app/src && make render_witness gen",
         "cp /app/src/render_witness /app/src/gen /usr/local/bin/",
+        # Build debug version with symbols for stack traces
+        "rm -f /app/src/*.d /app/src/*.o",
+        "cd /app/src && make render_witness_debug",
+        "cp /app/src/render_witness_debug /usr/local/bin/",
+        # Clean up
+        "rm -rf /tmp/cms",
     )
 )
 
@@ -266,7 +272,7 @@ def list_all_polyforms(grid_type_filter: Optional[str] = None) -> List[dict]:
     return result
 
 
-def run_render_witness(grid_type: str, coords: List[Tuple[int, int]], timeout: int = 14400, maxlevel: int = 7, periodic_gridsize: int = 16) -> dict:
+def run_render_witness(grid_type: str, coords: List[Tuple[int, int]], timeout: int = 14400, maxlevel: int = 7, periodic_gridsize: int = 16, debug: bool = False) -> dict:
     """Run the render_witness binary to compute Heesch data.
 
     Parameters:
@@ -275,19 +281,30 @@ def run_render_witness(grid_type: str, coords: List[Tuple[int, int]], timeout: i
     - timeout: Timeout in seconds (default 14400 = 4 hours)
     - maxlevel: Maximum corona level for Heesch computation (default 7)
     - periodic_gridsize: Grid size for periodic solver (default 16)
+    - debug: If True, run with debug binary under GDB to capture backtraces on failure
     """
     import tempfile
     import threading
     import time
     import psutil
 
-    # Build command: render_witness -gridtype -maxlevel N -periodic_gridsize M x1 y1 x2 y2 ...
-    cmd = ["render_witness", f"-{grid_type}", "-maxlevel", str(maxlevel), "-periodic_gridsize", str(periodic_gridsize)]
-    for x, y in coords:
-        cmd.extend([str(x), str(y)])
+    # Choose binary based on debug mode
+    binary = "render_witness_debug" if debug else "render_witness"
 
-    print(f"Starting render_witness for {len(coords)} {grid_type} cells (maxlevel={maxlevel}, periodic_gridsize={periodic_gridsize})...")
-    print(f"Command: {' '.join(cmd)}")
+    # Build command: render_witness -gridtype -maxlevel N -periodic_gridsize M x1 y1 x2 y2 ...
+    render_cmd = [binary, f"-{grid_type}", "-maxlevel", str(maxlevel), "-periodic_gridsize", str(periodic_gridsize)]
+    for x, y in coords:
+        render_cmd.extend([str(x), str(y)])
+
+    # In debug mode, wrap with GDB to get backtrace on crash
+    if debug:
+        cmd = ["gdb", "-batch", "-ex", "run", "-ex", "bt full", "-ex", "quit", "--args"] + render_cmd
+        print(f"Starting render_witness in DEBUG mode with GDB...")
+        print(f"GDB command: {' '.join(cmd)}")
+    else:
+        cmd = render_cmd
+        print(f"Starting render_witness for {len(coords)} {grid_type} cells (maxlevel={maxlevel}, periodic_gridsize={periodic_gridsize})...")
+        print(f"Command: {' '.join(cmd)}")
 
     # Create temp directory for output (render_witness writes to ../renderings/)
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -310,7 +327,7 @@ def run_render_witness(grid_type: str, coords: List[Tuple[int, int]], timeout: i
             text=True
         )
 
-        print(f"render_witness started with PID {proc.pid}")
+        print(f"{'GDB with ' if debug else ''}render_witness started with PID {proc.pid}")
 
         # Resource monitoring for the specific process
         stop_monitor = threading.Event()
@@ -375,12 +392,21 @@ def run_render_witness(grid_type: str, coords: List[Tuple[int, int]], timeout: i
             monitor_thread.join(timeout=2)
 
         if proc.returncode != 0:
-            raise RuntimeError(f"render_witness failed: {stderr}")
+            # In debug mode, include both stdout (GDB output) and stderr for full backtrace
+            if debug:
+                error_details = f"render_witness failed (debug mode):\n\n=== GDB OUTPUT (stdout) ===\n{stdout}\n\n=== STDERR ===\n{stderr}"
+                raise RuntimeError(error_details)
+            else:
+                raise RuntimeError(f"render_witness failed: {stderr}")
 
         # Find the output JSON file
         json_files = [f for f in os.listdir(renderings_dir) if f.endswith('.json')]
         if not json_files:
-            raise RuntimeError(f"No output JSON found. stderr: {stderr}")
+            # In debug mode, include full output for troubleshooting
+            if debug:
+                raise RuntimeError(f"No output JSON found.\n\n=== STDOUT ===\n{stdout}\n\n=== STDERR ===\n{stderr}")
+            else:
+                raise RuntimeError(f"No output JSON found. stderr: {stderr}")
 
         json_path = os.path.join(renderings_dir, json_files[0])
         with open(json_path, 'r') as f:
@@ -951,7 +977,8 @@ def compute_polyform(
     timeout: int = 14400,
     maxlevel: int = 7,
     periodic_gridsize: int = 16,
-    memory: int = None
+    memory: int = None,
+    debug: bool = False
 ) -> dict:
     """
     Compute Heesch data for a polyform using the render_witness binary.
@@ -965,6 +992,7 @@ def compute_polyform(
     - maxlevel: Maximum corona level for Heesch computation (default 7)
     - periodic_gridsize: Grid size for periodic solver (default 16)
     - memory: Memory reserved in MB (optional, currently informational only)
+    - debug: If True, run with debug binary under GDB to capture full backtraces on crash/failure
     """
     # Clamp timeout to reasonable range (10 seconds to 4 hours)
     timeout = max(10, min(timeout, 14400))
@@ -1011,7 +1039,7 @@ def compute_polyform(
 
     # Compute using render_witness
     try:
-        data = run_render_witness(gt, parsed, timeout=timeout, maxlevel=maxlevel, periodic_gridsize=periodic_gridsize)
+        data = run_render_witness(gt, parsed, timeout=timeout, maxlevel=maxlevel, periodic_gridsize=periodic_gridsize, debug=debug)
     except Exception as e:
         return {
             "status": "error",
