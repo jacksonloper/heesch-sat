@@ -1,0 +1,374 @@
+.punchout-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  padding: 1rem;
+}
+
+.punchout-generator {
+  background: white;
+  border-radius: 12px;
+  max-width: 1100px;
+  max-height: 95vh;
+  width: 100%;
+  overflow: auto;
+  position: relative;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.punchout-generator .close-btn {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.75rem;
+  background: none;
+  border: none;
+  font-size: 2rem;
+  cursor: pointer;
+  color: #666;
+  line-height: 1;
+  padding: 0;
+  z-index: 10;
+}
+
+.punchout-generator .close-btn:hover {
+  color: #333;
+}
+
+.punchout-header {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid #eee;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-radius: 12px 12px 0 0;
+}
+
+.punchout-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.punchout-header .subtitle {
+  margin: 0.25rem 0 0;
+  opacity: 0.9;
+  font-size: 0.9rem;
+}
+
+.punchout-content {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 1.5rem;
+  padding: 1.5rem;
+}
+
+@media (max-width: 800px) {
+  .punchout-content {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Preview Section */
+.preview-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.preview-controls {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.preview-controls label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: #555;
+}
+
+.preview-controls select {
+  padding: 0.4rem 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  background: white;
+}
+
+.preview-container {
+  background: #f8f8f8;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+}
+
+.preview-svg {
+  width: 100%;
+  height: auto;
+  max-height: 500px;
+}
+
+.preview-svg .cut-line,
+.individual-piece-svg .cut-line {
+  stroke: #ff0000;
+  stroke-width: 0.08;
+  fill: none;
+}
+
+.preview-svg .nick-line,
+.individual-piece-svg .nick-line {
+  stroke: #00cc00;
+  stroke-width: 0.08;
+  stroke-dasharray: 0.15 0.08;
+  fill: none;
+}
+
+/* Individual pieces preview */
+.individual-preview-container {
+  background: #f8f8f8;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 1rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 0.75rem;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.individual-piece-card {
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.individual-piece-svg {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+}
+
+.piece-label {
+  font-size: 0.7rem;
+  color: #666;
+}
+
+/* Controls Section */
+.controls-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.control-group {
+  background: #f9f9f9;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.control-group h3 {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.control-group .help-text {
+  margin: 0 0 0.75rem;
+  font-size: 0.8rem;
+  color: #888;
+  line-height: 1.4;
+}
+
+/* Image Controls */
+.image-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.control-btn {
+  padding: 0.6rem 1rem;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  background: #4a90d9;
+  color: white;
+  transition: all 0.15s ease;
+}
+
+.control-btn:hover {
+  background: #2c5aa0;
+}
+
+.control-btn.secondary {
+  background: #e0e0e0;
+  color: #555;
+}
+
+.control-btn.secondary:hover {
+  background: #d0d0d0;
+}
+
+.error-msg {
+  margin: 0.5rem 0 0;
+  font-size: 0.8rem;
+  color: #c0392b;
+}
+
+.success-msg {
+  margin: 0.5rem 0 0;
+  font-size: 0.8rem;
+  color: #27ae60;
+}
+
+/* Slider Control */
+.slider-control {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.slider-control input[type="range"] {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  -webkit-appearance: none;
+  background: #ddd;
+}
+
+.slider-control input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #667eea;
+  cursor: pointer;
+}
+
+.slider-control input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #667eea;
+  cursor: pointer;
+  border: none;
+}
+
+.slider-control label {
+  font-size: 0.8rem;
+  color: #666;
+  min-width: 6rem;
+}
+
+.slider-value {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #555;
+  min-width: 3rem;
+  text-align: right;
+}
+
+/* Download Controls */
+.download-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.download-btn {
+  padding: 0.75rem 1rem;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  background: #2ecc71;
+  color: white;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.download-btn:hover:not(:disabled) {
+  background: #27ae60;
+}
+
+.download-btn.primary {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  font-weight: 600;
+}
+
+.download-btn.primary:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.download-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Legend */
+.control-group.info {
+  background: #f0f7ff;
+}
+
+.legend {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+  color: #555;
+}
+
+.legend-swatch {
+  width: 24px;
+  height: 4px;
+  border-radius: 2px;
+}
+
+.legend-swatch.cut {
+  background: #ff0000;
+}
+
+.legend-swatch.nick {
+  background: repeating-linear-gradient(
+    90deg,
+    #00cc00 0,
+    #00cc00 4px,
+    transparent 4px,
+    transparent 6px
+  );
+}
+
+/* Error state */
+.punchout-generator .error {
+  padding: 2rem;
+  text-align: center;
+  color: #c0392b;
+}

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import './WitnessViewer.css'
 import { generateGridLines, getPeriodicRegionOutline, getTranslationVectorsPage } from '../utils/gridUtils'
+import PunchoutGenerator from './PunchoutGenerator'
 
 // Color palette for corona levels
 const CORONA_COLORS = [
@@ -69,7 +70,7 @@ function generateDownloadSvg(witness, patch) {
     `matrix(${a} ${d} ${b} ${e} ${c} ${f})`
 
   // Build the SVG string
-  const uses = patch.map((tile, i) => {
+  const uses = patch.map((tile) => {
     const transform = getSvgTransform(tile.transform)
     return `  <use href="#tile" transform="${transform}" fill="${CORONA_COLORS[tile.corona % CORONA_COLORS.length]}" stroke="#333" stroke-width="0.05" opacity="0.8"/>`
   }).join('\n')
@@ -90,6 +91,7 @@ function WitnessViewer({ witness, onClose }) {
   const [showPeriodicCopies, setShowPeriodicCopies] = useState(false)
   const [gridOffsetX] = useState(-1.5)
   const [gridOffsetY] = useState(0.5)
+  const [showPunchout, setShowPunchout] = useState(false)
 
   const activeWitness = showHoles && witness.witness_with_holes
     ? witness.witness_with_holes
@@ -297,6 +299,9 @@ function WitnessViewer({ witness, onClose }) {
               <button className="download-btn" onClick={handleDownloadJson}>
                 Download JSON
               </button>
+              <button className="download-btn punchout-btn" onClick={() => setShowPunchout(true)}>
+                ✂️ Punchout
+              </button>
             </div>
 
             <div className="corona-legend">
@@ -314,6 +319,13 @@ function WitnessViewer({ witness, onClose }) {
           </div>
         </div>
       </div>
+
+      {showPunchout && (
+        <PunchoutGenerator
+          witness={witness}
+          onClose={() => setShowPunchout(false)}
+        />
+      )}
     </div>
   )
 }
