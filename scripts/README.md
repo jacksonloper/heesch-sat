@@ -88,4 +88,4 @@ When `debug=True`, the computation runs with the debug binary under GDB. If the 
 - The job runs asynchronously - the script returns immediately after spawning
 - Results will be stored in the Modal volume at `/data/285D_<hash>.json`
 - Debug logs (if any) are stored in the same volume
-- The compute_polyform function will skip recomputation if the polyform already exists (unless `force=True`)
+- The script uses `force=True` to recompute even if results already exist, ensuring maxlevel=7 is applied

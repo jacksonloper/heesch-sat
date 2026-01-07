@@ -102,7 +102,7 @@ def main():
         function_call = compute_polyform.spawn(
             grid_type=grid_type,
             coords=coord_string,
-            force=False,  # Don't recompute if already exists
+            force=True,  # Force recomputation to update old results with new maxlevel
             timeout=timeout,
             maxlevel=maxlevel,
             debug=debug
