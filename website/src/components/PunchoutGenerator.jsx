@@ -571,27 +571,29 @@ function PunchoutGenerator({ witness, onClose }) {
                     <div key={idx} className="individual-piece-card">
                       <svg viewBox={pViewBox} className="individual-piece-svg">
                         <defs>
-                          {/* Create a clip path for this specific piece */}
-                          <clipPath id={`piece-clip-${idx}`}>
-                            <use
-                              href={`#punchout-tile-${witness.hash}`}
-                              transform={getSvgTransform(tile.transform)}
+                          {/* Clip path for the piece's bounding box - shows the full square, not just the piece shape */}
+                          <clipPath id={`piece-bbox-clip-${idx}`}>
+                            <rect 
+                              x={pBounds.minX} 
+                              y={pBounds.minY} 
+                              width={pBounds.width} 
+                              height={pBounds.height} 
                             />
                           </clipPath>
                         </defs>
                         
-                        {/* Draw piece with clipped image */}
+                        {/* Draw the full image clipped to the piece's bounding box */}
+                        {/* This shows the entire square that would be printed and punched out */}
                         {imageLoaded && (
-                          <g clipPath={`url(#piece-clip-${idx})`}>
-                            <image
-                              href={imageUrl}
-                              x={minX}
-                              y={minY}
-                              width={maxX - minX}
-                              height={maxY - minY}
-                              preserveAspectRatio="xMidYMid slice"
-                            />
-                          </g>
+                          <image
+                            href={imageUrl}
+                            x={minX}
+                            y={minY}
+                            width={maxX - minX}
+                            height={maxY - minY}
+                            preserveAspectRatio="xMidYMid slice"
+                            clipPath={`url(#piece-bbox-clip-${idx})`}
+                          />
                         )}
                         
                         {/* Piece outline */}
