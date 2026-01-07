@@ -144,7 +144,7 @@ All Modal functions require authentication. They can be called via the Modal Pyt
 |----------|-------------|
 | `get_grid_types()` | List supported grid types |
 | `get_polyform(hash, grid_type, coords)` | Get polyform data by hash or coordinates |
-| `compute_polyform(grid_type, coords, force, timeout, maxlevel)` | Compute Heesch for a specific polyform |
+| `compute_polyform(grid_type, coords, force, timeout, maxlevel, debug)` | Compute Heesch for a specific polyform. Set `debug=True` to run with debug binary under GDB for full backtraces on failure |
 | `store_polyform(data)` | Store new polyform data |
 | `list_polyforms(grid_type)` | List cached polyforms |
 | `list_polyforms_full(grid_type)` | List polyforms with full data |
@@ -160,6 +160,24 @@ search = Function.from_name("heesch-renderings", "search_heesch")
 
 # Call the function (requires Modal auth)
 result = search.remote(grid_type="hex", num_cells=6)
+print(result)
+```
+
+### Debug Mode for Troubleshooting Crashes
+
+If a computation fails with an assertion error or crash, use `debug=True` to get a full backtrace:
+
+```python
+from modal import Function
+
+compute = Function.from_name("heesch-renderings", "compute_polyform")
+
+# Run with debug mode to get full backtrace on failure
+result = compute.remote(
+    grid_type="drafter",
+    coords="0,0_1,0_2,0",
+    debug=True  # Runs with GDB to capture stack trace
+)
 print(result)
 ```
 
