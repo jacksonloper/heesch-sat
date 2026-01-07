@@ -47,6 +47,11 @@ on:
         required: false
         type: string
         default: ''
+      debug:
+        description: 'Run with debug binary under GDB to capture full backtraces on crash'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   compute:
@@ -75,6 +80,7 @@ jobs:
           echo "Force: ${{ inputs.force }}"
           echo "Timeout: ${{ inputs.timeout }} seconds"
           echo "Max level: ${{ inputs.maxlevel }}"
+          echo "Debug mode: ${{ inputs.debug }}"
 
           # Normalize coordinates to underscore format (x,y_x,y_x,y)
           # Accepts:
@@ -170,7 +176,8 @@ jobs:
               timeout=${{ inputs.timeout }},
               maxlevel=${{ inputs.maxlevel }},
               periodic_gridsize=${{ inputs.periodic_gridsize }},
-              memory=memory
+              memory=memory,
+              debug=${{ inputs.debug == true && 'True' || 'False' }}
           )
 
           print("Response:")
@@ -202,4 +209,5 @@ jobs:
           echo "- **Max Level:** ${{ inputs.maxlevel }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Periodic Grid Size:** ${{ inputs.periodic_gridsize }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Memory (GB):** ${{ inputs.memory_gb || 'default' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Debug Mode:** ${{ inputs.debug }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Status:** ${{ steps.compute.outputs.status }}" >> $GITHUB_STEP_SUMMARY
