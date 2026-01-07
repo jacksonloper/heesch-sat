@@ -1039,12 +1039,26 @@ def compute_polyform(
     - memory: Memory reserved in MB (optional, currently informational only)
     - debug: If True, run with debug binary under GDB to capture full backtraces on crash/failure
     """
+    print(f"[compute_polyform] Starting computation")
+    print(f"[compute_polyform] Input parameters:")
+    print(f"  - grid_type: {grid_type}")
+    print(f"  - force: {force}")
+    print(f"  - timeout: {timeout}")
+    print(f"  - maxlevel: {maxlevel}")
+    print(f"  - periodic_gridsize: {periodic_gridsize}")
+    print(f"  - debug: {debug}")
+    
     # Clamp timeout to reasonable range (10 seconds to 4 hours)
     timeout = max(10, min(timeout, 14400))
     # Clamp maxlevel to reasonable range (1 to 20)
     maxlevel = max(1, min(maxlevel, 20))
     # Clamp periodic_gridsize to reasonable range (8 to 256)
     periodic_gridsize = max(8, min(periodic_gridsize, 256))
+    
+    print(f"[compute_polyform] After clamping:")
+    print(f"  - timeout: {timeout}")
+    print(f"  - maxlevel: {maxlevel}")
+    print(f"  - periodic_gridsize: {periodic_gridsize}")
 
     # Normalize grid_type (accept both abbreviation and full name)
     gt = grid_type
@@ -1055,6 +1069,8 @@ def compute_polyform(
             "status": "error",
             "message": f"Invalid grid type: {grid_type}. Valid: {list(GRID_TYPES.keys())} or {list(GRID_TYPES.values())}"
         }
+    
+    print(f"[compute_polyform] Normalized grid type: {gt}")
 
     try:
         parsed = parse_coords(coords)
@@ -1063,6 +1079,8 @@ def compute_polyform(
 
     if len(parsed) < 1:
         return {"status": "error", "message": "At least one coordinate required"}
+    
+    print(f"[compute_polyform] Parsed {len(parsed)} cells")
 
     # Validate coordinates for the grid type
     is_valid, error_msg = validate_coordinates(gt, parsed)
@@ -1071,33 +1089,65 @@ def compute_polyform(
             "status": "error",
             "message": f"Invalid coordinates for {gt} grid: {error_msg}"
         }
+    
+    print(f"[compute_polyform] Coordinates validated successfully")
 
     # Check if already computed (unless force=True)
+    print(f"[compute_polyform] Reloading volume...")
     volume.reload()
+    print(f"[compute_polyform] Volume reloaded, checking for existing polyform...")
     existing = find_polyform_by_coords(gt, parsed)
     if existing and not force:
+        print(f"[compute_polyform] Found existing polyform (force=False), returning cached data")
         return {
             "status": "found",
             "message": "Already computed",
             "data": existing
         }
+    
+    if existing:
+        print(f"[compute_polyform] Found existing polyform but force=True, recomputing...")
+    else:
+        print(f"[compute_polyform] No existing polyform found, computing...")
 
     # Compute using render_witness
+    print(f"[compute_polyform] Starting render_witness computation with maxlevel={maxlevel}")
     try:
         data, debug_log = run_render_witness(gt, parsed, timeout=timeout, maxlevel=maxlevel, periodic_gridsize=periodic_gridsize, debug=debug)
     except Exception as e:
+        print(f"[compute_polyform] ERROR: Computation failed: {str(e)}")
         return {
             "status": "error",
             "message": f"Computation failed: {str(e)}"
         }
+    
+    print(f"[compute_polyform] Computation completed successfully")
+    
+    # Log key results
+    heesch_connected = data.get("heesch_connected")
+    heesch_with_holes = data.get("heesch_with_holes")
+    inconclusive = data.get("inconclusive", False)
+    tiles_isohedrally = data.get("tiles_isohedrally", False)
+    tiles_periodically = data.get("tiles_periodically", False)
+    
+    print(f"[compute_polyform] Results:")
+    print(f"  - heesch_connected: {heesch_connected}")
+    print(f"  - heesch_with_holes: {heesch_with_holes}")
+    print(f"  - inconclusive: {inconclusive}")
+    print(f"  - tiles_isohedrally: {tiles_isohedrally}")
+    print(f"  - tiles_periodically: {tiles_periodically}")
 
     # Store the result
     hash_value = data.get("hash", compute_hash(gt, parsed))
     cell_count = len(parsed)
     file_path = get_polyform_path(gt, cell_count, hash_value)
+    
+    print(f"[compute_polyform] Saving result to: {file_path}")
 
     with open(file_path, 'w') as f:
         json.dump(data, f, indent=2)
+    
+    print(f"[compute_polyform] Result file saved successfully")
 
     # Store debug log if in debug mode
     debug_log_path = None
@@ -1106,11 +1156,18 @@ def compute_polyform(
         timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
         debug_log_filename = f"debug_{cell_count}{GRID_ABBREVS[gt]}_{hash_value}_{timestamp}.log"
         debug_log_path = os.path.join(VOLUME_PATH, debug_log_filename)
+        print(f"[compute_polyform] Saving debug log to: {debug_log_path}")
         with open(debug_log_path, 'w') as f:
             f.write(debug_log)
-        print(f"Debug log saved to: {debug_log_path}")
+        print(f"[compute_polyform] Debug log saved successfully")
+    elif debug and not debug_log:
+        print(f"[compute_polyform] WARNING: debug=True but debug_log is None/empty, no debug log saved")
+    else:
+        print(f"[compute_polyform] Debug mode off, no debug log created")
 
+    print(f"[compute_polyform] Committing volume...")
     volume.commit()
+    print(f"[compute_polyform] Volume committed successfully")
 
     result = {
         "status": "computed",
@@ -1120,6 +1177,7 @@ def compute_polyform(
     if debug_log_path:
         result["debug_log_path"] = debug_log_path
     
+    print(f"[compute_polyform] Returning result with status: computed")
     return result
 
 
