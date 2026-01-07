@@ -323,39 +323,69 @@ function PunchoutGenerator({ witness, onClose }) {
   }, [patch, tile_boundary, nickSize, generatePathWithNicks, hasValidData])
 
   /**
+   * Calculate the maximum bounding box size across all pieces
+   * Used to ensure all output files have the same dimensions
+   */
+  const maxPieceDimensions = useMemo(() => {
+    if (!hasValidData || pieceBounds.length === 0) return { width: 0, height: 0 }
+    
+    let maxWidth = 0
+    let maxHeight = 0
+    
+    pieceBounds.forEach(pb => {
+      maxWidth = Math.max(maxWidth, pb.width)
+      maxHeight = Math.max(maxHeight, pb.height)
+    })
+    
+    // Add padding
+    const pad = 1.0
+    return { 
+      width: maxWidth + pad * 2, 
+      height: maxHeight + pad * 2,
+      pad 
+    }
+  }, [pieceBounds, hasValidData])
+
+  /**
    * Generate all cut SVGs as a downloadable package
+   * All SVGs have the same dimensions (max piece size) and viewBox of 0 0 w h
+   * Only cut lines are included (no nick indicator lines)
    */
   const generateCutSvgFiles = useCallback(() => {
     if (!hasValidData) return []
     
     const files = []
+    const { width: svgWidth, height: svgHeight, pad } = maxPieceDimensions
+    const pixelScale = 50 // pixels per unit
     
     patch.forEach((tile, idx) => {
-      const { cutPaths, nickPaths } = generateCutSvg(idx)
+      const pBounds = pieceBounds[idx]
+      if (!pBounds) return
       
-      // Calculate tile bounds
-      let tMinX = Infinity, tMaxX = -Infinity
-      let tMinY = Infinity, tMaxY = -Infinity
-      tile_boundary.forEach(([[x1, y1]]) => {
-        const [tx, ty] = transformPoint([x1, y1], tile.transform)
-        tMinX = Math.min(tMinX, tx)
-        tMaxX = Math.max(tMaxX, tx)
-        tMinY = Math.min(tMinY, ty)
-        tMaxY = Math.max(tMaxY, ty)
-      })
+      // Generate cut polylines (contiguous paths with gaps for nicks)
+      const segments = generatePathWithNicks(tile_boundary, tile.transform, nickSize)
+      const cutPolylines = generateCutPolylines(segments)
       
-      const tPad = 0.5
-      const tWidth = tMaxX - tMinX + tPad * 2
-      const tHeight = tMaxY - tMinY + tPad * 2
+      // Translate polylines so piece is centered in the SVG
+      // The SVG has viewBox "0 0 svgWidth svgHeight" with piece centered
+      const offsetX = pad + (svgWidth - 2 * pad - pBounds.width) / 2 - pBounds.minX
+      const offsetY = pad + (svgHeight - 2 * pad - pBounds.height) / 2 - pBounds.minY
+      
+      // Build path data with translated coordinates
+      const pathData = cutPolylines.map(polyline => 
+        polyline.map((p, i) => {
+          const x = p.x + offsetX
+          const y = p.y + offsetY
+          return i === 0 ? `M ${x} ${y}` : `L ${x} ${y}`
+        }).join(' ')
+      ).join(' ')
       
       const svgContent = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="${tMinX - tPad} ${tMinY - tPad} ${tWidth} ${tHeight}" width="${tWidth * 50}" height="${tHeight * 50}">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgWidth} ${svgHeight}" width="${svgWidth * pixelScale}" height="${svgHeight * pixelScale}">
   <style>
     .cut-line { fill: none; stroke: #ff0000; stroke-width: 0.05; }
-    .nick-line { fill: none; stroke: #00ff00; stroke-width: 0.05; stroke-dasharray: 0.1 0.05; }
   </style>
-  <path class="cut-line" d="${cutPaths}"/>
-  <path class="nick-line" d="${nickPaths}"/>
+  <path class="cut-line" d="${pathData}"/>
 </svg>`
       
       files.push({
@@ -365,10 +395,13 @@ function PunchoutGenerator({ witness, onClose }) {
     })
     
     return files
-  }, [patch, tile_boundary, generateCutSvg, hasValidData])
+  }, [patch, tile_boundary, pieceBounds, maxPieceDimensions, nickSize, generatePathWithNicks, generateCutPolylines, hasValidData])
 
   /**
-   * Generate PNG images for each piece with the image clipped to the piece shape
+   * Generate PNG images for each piece
+   * All PNGs have the same dimensions (max piece size)
+   * Shows the full rectangular image region around the piece (not clipped to piece shape)
+   * This matches how pieces will be printed - full square with the piece punched out
    */
   const generatePiecePngs = useCallback(async () => {
     if (!imageRef.current || !imageLoaded || !hasValidData) {
@@ -380,68 +413,45 @@ function PunchoutGenerator({ witness, onClose }) {
     const imgWidth = img.naturalWidth
     const imgHeight = img.naturalHeight
 
+    // Use the same dimensions as SVGs for alignment
+    const { width: svgWidth, height: svgHeight, pad } = maxPieceDimensions
+    const pixelScale = 50 // pixels per unit - same as SVG
+    const canvasWidth = Math.ceil(svgWidth * pixelScale)
+    const canvasHeight = Math.ceil(svgHeight * pixelScale)
+
     // Calculate scale from puzzle coordinates to image coordinates
     const puzzleWidth = maxX - minX
     const puzzleHeight = maxY - minY
-    const imgScaleX = imgWidth / puzzleWidth
-    const imgScaleY = imgHeight / puzzleHeight
-    // Use uniform scale to maintain aspect ratio
-    const imgScale = Math.min(imgScaleX, imgScaleY)
-    
-    // Calculate scale for canvas (higher res for quality)
-    const canvasScale = imgScale
 
     for (let idx = 0; idx < patch.length; idx++) {
-      const tile = patch[idx]
-      
-      // Calculate tile bounds in puzzle coordinates
-      let tMinX = Infinity, tMaxX = -Infinity
-      let tMinY = Infinity, tMaxY = -Infinity
-      tile_boundary.forEach(([[x1, y1]]) => {
-        const [tx, ty] = transformPoint([x1, y1], tile.transform)
-        tMinX = Math.min(tMinX, tx)
-        tMaxX = Math.max(tMaxX, tx)
-        tMinY = Math.min(tMinY, ty)
-        tMaxY = Math.max(tMaxY, ty)
-      })
+      const pBounds = pieceBounds[idx]
+      if (!pBounds) continue
 
-      const tWidth = tMaxX - tMinX
-      const tHeight = tMaxY - tMinY
-      const canvasWidth = Math.ceil(tWidth * canvasScale)
-      const canvasHeight = Math.ceil(tHeight * canvasScale)
-
-      // Create canvas for this piece
+      // Create canvas with uniform size for all pieces
       const canvas = document.createElement('canvas')
       canvas.width = canvasWidth
       canvas.height = canvasHeight
       const ctx = canvas.getContext('2d')
 
-      // Build clip path in canvas coordinates
-      ctx.beginPath()
-      tile_boundary.forEach(([[x1, y1]], i) => {
-        const [tx, ty] = transformPoint([x1, y1], tile.transform)
-        const cx = (tx - tMinX) * canvasScale
-        const cy = (ty - tMinY) * canvasScale
-        if (i === 0) {
-          ctx.moveTo(cx, cy)
-        } else {
-          ctx.lineTo(cx, cy)
-        }
-      })
-      ctx.closePath()
-      ctx.clip()
+      // Calculate the offset to center the piece's bounding box in the canvas
+      const pieceCanvasX = (pad + (svgWidth - 2 * pad - pBounds.width) / 2) * pixelScale
+      const pieceCanvasY = (pad + (svgHeight - 2 * pad - pBounds.height) / 2) * pixelScale
+      const pieceCanvasWidth = pBounds.width * pixelScale
+      const pieceCanvasHeight = pBounds.height * pixelScale
 
-      // Draw the portion of the image that corresponds to this piece
-      // Source coordinates are in original image space
-      const srcX = (tMinX - minX) * imgScale
-      const srcY = (tMinY - minY) * imgScale
-      const srcWidth = tWidth * imgScale
-      const srcHeight = tHeight * imgScale
-      
+      // Calculate source rectangle in image coordinates
+      // Maps piece bounds to the corresponding region of the original image
+      const srcX = ((pBounds.minX - minX) / puzzleWidth) * imgWidth
+      const srcY = ((pBounds.minY - minY) / puzzleHeight) * imgHeight
+      const srcWidth = (pBounds.width / puzzleWidth) * imgWidth
+      const srcHeight = (pBounds.height / puzzleHeight) * imgHeight
+
+      // Draw the rectangular image portion (not clipped to piece shape)
+      // This is the full square that will be printed and then punched out
       ctx.drawImage(
         img,
         srcX, srcY, srcWidth, srcHeight,  // Source rect (in image coordinates)
-        0, 0, canvasWidth, canvasHeight   // Dest rect (in canvas coordinates)
+        pieceCanvasX, pieceCanvasY, pieceCanvasWidth, pieceCanvasHeight   // Dest rect (in canvas coordinates)
       )
 
       // Convert to blob
@@ -453,7 +463,7 @@ function PunchoutGenerator({ witness, onClose }) {
     }
 
     return files
-  }, [patch, tile_boundary, imageLoaded, minX, minY, maxX, maxY, hasValidData])
+  }, [patch, pieceBounds, maxPieceDimensions, imageLoaded, minX, minY, maxX, maxY, hasValidData])
 
   /**
    * Download all generated assets as a zip file
