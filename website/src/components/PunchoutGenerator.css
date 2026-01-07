@@ -273,6 +273,12 @@
   border: none;
 }
 
+.slider-control label {
+  font-size: 0.8rem;
+  color: #666;
+  min-width: 6rem;
+}
+
 .slider-value {
   font-size: 0.9rem;
   font-weight: 600;

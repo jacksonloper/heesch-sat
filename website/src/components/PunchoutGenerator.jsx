@@ -29,6 +29,10 @@ function PunchoutGenerator({ witness, onClose }) {
   const [generating, setGenerating] = useState(false)
   const [nickSize, setNickSize] = useState(DEFAULT_NICK_SIZE)
   const [previewMode, setPreviewMode] = useState('combined') // 'combined', 'cuts', 'pieces', 'individual'
+  // Image positioning controls (preserves aspect ratio)
+  const [imageScale, setImageScale] = useState(1.0) // 1.0 = fit to puzzle bounds
+  const [imageOffsetX, setImageOffsetX] = useState(0) // offset as fraction of puzzle width (-0.5 to 0.5)
+  const [imageOffsetY, setImageOffsetY] = useState(0) // offset as fraction of puzzle height (-0.5 to 0.5)
   const fileInputRef = useRef(null)
   const canvasRef = useRef(null)
   const imageRef = useRef(null)
@@ -108,6 +112,32 @@ function PunchoutGenerator({ witness, onClose }) {
   const width = maxX - minX + padding * 2
   const height = maxY - minY + padding * 2
   const viewBox = `${minX - padding} ${minY - padding} ${width} ${height}`
+
+  // Calculate puzzle dimensions (without padding)
+  const puzzleWidth = maxX - minX
+  const puzzleHeight = maxY - minY
+
+  // Compute the image bounds based on scale and offset
+  // The image is scaled around the center of the puzzle, then offset
+  const imageBounds = useMemo(() => {
+    const centerX = (minX + maxX) / 2
+    const centerY = (minY + maxY) / 2
+    
+    // Scale the image dimensions (larger scale = more zoom in = smaller coverage area)
+    const scaledWidth = puzzleWidth / imageScale
+    const scaledHeight = puzzleHeight / imageScale
+    
+    // Apply offset (as fraction of puzzle dimensions)
+    const offsetXUnits = imageOffsetX * puzzleWidth
+    const offsetYUnits = imageOffsetY * puzzleHeight
+    
+    return {
+      x: centerX - scaledWidth / 2 + offsetXUnits,
+      y: centerY - scaledHeight / 2 + offsetYUnits,
+      width: scaledWidth,
+      height: scaledHeight
+    }
+  }, [minX, maxX, minY, maxY, puzzleWidth, puzzleHeight, imageScale, imageOffsetX, imageOffsetY])
 
   // Compute individual piece bounds for the "individual" preview mode
   const pieceBounds = useMemo(() => {
@@ -419,10 +449,6 @@ function PunchoutGenerator({ witness, onClose }) {
     const canvasWidth = Math.ceil(svgWidth * pixelScale)
     const canvasHeight = Math.ceil(svgHeight * pixelScale)
 
-    // Calculate scale from puzzle coordinates to image coordinates
-    const puzzleWidth = maxX - minX
-    const puzzleHeight = maxY - minY
-
     for (let idx = 0; idx < patch.length; idx++) {
       const pBounds = pieceBounds[idx]
       if (!pBounds) continue
@@ -439,12 +465,12 @@ function PunchoutGenerator({ witness, onClose }) {
       const pieceCanvasWidth = pBounds.width * pixelScale
       const pieceCanvasHeight = pBounds.height * pixelScale
 
-      // Calculate source rectangle in image coordinates
+      // Calculate source rectangle in image coordinates using imageBounds
       // Maps piece bounds to the corresponding region of the original image
-      const srcX = ((pBounds.minX - minX) / puzzleWidth) * imgWidth
-      const srcY = ((pBounds.minY - minY) / puzzleHeight) * imgHeight
-      const srcWidth = (pBounds.width / puzzleWidth) * imgWidth
-      const srcHeight = (pBounds.height / puzzleHeight) * imgHeight
+      const srcX = ((pBounds.minX - imageBounds.x) / imageBounds.width) * imgWidth
+      const srcY = ((pBounds.minY - imageBounds.y) / imageBounds.height) * imgHeight
+      const srcWidth = (pBounds.width / imageBounds.width) * imgWidth
+      const srcHeight = (pBounds.height / imageBounds.height) * imgHeight
 
       // Draw the rectangular image portion (not clipped to piece shape)
       // This is the full square that will be printed and then punched out
@@ -463,7 +489,7 @@ function PunchoutGenerator({ witness, onClose }) {
     }
 
     return files
-  }, [patch, pieceBounds, maxPieceDimensions, imageLoaded, minX, minY, maxX, maxY, hasValidData])
+  }, [patch, pieceBounds, maxPieceDimensions, imageLoaded, imageBounds, hasValidData])
 
   /**
    * Download all generated assets as a zip file
@@ -555,11 +581,9 @@ function PunchoutGenerator({ witness, onClose }) {
     const imgWidth = img.naturalWidth
     const imgHeight = img.naturalHeight
 
-    // Calculate scale
-    const puzzleWidth = maxX - minX
-    const puzzleHeight = maxY - minY
-    const scaleX = imgWidth / puzzleWidth
-    const scaleY = imgHeight / puzzleHeight
+    // Calculate scale based on imageBounds
+    const scaleX = imgWidth / imageBounds.width
+    const scaleY = imgHeight / imageBounds.height
     const scale = Math.min(scaleX, scaleY)
 
     const canvasWidth = Math.ceil(width * scale)
@@ -591,11 +615,16 @@ function PunchoutGenerator({ witness, onClose }) {
       ctx.closePath()
       ctx.clip()
 
-      // Draw the full image (scaled to fit)
+      // Draw the image using imageBounds for positioning
+      const destX = (imageBounds.x - minX + padding) * scale
+      const destY = (imageBounds.y - minY + padding) * scale
+      const destWidth = imageBounds.width * scale
+      const destHeight = imageBounds.height * scale
+      
       ctx.drawImage(
         img,
         0, 0, imgWidth, imgHeight,
-        padding * scale, padding * scale, puzzleWidth * scale, puzzleHeight * scale
+        destX, destY, destWidth, destHeight
       )
       
       ctx.restore()
@@ -612,7 +641,7 @@ function PunchoutGenerator({ witness, onClose }) {
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
     }, 'image/png')
-  }, [patch, tile_boundary, imageLoaded, minX, minY, maxX, maxY, width, height, witness, hasValidData])
+  }, [patch, tile_boundary, imageLoaded, minX, minY, width, height, padding, imageBounds, witness, hasValidData])
 
   // Early return for invalid data - AFTER all hooks
   if (!hasValidData) {
@@ -685,10 +714,10 @@ function PunchoutGenerator({ witness, onClose }) {
                         {imageLoaded && (
                           <image
                             href={imageUrl}
-                            x={minX}
-                            y={minY}
-                            width={maxX - minX}
-                            height={maxY - minY}
+                            x={imageBounds.x}
+                            y={imageBounds.y}
+                            width={imageBounds.width}
+                            height={imageBounds.height}
                             preserveAspectRatio="xMidYMid slice"
                             clipPath={`url(#piece-bbox-clip-${idx})`}
                           />
@@ -736,10 +765,10 @@ function PunchoutGenerator({ witness, onClose }) {
                           {imageLoaded && (
                             <image
                               href={imageUrl}
-                              x={minX}
-                              y={minY}
-                              width={maxX - minX}
-                              height={maxY - minY}
+                              x={imageBounds.x}
+                              y={imageBounds.y}
+                              width={imageBounds.width}
+                              height={imageBounds.height}
                               preserveAspectRatio="xMidYMid slice"
                               clipPath={`url(#piece-clip-combined-${i})`}
                             />
@@ -810,6 +839,55 @@ function PunchoutGenerator({ witness, onClose }) {
               </div>
               {imageError && <p className="error-msg">{imageError}</p>}
               {imageLoaded && <p className="success-msg">✓ Image loaded</p>}
+            </div>
+
+            <div className="control-group">
+              <h3>Image Position</h3>
+              <p className="help-text">
+                Adjust the image scale and position relative to the puzzle pieces.
+              </p>
+              <div className="slider-control">
+                <label>Scale (zoom)</label>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="3"
+                  step="0.1"
+                  value={imageScale}
+                  onChange={e => setImageScale(parseFloat(e.target.value))}
+                />
+                <span className="slider-value">{(imageScale * 100).toFixed(0)}%</span>
+              </div>
+              <div className="slider-control">
+                <label>Horizontal shift</label>
+                <input
+                  type="range"
+                  min="-0.5"
+                  max="0.5"
+                  step="0.05"
+                  value={imageOffsetX}
+                  onChange={e => setImageOffsetX(parseFloat(e.target.value))}
+                />
+                <span className="slider-value">{(imageOffsetX * 100).toFixed(0)}%</span>
+              </div>
+              <div className="slider-control">
+                <label>Vertical shift</label>
+                <input
+                  type="range"
+                  min="-0.5"
+                  max="0.5"
+                  step="0.05"
+                  value={imageOffsetY}
+                  onChange={e => setImageOffsetY(parseFloat(e.target.value))}
+                />
+                <span className="slider-value">{(imageOffsetY * 100).toFixed(0)}%</span>
+              </div>
+              <button 
+                className="control-btn secondary"
+                onClick={() => { setImageScale(1.0); setImageOffsetX(0); setImageOffsetY(0); }}
+              >
+                🔄 Reset Position
+              </button>
             </div>
 
             <div className="control-group">
