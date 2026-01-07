@@ -213,6 +213,63 @@ function PunchoutGenerator({ witness, onClose }) {
   }, [])
 
   /**
+   * Generate contiguous cut polylines from segments
+   * Groups consecutive cut segments into polylines, breaking at nicks
+   * Returns array of polyline point arrays, each polyline is an array of {x, y} points
+   */
+  const generateCutPolylines = useCallback((segments) => {
+    const polylines = []
+    let currentPolyline = []
+    
+    segments.forEach((seg) => {
+      if (seg.type === 'cut') {
+        // If this is a new polyline or continues from previous cut
+        if (currentPolyline.length === 0) {
+          currentPolyline.push({ x: seg.x1, y: seg.y1 })
+          currentPolyline.push({ x: seg.x2, y: seg.y2 })
+        } else {
+          // Check if this segment continues from the last point
+          const lastPoint = currentPolyline[currentPolyline.length - 1]
+          const epsilon = 0.0001
+          if (Math.abs(lastPoint.x - seg.x1) < epsilon && Math.abs(lastPoint.y - seg.y1) < epsilon) {
+            // Continues from last point, just add the end
+            currentPolyline.push({ x: seg.x2, y: seg.y2 })
+          } else {
+            // Doesn't continue, start a new polyline
+            if (currentPolyline.length > 0) {
+              polylines.push(currentPolyline)
+            }
+            currentPolyline = [{ x: seg.x1, y: seg.y1 }, { x: seg.x2, y: seg.y2 }]
+          }
+        }
+      } else {
+        // Nick - end current polyline
+        if (currentPolyline.length > 0) {
+          polylines.push(currentPolyline)
+          currentPolyline = []
+        }
+      }
+    })
+    
+    // Don't forget the last polyline
+    if (currentPolyline.length > 0) {
+      polylines.push(currentPolyline)
+    }
+    
+    return polylines
+  }, [])
+
+  /**
+   * Convert polyline points to SVG path d attribute
+   */
+  const polylineToPath = useCallback((points) => {
+    if (points.length === 0) return ''
+    return points.map((p, i) => 
+      i === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`
+    ).join(' ')
+  }, [])
+
+  /**
    * Generate SVG for cut lines with nicks
    */
   const generateCutSvg = useCallback((tileIndex) => {
@@ -566,6 +623,7 @@ function PunchoutGenerator({ witness, onClose }) {
                   const pPad = 0.5
                   const pViewBox = `${pBounds.minX - pPad} ${pBounds.minY - pPad} ${pBounds.width + pPad * 2} ${pBounds.height + pPad * 2}`
                   const segments = generatePathWithNicks(tile_boundary, tile.transform, nickSize)
+                  const cutPolylines = generateCutPolylines(segments)
                   
                   return (
                     <div key={idx} className="individual-piece-card">
@@ -596,25 +654,14 @@ function PunchoutGenerator({ witness, onClose }) {
                           />
                         )}
                         
-                        {/* Piece outline */}
-                        <use
-                          href={`#punchout-tile-${witness.hash}`}
-                          transform={getSvgTransform(tile.transform)}
-                          fill={imageLoaded ? 'none' : '#e0e0e0'}
-                          stroke="#999"
-                          strokeWidth={0.02}
-                        />
-                        
-                        {/* Cut lines with nicks */}
+                        {/* Cut lines as contiguous polylines - gaps are where nicks/ties are */}
                         <g className="cuts-layer">
-                          {segments.map((seg, segIdx) => (
-                            <line
-                              key={segIdx}
-                              x1={seg.x1}
-                              y1={seg.y1}
-                              x2={seg.x2}
-                              y2={seg.y2}
-                              className={seg.type === 'cut' ? 'cut-line' : 'nick-line'}
+                          {cutPolylines.map((polyline, polyIdx) => (
+                            <path
+                              key={polyIdx}
+                              d={polylineToPath(polyline)}
+                              className="cut-line"
+                              fill="none"
                             />
                           ))}
                         </g>
