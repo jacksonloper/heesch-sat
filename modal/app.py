@@ -272,7 +272,7 @@ def list_all_polyforms(grid_type_filter: Optional[str] = None) -> List[dict]:
     return result
 
 
-def run_render_witness(grid_type: str, coords: List[Tuple[int, int]], timeout: int = 14400, maxlevel: int = 7, periodic_gridsize: int = 16, debug: bool = False) -> dict:
+def run_render_witness(grid_type: str, coords: List[Tuple[int, int]], timeout: int = 14400, maxlevel: int = 7, periodic_gridsize: int = 16, debug: bool = False) -> Tuple[dict, Optional[str]]:
     """Run the render_witness binary to compute Heesch data.
 
     Parameters:
@@ -282,11 +282,15 @@ def run_render_witness(grid_type: str, coords: List[Tuple[int, int]], timeout: i
     - maxlevel: Maximum corona level for Heesch computation (default 7)
     - periodic_gridsize: Grid size for periodic solver (default 16)
     - debug: If True, run with debug binary under GDB to capture backtraces on failure
+    
+    Returns:
+    - Tuple of (result_dict, debug_log_content) where debug_log_content is None if debug=False
     """
     import tempfile
     import threading
     import time
     import psutil
+    from datetime import datetime
 
     # Choose binary based on debug mode
     binary = "render_witness_debug" if debug else "render_witness"
@@ -395,6 +399,8 @@ def run_render_witness(grid_type: str, coords: List[Tuple[int, int]], timeout: i
             # In debug mode, include both stdout (GDB output) and stderr for full backtrace
             if debug:
                 error_details = f"render_witness failed (debug mode):\n\n=== GDB OUTPUT (stdout) ===\n{stdout}\n\n=== STDERR ===\n{stderr}"
+                # Save debug log even on failure
+                debug_log = _format_debug_log(grid_type, coords, cmd, start_time, time.time(), stdout, stderr, proc.returncode)
                 raise RuntimeError(error_details)
             else:
                 raise RuntimeError(f"render_witness failed: {stderr}")
@@ -404,13 +410,52 @@ def run_render_witness(grid_type: str, coords: List[Tuple[int, int]], timeout: i
         if not json_files:
             # In debug mode, include full output for troubleshooting
             if debug:
+                debug_log = _format_debug_log(grid_type, coords, cmd, start_time, time.time(), stdout, stderr, proc.returncode)
                 raise RuntimeError(f"No output JSON found.\n\n=== STDOUT ===\n{stdout}\n\n=== STDERR ===\n{stderr}")
             else:
                 raise RuntimeError(f"No output JSON found. stderr: {stderr}")
 
         json_path = os.path.join(renderings_dir, json_files[0])
         with open(json_path, 'r') as f:
-            return json.load(f)
+            result = json.load(f)
+        
+        # In debug mode, create a debug log with all output
+        debug_log = None
+        if debug:
+            debug_log = _format_debug_log(grid_type, coords, cmd, start_time, time.time(), stdout, stderr, proc.returncode)
+        
+        return result, debug_log
+
+
+def _format_debug_log(grid_type: str, coords: List[Tuple[int, int]], cmd: List[str], start_time: float, end_time: float, stdout: str, stderr: str, return_code: int) -> str:
+    """Format debug log for saving to volume."""
+    from datetime import datetime
+    
+    elapsed = end_time - start_time
+    timestamp = datetime.utcnow().isoformat() + "Z"
+    coord_str = coords_to_string(coords)
+    
+    log = f"""Debug Log for Polyform Computation
+=====================================
+Timestamp: {timestamp}
+Grid Type: {grid_type}
+Coordinates: {coord_str}
+Cell Count: {len(coords)}
+Elapsed Time: {elapsed:.2f}s
+Return Code: {return_code}
+
+Command:
+{' '.join(cmd)}
+
+=== STDOUT ===
+{stdout}
+
+=== STDERR ===
+{stderr}
+
+=== END OF LOG ===
+"""
+    return log
 
 
 def run_render_witness_batch(
@@ -1039,7 +1084,7 @@ def compute_polyform(
 
     # Compute using render_witness
     try:
-        data = run_render_witness(gt, parsed, timeout=timeout, maxlevel=maxlevel, periodic_gridsize=periodic_gridsize, debug=debug)
+        data, debug_log = run_render_witness(gt, parsed, timeout=timeout, maxlevel=maxlevel, periodic_gridsize=periodic_gridsize, debug=debug)
     except Exception as e:
         return {
             "status": "error",
@@ -1054,12 +1099,28 @@ def compute_polyform(
     with open(file_path, 'w') as f:
         json.dump(data, f, indent=2)
 
+    # Store debug log if in debug mode
+    debug_log_path = None
+    if debug and debug_log:
+        from datetime import datetime
+        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        debug_log_filename = f"debug_{cell_count}{GRID_ABBREVS[gt]}_{hash_value}_{timestamp}.log"
+        debug_log_path = os.path.join(VOLUME_PATH, debug_log_filename)
+        with open(debug_log_path, 'w') as f:
+            f.write(debug_log)
+        print(f"Debug log saved to: {debug_log_path}")
+
     volume.commit()
 
-    return {
+    result = {
         "status": "computed",
         "data": data
     }
+    
+    if debug_log_path:
+        result["debug_log_path"] = debug_log_path
+    
+    return result
 
 
 @app.function(image=image, volumes={VOLUME_PATH: volume}, timeout=60)
