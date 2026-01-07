@@ -9,12 +9,16 @@ else
     OPT = -O3 -DNDEBUG
 endif
 
+# Debug optimization flags (always debug symbols, no optimization, assertions enabled)
+DEBUG_OPT = -g -O0
+
 ifeq ($(UNAME_S),Darwin)
     # macOS settings
     INCLUDES = -I/usr/local/include/cryptominisat5 -I/usr/local/include -I/opt/local/include -I/opt/local/include/cairo
     CXX = clang++
-    CXXFLAGS = -std=c++17 -Wall -MMD $(INCLUDES) $(OPT) -stdlib=libc++ \
+    CXXFLAGS_BASE = -std=c++17 -Wall -MMD $(INCLUDES) -stdlib=libc++ \
         -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk
+    CXXFLAGS = $(CXXFLAGS_BASE) $(OPT)
     LIBS = -L/usr/local/lib -rpath /usr/local/lib -lcryptominisat5
     CAIROLIBS = -L/opt/local/lib -lcairo
 else
@@ -22,7 +26,8 @@ else
     # Include both /usr/local (for custom LARGEMEM build) and /usr (for system package)
     INCLUDES = -I/usr/local/include/cryptominisat5 -I/usr/include/cryptominisat5 $(shell pkg-config --cflags cairo 2>/dev/null)
     CXX = g++
-    CXXFLAGS = -std=c++17 -Wall -MMD $(INCLUDES) $(OPT)
+    CXXFLAGS_BASE = -std=c++17 -Wall -MMD $(INCLUDES)
+    CXXFLAGS = $(CXXFLAGS_BASE) $(OPT)
     # Link against /usr/local first (for custom LARGEMEM build), then fall back to system /usr/lib
     LIBS = -L/usr/local/lib -L/usr/lib -Wl,-rpath,/usr/local/lib -lcryptominisat5
     CAIROLIBS = $(shell pkg-config --libs cairo 2>/dev/null)
@@ -54,7 +59,7 @@ render_witness: render_witness.o
 # Debug version of render_witness with debug symbols for stack traces
 # Usage: make render_witness_debug
 render_witness_debug: render_witness.cpp
-	$(CXX) -std=c++17 -Wall -MMD $(INCLUDES) -g -O0 -o render_witness_debug render_witness.cpp $(LIBS)
+	$(CXX) $(CXXFLAGS_BASE) $(DEBUG_OPT) -o render_witness_debug render_witness.cpp $(LIBS)
 
 # tile: tile.o
 #	$(CXX) $(LIBS) -o tile tile.o

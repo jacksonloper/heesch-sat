@@ -64,11 +64,9 @@ image = (
     .pip_install("fastapi", "psutil")
     # Build CryptoMiniSat from source with LARGEMEM=ON to handle large polyforms
     # This increases the max variable ID limit from 2^28-1 to 2^32-1 (16x larger)
-    # Also build a debug version with symbols for backtrace support
     .run_commands(
         "git clone --depth 1 --branch 5.11.21 https://github.com/msoos/cryptominisat.git /tmp/cms",
         "mkdir -p /tmp/cms/build && cd /tmp/cms/build && cmake -DLARGEMEM=ON -DCMAKE_INSTALL_PREFIX=/usr/local .. && make -j$(nproc) && make install",
-        "mkdir -p /tmp/cms/build_debug && cd /tmp/cms/build_debug && cmake -DLARGEMEM=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=/usr/local/debug .. && make -j$(nproc) && make install",
         "ldconfig",
     )
     .add_local_dir("../src", "/app/src", copy=True)
@@ -300,8 +298,6 @@ def run_render_witness(grid_type: str, coords: List[Tuple[int, int]], timeout: i
 
     # In debug mode, wrap with GDB to get backtrace on crash
     if debug:
-        # GDB batch commands: run the program, and if it crashes, print backtrace
-        gdb_commands = "run\nbt full\nquit\n"
         cmd = ["gdb", "-batch", "-ex", "run", "-ex", "bt full", "-ex", "quit", "--args"] + render_cmd
         print(f"Starting render_witness in DEBUG mode with GDB...")
         print(f"GDB command: {' '.join(cmd)}")
