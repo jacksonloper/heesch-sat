@@ -55,9 +55,6 @@ def main():
     # Get repo root for locating data file
     repo_root = Path(__file__).parent.parent
     
-    # Get repo root for locating data file
-    repo_root = Path(__file__).parent.parent
-    
     # Load coordinates from data/basicdrafter.json
     data_dir = repo_root / "data"
     basicdrafter_path = data_dir / "basicdrafter.json"
