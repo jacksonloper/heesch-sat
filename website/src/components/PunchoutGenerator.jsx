@@ -265,17 +265,21 @@ function PunchoutGenerator({ witness, onClose }) {
     const imgWidth = img.naturalWidth
     const imgHeight = img.naturalHeight
 
-    // Calculate scale to fit image over the entire puzzle
+    // Calculate scale from puzzle coordinates to image coordinates
     const puzzleWidth = maxX - minX
     const puzzleHeight = maxY - minY
-    const scaleX = imgWidth / puzzleWidth
-    const scaleY = imgHeight / puzzleHeight
-    const scale = Math.min(scaleX, scaleY)
+    const imgScaleX = imgWidth / puzzleWidth
+    const imgScaleY = imgHeight / puzzleHeight
+    // Use uniform scale to maintain aspect ratio
+    const imgScale = Math.min(imgScaleX, imgScaleY)
+    
+    // Calculate scale for canvas (higher res for quality)
+    const canvasScale = imgScale
 
     for (let idx = 0; idx < patch.length; idx++) {
       const tile = patch[idx]
       
-      // Calculate tile bounds
+      // Calculate tile bounds in puzzle coordinates
       let tMinX = Infinity, tMaxX = -Infinity
       let tMinY = Infinity, tMaxY = -Infinity
       tile_boundary.forEach(([[x1, y1]]) => {
@@ -288,8 +292,8 @@ function PunchoutGenerator({ witness, onClose }) {
 
       const tWidth = tMaxX - tMinX
       const tHeight = tMaxY - tMinY
-      const canvasWidth = Math.ceil(tWidth * scale)
-      const canvasHeight = Math.ceil(tHeight * scale)
+      const canvasWidth = Math.ceil(tWidth * canvasScale)
+      const canvasHeight = Math.ceil(tHeight * canvasScale)
 
       // Create canvas for this piece
       const canvas = document.createElement('canvas')
@@ -297,12 +301,12 @@ function PunchoutGenerator({ witness, onClose }) {
       canvas.height = canvasHeight
       const ctx = canvas.getContext('2d')
 
-      // Build clip path
+      // Build clip path in canvas coordinates
       ctx.beginPath()
       tile_boundary.forEach(([[x1, y1]], i) => {
         const [tx, ty] = transformPoint([x1, y1], tile.transform)
-        const cx = (tx - tMinX) * scale
-        const cy = (ty - tMinY) * scale
+        const cx = (tx - tMinX) * canvasScale
+        const cy = (ty - tMinY) * canvasScale
         if (i === 0) {
           ctx.moveTo(cx, cy)
         } else {
@@ -313,14 +317,16 @@ function PunchoutGenerator({ witness, onClose }) {
       ctx.clip()
 
       // Draw the portion of the image that corresponds to this piece
-      // The image covers the entire puzzle, so we need to offset based on tile position
-      const imgOffsetX = (tMinX - minX) * scale
-      const imgOffsetY = (tMinY - minY) * scale
+      // Source coordinates are in original image space
+      const srcX = (tMinX - minX) * imgScale
+      const srcY = (tMinY - minY) * imgScale
+      const srcWidth = tWidth * imgScale
+      const srcHeight = tHeight * imgScale
       
       ctx.drawImage(
         img,
-        imgOffsetX, imgOffsetY, canvasWidth, canvasHeight, // Source rect
-        0, 0, canvasWidth, canvasHeight // Dest rect
+        srcX, srcY, srcWidth, srcHeight,  // Source rect (in image coordinates)
+        0, 0, canvasWidth, canvasHeight   // Dest rect (in canvas coordinates)
       )
 
       // Convert to blob
