@@ -179,7 +179,22 @@ result = compute.remote(
     debug=True  # Runs with GDB to capture stack trace
 )
 print(result)
+
+# When debug=True, the result includes a debug_log_path
+# Debug logs are automatically saved to the Modal volume
+if result["status"] == "computed" and "debug_log_path" in result:
+    print(f"Debug log saved to: {result['debug_log_path']}")
+    # Example: /data/debug_3D_abc12345_20260107_013943.log
 ```
+
+**Debug Log Contents:**
+- Timestamp and polyform metadata (grid type, coordinates, cell count)
+- Full command executed (including GDB wrapper)
+- Complete stdout (GDB output)
+- Complete stderr (render_witness output)
+- Execution time and return code
+
+**Naming Convention:** `debug_{cells}{grid}_{hash}_{timestamp}.log`
 
 ### Download Volume Data
 
@@ -187,4 +202,13 @@ To download all polyform JSON files from the Modal volume:
 ```bash
 modal volume ls heesch-renderings-vol
 modal volume get heesch-renderings-vol <filename> <local_path>
+```
+
+To view debug logs:
+```bash
+# List debug logs
+modal volume ls heesch-renderings-vol | grep debug_
+
+# Download a specific debug log
+modal volume get heesch-renderings-vol debug_3H_abc12345_20260107_013943.log ./debug.log
 ```
