@@ -5,9 +5,9 @@ import './PunchoutGenerator.css'
 // Default image path
 const DEFAULT_IMAGE = '/assets/download.webp'
 
-// Nick configuration: size and spacing for the small cuts that hold pieces together
-const NICK_SIZE = 0.15 // Size of each nick as a fraction of edge length
-const NICK_SPACING = 0.3 // Minimum spacing between nicks as fraction of edge length
+// Nick configuration: size of the small uncut sections that hold pieces together
+const DEFAULT_NICK_SIZE = 0.15 // Size of each nick as a fraction of edge length
+const NICKS_PER_PIECE = 4 // Target number of nicks per piece (distributed across edges)
 
 // Transform a point using the affine matrix [a, b, c, d, e, f]
 const transformPoint = ([x, y], [a, b, c, d, e, f]) => [
@@ -27,7 +27,7 @@ function PunchoutGenerator({ witness, onClose }) {
   const [imageLoaded, setImageLoaded] = useState(false)
   const [imageError, setImageError] = useState(null)
   const [generating, setGenerating] = useState(false)
-  const [nickSize, setNickSize] = useState(NICK_SIZE)
+  const [nickSize, setNickSize] = useState(DEFAULT_NICK_SIZE)
   const [previewMode, setPreviewMode] = useState('combined') // 'combined', 'cuts', 'pieces', 'individual'
   const fileInputRef = useRef(null)
   const canvasRef = useRef(null)
@@ -141,72 +141,102 @@ function PunchoutGenerator({ witness, onClose }) {
     `matrix(${a} ${d} ${b} ${e} ${c} ${f})`
 
   /**
-   * Generate a path with nicks (uncut sections) along each edge
+   * Generate a path with nicks (uncut sections) along edges
    * Nicks are small gaps in the cut line that hold pieces together until popped apart
+   * We place ~NICKS_PER_PIECE nicks distributed evenly around the perimeter
    */
   const generatePathWithNicks = useCallback((boundary, transform, nickSizeParam) => {
-    const segments = []
-    
-    boundary.forEach(([[x1, y1], [x2, y2]]) => {
-      // Transform both endpoints
+    // First, calculate total perimeter and gather edge info
+    const edges = boundary.map(([[x1, y1], [x2, y2]]) => {
       const [tx1, ty1] = transformPoint([x1, y1], transform)
       const [tx2, ty2] = transformPoint([x2, y2], transform)
-      
-      // Calculate edge length
       const dx = tx2 - tx1
       const dy = ty2 - ty1
-      const edgeLength = Math.sqrt(dx * dx + dy * dy)
+      const length = Math.sqrt(dx * dx + dy * dy)
+      return { tx1, ty1, tx2, ty2, dx, dy, length }
+    })
+    
+    const totalPerimeter = edges.reduce((sum, e) => sum + e.length, 0)
+    
+    // Calculate nick positions evenly distributed around the perimeter
+    const nickSpacing = totalPerimeter / NICKS_PER_PIECE
+    const nickPositions = [] // positions along the perimeter where nicks should be
+    
+    for (let i = 0; i < NICKS_PER_PIECE; i++) {
+      nickPositions.push((i + 0.5) * nickSpacing)
+    }
+    
+    // The nick size is controlled by the slider (nickSizeParam is a fraction 0-0.5)
+    // Convert to actual length: nickSizeParam * average edge length
+    const avgEdgeLength = totalPerimeter / edges.length
+    const actualNickLength = nickSizeParam * avgEdgeLength
+    
+    // Now generate segments, placing nicks at the calculated positions
+    const segments = []
+    let cumulativeLength = 0
+    let nickIdx = 0
+    
+    edges.forEach((edge) => {
+      const { tx1, ty1, dx, dy, length } = edge
+      const edgeStart = cumulativeLength
+      const edgeEnd = cumulativeLength + length
       
-      // Determine number of nicks based on edge length
-      const minNickSpacing = edgeLength * NICK_SPACING
-      const nickCount = Math.max(1, Math.floor(edgeLength / minNickSpacing))
-      const actualNickSize = Math.min(nickSizeParam, edgeLength * 0.1) // Cap nick size
+      // Find all nicks that fall on this edge
+      const nicksOnEdge = []
+      while (nickIdx < nickPositions.length && nickPositions[nickIdx] < edgeEnd) {
+        const nickCenter = nickPositions[nickIdx]
+        if (nickCenter >= edgeStart) {
+          // Position along this edge (0 to 1)
+          const posOnEdge = (nickCenter - edgeStart) / length
+          nicksOnEdge.push(posOnEdge)
+        }
+        nickIdx++
+      }
       
-      // Create segments with nicks
-      for (let i = 0; i < nickCount; i++) {
-        // Calculate nick position along edge (evenly distributed)
-        const nickStart = (i + 0.5) / nickCount - actualNickSize / (2 * edgeLength)
-        const nickEnd = (i + 0.5) / nickCount + actualNickSize / (2 * edgeLength)
+      // Generate segments for this edge with the nicks
+      let lastPos = 0
+      
+      nicksOnEdge.forEach((nickCenterPos) => {
+        // Nick spans from (center - halfSize) to (center + halfSize)
+        const halfNickFrac = (actualNickLength / 2) / length
+        const nickStart = Math.max(0, nickCenterPos - halfNickFrac)
+        const nickEnd = Math.min(1, nickCenterPos + halfNickFrac)
         
-        // Clamp to edge bounds
-        const clampedStart = Math.max(0, Math.min(1, nickStart))
-        const clampedEnd = Math.max(0, Math.min(1, nickEnd))
-        
-        // Add cut segment before nick (if not at start)
-        if (i === 0 && clampedStart > 0) {
+        // Cut segment before nick
+        if (nickStart > lastPos) {
           segments.push({
             type: 'cut',
-            x1: tx1,
-            y1: ty1,
-            x2: tx1 + dx * clampedStart,
-            y2: ty1 + dy * clampedStart
+            x1: tx1 + dx * lastPos,
+            y1: ty1 + dy * lastPos,
+            x2: tx1 + dx * nickStart,
+            y2: ty1 + dy * nickStart
           })
         }
         
-        // Add nick (uncut segment)
+        // Nick (uncut) segment
         segments.push({
           type: 'nick',
-          x1: tx1 + dx * clampedStart,
-          y1: ty1 + dy * clampedStart,
-          x2: tx1 + dx * clampedEnd,
-          y2: ty1 + dy * clampedEnd
+          x1: tx1 + dx * nickStart,
+          y1: ty1 + dy * nickStart,
+          x2: tx1 + dx * nickEnd,
+          y2: ty1 + dy * nickEnd
         })
         
-        // Add cut segment after nick
-        const nextNickStart = (i + 1) < nickCount 
-          ? (i + 1.5) / nickCount - actualNickSize / (2 * edgeLength)
-          : 1
-        
-        if (clampedEnd < nextNickStart) {
-          segments.push({
-            type: 'cut',
-            x1: tx1 + dx * clampedEnd,
-            y1: ty1 + dy * clampedEnd,
-            x2: tx1 + dx * Math.min(1, nextNickStart),
-            y2: ty1 + dy * Math.min(1, nextNickStart)
-          })
-        }
+        lastPos = nickEnd
+      })
+      
+      // Cut segment after last nick (or full edge if no nicks)
+      if (lastPos < 1) {
+        segments.push({
+          type: 'cut',
+          x1: tx1 + dx * lastPos,
+          y1: ty1 + dy * lastPos,
+          x2: tx1 + dx * 1,
+          y2: ty1 + dy * 1
+        })
       }
+      
+      cumulativeLength = edgeEnd
     })
     
     return segments
