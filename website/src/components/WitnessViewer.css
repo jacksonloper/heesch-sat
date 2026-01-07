@@ -279,3 +279,11 @@
 .download-btn:hover {
   background: #2980b9;
 }
+
+.download-btn.punchout-btn {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.download-btn.punchout-btn:hover {
+  opacity: 0.9;
+}
