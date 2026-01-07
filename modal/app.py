@@ -57,31 +57,22 @@ volume = modal.Volume.from_name("heesch-renderings-vol", create_if_missing=True)
 VOLUME_PATH = "/data"
 
 # Image with heesch-sat binaries compiled
-# Build timestamp: 2026-01-07T01:20:00Z - added debug build with backtrace support
+# Build timestamp: 2026-01-07 - using apt cryptominisat (no LARGEMEM) to test CMSat bug
 image = (
     modal.Image.debian_slim(python_version="3.11")
-    .apt_install("build-essential", "cmake", "git", "libboost-dev", "zlib1g-dev", "gdb")
+    .apt_install("build-essential", "libcryptominisat5-dev", "libboost-dev", "gdb")
     .pip_install("fastapi", "psutil")
-    # Build CryptoMiniSat from source with LARGEMEM=ON to handle large polyforms
-    # This increases the max variable ID limit from 2^28-1 to 2^32-1 (16x larger)
-    .run_commands(
-        "git clone --depth 1 --branch 5.11.21 https://github.com/msoos/cryptominisat.git /tmp/cms",
-        "mkdir -p /tmp/cms/build && cd /tmp/cms/build && cmake -DLARGEMEM=ON -DCMAKE_INSTALL_PREFIX=/usr/local .. && make -j$(nproc) && make install",
-        "ldconfig",
-    )
     .add_local_dir("../src", "/app/src", copy=True)
     .run_commands(
         # Clean dependency files (they may contain paths from local system)
         "rm -f /app/src/*.d /app/src/*.o",
         # Build release versions
-        "echo 'Build: 2026-01-07T01:20:00Z' && cd /app/src && make render_witness gen",
+        "echo 'Build: 2026-01-07 apt-cryptominisat' && cd /app/src && make render_witness gen",
         "cp /app/src/render_witness /app/src/gen /usr/local/bin/",
         # Build debug version with symbols for stack traces
         "rm -f /app/src/*.d /app/src/*.o",
         "cd /app/src && make render_witness_debug",
         "cp /app/src/render_witness_debug /usr/local/bin/",
-        # Clean up
-        "rm -rf /tmp/cms",
     )
 )
 
@@ -396,34 +387,63 @@ def run_render_witness(grid_type: str, coords: List[Tuple[int, int]], timeout: i
             monitor_thread.join(timeout=2)
 
         if proc.returncode != 0:
-            # In debug mode, include both stdout (GDB output) and stderr for full backtrace
+            print(f"render_witness failed with return code {proc.returncode}")
+            # In debug mode, save debug log to volume before raising exception
             if debug:
-                error_details = f"render_witness failed (debug mode):\n\n=== GDB OUTPUT (stdout) ===\n{stdout}\n\n=== STDERR ===\n{stderr}"
-                # Save debug log even on failure
                 debug_log = _format_debug_log(grid_type, coords, cmd, start_time, time.time(), stdout, stderr, proc.returncode)
+                # Save debug log to volume
+                from datetime import datetime
+                timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+                hash_value = hashlib.sha256(f"{grid_type}:{sorted(coords)}".encode()).hexdigest()[:8]
+                debug_log_filename = f"debug_{len(coords)}_{grid_type}_{hash_value}_{timestamp}.log"
+                debug_log_path = os.path.join(VOLUME_PATH, debug_log_filename)
+                print(f"Saving debug log to {debug_log_path}")
+                with open(debug_log_path, 'w') as f:
+                    f.write(debug_log)
+                volume.commit()
+                print(f"Debug log committed to volume")
+                # Include brief error info in exception
+                stderr_brief = stderr[:500] if len(stderr) > 500 else stderr
+                error_details = f"render_witness failed (return code {proc.returncode}). Debug log saved to {debug_log_path}. Brief stderr: {stderr_brief}"
                 raise RuntimeError(error_details)
             else:
-                raise RuntimeError(f"render_witness failed: {stderr}")
+                stderr_brief = stderr[:500] if len(stderr) > 500 else stderr
+                raise RuntimeError(f"render_witness failed (return code {proc.returncode}): {stderr_brief}")
 
         # Find the output JSON file
         json_files = [f for f in os.listdir(renderings_dir) if f.endswith('.json')]
         if not json_files:
-            # In debug mode, include full output for troubleshooting
+            print(f"No output JSON found (return code was {proc.returncode})")
+            # In debug mode, save debug log to volume before raising exception
             if debug:
                 debug_log = _format_debug_log(grid_type, coords, cmd, start_time, time.time(), stdout, stderr, proc.returncode)
-                raise RuntimeError(f"No output JSON found.\n\n=== STDOUT ===\n{stdout}\n\n=== STDERR ===\n{stderr}")
+                from datetime import datetime
+                timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+                hash_value = hashlib.sha256(f"{grid_type}:{sorted(coords)}".encode()).hexdigest()[:8]
+                debug_log_filename = f"debug_{len(coords)}_{grid_type}_{hash_value}_{timestamp}.log"
+                debug_log_path = os.path.join(VOLUME_PATH, debug_log_filename)
+                print(f"Saving debug log to {debug_log_path}")
+                with open(debug_log_path, 'w') as f:
+                    f.write(debug_log)
+                volume.commit()
+                print(f"Debug log committed to volume")
+                stderr_brief = stderr[:500] if len(stderr) > 500 else stderr
+                raise RuntimeError(f"No output JSON found. Debug log saved to {debug_log_path}. Brief stderr: {stderr_brief}")
             else:
-                raise RuntimeError(f"No output JSON found. stderr: {stderr}")
+                stderr_brief = stderr[:500] if len(stderr) > 500 else stderr
+                raise RuntimeError(f"No output JSON found. stderr: {stderr_brief}")
 
         json_path = os.path.join(renderings_dir, json_files[0])
+        print(f"Found output JSON: {json_files[0]}")
         with open(json_path, 'r') as f:
             result = json.load(f)
-        
+
         # In debug mode, create a debug log with all output
         debug_log = None
         if debug:
             debug_log = _format_debug_log(grid_type, coords, cmd, start_time, time.time(), stdout, stderr, proc.returncode)
-        
+            print("Debug log prepared for saving")
+
         return result, debug_log
 
 
@@ -1096,6 +1116,7 @@ def compute_polyform(
     cell_count = len(parsed)
     file_path = get_polyform_path(gt, cell_count, hash_value)
 
+    print(f"Saving result JSON to {file_path}")
     with open(file_path, 'w') as f:
         json.dump(data, f, indent=2)
 
@@ -1106,20 +1127,22 @@ def compute_polyform(
         timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
         debug_log_filename = f"debug_{cell_count}{GRID_ABBREVS[gt]}_{hash_value}_{timestamp}.log"
         debug_log_path = os.path.join(VOLUME_PATH, debug_log_filename)
+        print(f"Saving debug log to {debug_log_path}")
         with open(debug_log_path, 'w') as f:
             f.write(debug_log)
-        print(f"Debug log saved to: {debug_log_path}")
 
     volume.commit()
+    print("Results committed to volume")
 
     result = {
         "status": "computed",
         "data": data
     }
-    
+
     if debug_log_path:
         result["debug_log_path"] = debug_log_path
-    
+
+    print(f"Computation complete: status={result['status']}, hash={hash_value}")
     return result
 
 
