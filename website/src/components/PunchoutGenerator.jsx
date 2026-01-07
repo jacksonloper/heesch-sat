@@ -629,39 +629,43 @@ function PunchoutGenerator({ witness, onClose }) {
                 <svg viewBox={viewBox} className="preview-svg">
                   <defs>
                     <path id={`punchout-tile-${witness.hash}`} d={tilePath} />
-                    {imageLoaded && (
-                      <pattern 
-                        id="image-pattern" 
-                        patternUnits="userSpaceOnUse"
-                        x={minX}
-                        y={minY}
-                        width={maxX - minX}
-                        height={maxY - minY}
-                      >
-                        <image 
-                          href={imageUrl}
-                          x={0}
-                          y={0}
-                          width={maxX - minX}
-                          height={maxY - minY}
-                          preserveAspectRatio="xMidYMid slice"
+                    {/* Create a clip path for each piece */}
+                    {(previewMode === 'combined' || previewMode === 'pieces') && patch.map((tile, i) => (
+                      <clipPath key={i} id={`piece-clip-combined-${i}`}>
+                        <use
+                          href={`#punchout-tile-${witness.hash}`}
+                          transform={getSvgTransform(tile.transform)}
                         />
-                      </pattern>
-                    )}
+                      </clipPath>
+                    ))}
                   </defs>
 
                   {/* Draw pieces with image or color */}
                   {(previewMode === 'combined' || previewMode === 'pieces') && (
                     <g className="pieces-layer">
                       {patch.map((tile, i) => (
-                        <use
-                          key={i}
-                          href={`#punchout-tile-${witness.hash}`}
-                          transform={getSvgTransform(tile.transform)}
-                          fill={imageLoaded ? 'url(#image-pattern)' : '#e0e0e0'}
-                          stroke="#999"
-                          strokeWidth={0.02}
-                        />
+                        <g key={i}>
+                          {/* Image clipped to piece shape */}
+                          {imageLoaded && (
+                            <image
+                              href={imageUrl}
+                              x={minX}
+                              y={minY}
+                              width={maxX - minX}
+                              height={maxY - minY}
+                              preserveAspectRatio="xMidYMid slice"
+                              clipPath={`url(#piece-clip-combined-${i})`}
+                            />
+                          )}
+                          {/* Piece outline */}
+                          <use
+                            href={`#punchout-tile-${witness.hash}`}
+                            transform={getSvgTransform(tile.transform)}
+                            fill={imageLoaded ? 'none' : '#e0e0e0'}
+                            stroke="#999"
+                            strokeWidth={0.02}
+                          />
+                        </g>
                       ))}
                     </g>
                   )}
