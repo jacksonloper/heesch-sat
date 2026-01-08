@@ -127,8 +127,8 @@ const getCellVertices = {
     // x%2==0, y%2==1 -> TRIANGLE_LR
     // x%2==1, y%2==1 -> TRIANGLE_LL
     // Vertices are in doubled coordinates (getVertexCentre returns p + p), then divided by 2 by vertexToGrid
-    const xEven = ((x % 2) + 2) % 2 === 0
-    const yEven = ((y % 2) + 2) % 2 === 0
+    const xEven = x % 2 === 0
+    const yEven = y % 2 === 0
     
     // Vertex coordinates from abologrid.h vertices[4][3], divided by 4 (2 for vertex centre, 2 for vertexToGrid)
     if (xEven && yEven) {
@@ -214,40 +214,41 @@ const getCellVertices = {
   },
   bevelhex: (x, y) => {
     // 4.6.12 Archimedean tiling - only specific positions are valid
-    // Valid tile types: SQUARE_E, SQUARE_NE, SQUARE_NW, HEXAGON_A, HEXAGON_Y, DODECAGON
+    // Tile type constants from bevelhexgrid.h
+    const INVALID = -1
+    const SQUARE_E = 0
+    const SQUARE_NE = 1
+    const SQUARE_NW = 2
+    const HEXAGON_A = 3
+    const HEXAGON_Y = 4
+    const DODECAGON = 5
+    
     const cx = ((x % 6) + 6) % 6
     const cy = ((y % 6) + 6) % 6
     
     // Types array from bevelhexgrid.h (row major: types[cy * 6 + cx])
     const types = [
-      5, -1, -1, 0, -1, -1,  // cy=0: DODECAGON at cx=0, SQUARE_E at cx=3
-      -1, -1, -1, -1, -1, -1,  // cy=1: all invalid
-      -1, -1, 4, -1, -1, -1,  // cy=2: HEXAGON_Y at cx=2
-      1, -1, -1, 2, -1, -1,  // cy=3: SQUARE_NE at cx=0, SQUARE_NW at cx=3
-      -1, -1, -1, -1, 3, -1,  // cy=4: HEXAGON_A at cx=4
-      -1, -1, -1, -1, -1, -1   // cy=5: all invalid
+      DODECAGON, INVALID, INVALID, SQUARE_E, INVALID, INVALID,   // cy=0
+      INVALID, INVALID, INVALID, INVALID, INVALID, INVALID,      // cy=1
+      INVALID, INVALID, HEXAGON_Y, INVALID, INVALID, INVALID,    // cy=2
+      SQUARE_NE, INVALID, INVALID, SQUARE_NW, INVALID, INVALID,  // cy=3
+      INVALID, INVALID, INVALID, INVALID, HEXAGON_A, INVALID,    // cy=4
+      INVALID, INVALID, INVALID, INVALID, INVALID, INVALID       // cy=5
     ]
     
     const tileType = types[cy * 6 + cx]
     if (tileType < 0) return null
     
-    // Vertices from bevelhexgrid.h cell_vertices (need to offset by getVertexCentre)
-    // origins: SQUARE_E {3, 0}, SQUARE_NE {0, 3}, SQUARE_NW {3, 3}, HEXAGON_A {4, 4}, HEXAGON_Y {2, 2}, DODECAGON {0, 0}
-    const cellVerts = [
-      // SQUARE_E (type 0): vertices {3, -1}, {4, -1}, {3, 1}, {2, 1}
-      [[0, -1], [1, -1], [0, 1], [-1, 1]],
-      // SQUARE_NE (type 1): vertices {1, 2}, {1, 3}, {-1, 4}, {-1, 3}
-      [[1, -1], [1, 0], [-1, 1], [-1, 0]],
-      // SQUARE_NW (type 2): vertices {3, 2}, {4, 3}, {3, 4}, {2, 3}
-      [[0, -1], [1, 0], [0, 1], [-1, 0]],
-      // HEXAGON_A (type 3): vertices {5, 4}, {4, 5}, {3, 5}, {3, 4}, {4, 3}, {5, 3}
-      [[1, 0], [0, 1], [-1, 1], [-1, 0], [0, -1], [1, -1]],
-      // HEXAGON_Y (type 4): vertices {2, 1}, {3, 1}, {3, 2}, {2, 3}, {1, 3}, {1, 2}
-      [[0, -1], [1, -1], [1, 0], [0, 1], [-1, 1], [-1, 0]],
-      // DODECAGON (type 5): vertices from bevelhexgrid.h
-      [[2, 1], [1, 2], [-1, 3], [-2, 3], [-3, 2], [-3, 1],
-       [-2, -1], [-1, -2], [1, -3], [2, -3], [3, -2], [3, -1]]
-    ]
+    // Vertices from bevelhexgrid.h cell_vertices (offset relative to tile origin)
+    const cellVerts = {
+      [SQUARE_E]: [[0, -1], [1, -1], [0, 1], [-1, 1]],
+      [SQUARE_NE]: [[1, -1], [1, 0], [-1, 1], [-1, 0]],
+      [SQUARE_NW]: [[0, -1], [1, 0], [0, 1], [-1, 0]],
+      [HEXAGON_A]: [[1, 0], [0, 1], [-1, 1], [-1, 0], [0, -1], [1, -1]],
+      [HEXAGON_Y]: [[0, -1], [1, -1], [1, 0], [0, 1], [-1, 1], [-1, 0]],
+      [DODECAGON]: [[2, 1], [1, 2], [-1, 3], [-2, 3], [-3, 2], [-3, 1],
+                    [-2, -1], [-1, -2], [1, -3], [2, -3], [3, -2], [3, -1]]
+    }
     
     return cellVerts[tileType]
   },
