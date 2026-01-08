@@ -137,8 +137,8 @@ const getCellVertices = {
     // vertexToGrid divides by 2
     // Net effect: vertices are at (2*x + v_x)/2 = x + v_x/2
     // So we divide C++ vertex values by 2 to get offsets from (x, y)
-    const xEven = ((x % 2) + 2) % 2 === 0
-    const yEven = ((y % 2) + 2) % 2 === 0
+    const xEven = x % 2 === 0
+    const yEven = y % 2 === 0
     
     // Vertex coordinates from abologrid.h vertices[4][3], divided by 2 (vertexToGrid scaling)
     if (xEven && yEven) {
