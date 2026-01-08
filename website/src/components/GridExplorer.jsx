@@ -91,18 +91,24 @@ const getCellVertices = {
     [1/3, 1/3], [-1/3, 2/3], [-2/3, 1/3],
     [-1/3, -1/3], [1/3, -2/3], [2/3, -1/3]
   ],
-  iamond: (x) => {
-    // Triangular grid - cell type depends on x % 3 (from iamondgrid.h)
-    // isBlack(p) = (p.x_ % 3) == 0 -> TRIANGLE_UP
-    // Otherwise -> TRIANGLE_DOWN
-    // Vertex vectors from iamondgrid.h (integer offsets that align with grid lines)
-    const mod3 = ((x % 3) + 3) % 3
-    if (mod3 === 0) {
+  iamond: (x, y) => {
+    // Triangular grid from iamondgrid.h
+    // Valid cell positions based on origins {0,0} and {1,-2} with translations {3,0} and {0,3}:
+    // - TRIANGLE_UP: x ≡ 0 (mod 3) AND y ≡ 0 (mod 3)
+    // - TRIANGLE_DOWN: x ≡ 1 (mod 3) AND y ≡ 1 (mod 3)
+    const mod3 = (n) => ((n % 3) + 3) % 3
+    const xm = mod3(x)
+    const ym = mod3(y)
+    
+    if (xm === 0 && ym === 0) {
       // Up-pointing triangle (black) - vertices: {-1, 2}, {-1, -1}, {2, -1}
       return [[-1, 2], [-1, -1], [2, -1]]
-    } else {
+    } else if (xm === 1 && ym === 1) {
       // Down-pointing triangle (grey) - vertices: {1, 1}, {-2, 1}, {1, -2}
       return [[1, 1], [-2, 1], [1, -2]]
+    } else {
+      // Invalid position - not a valid iamond cell
+      return null
     }
   },
   kite: (x, y, cellType) => {
@@ -122,27 +128,31 @@ const getCellVertices = {
   },
   abolo: (x, y) => {
     // Right triangles - 4 types based on parity (from abologrid.h)
-    // x%2==0, y%2==0 -> TRIANGLE_UR
-    // x%2==1, y%2==0 -> TRIANGLE_UL
-    // x%2==0, y%2==1 -> TRIANGLE_LR
-    // x%2==1, y%2==1 -> TRIANGLE_LL
-    // Vertices are in doubled coordinates (getVertexCentre returns p + p), then divided by 2 by vertexToGrid
-    const xEven = x % 2 === 0
-    const yEven = y % 2 === 0
+    // x%2==0, y%2==0 -> TRIANGLE_UR (origin {0, 0})
+    // x%2==1, y%2==0 -> TRIANGLE_UL (origin {1, 0})
+    // x%2==1, y%2==1 -> TRIANGLE_LL (origin {1, 1})
+    // x%2==0, y%2==1 -> TRIANGLE_LR (origin {0, 1})
+    // 
+    // getVertexCentre(p) = p + p (doubles the position)
+    // vertexToGrid divides by 2
+    // Net effect: vertices are at (2*x + v_x)/2 = x + v_x/2
+    // So we divide C++ vertex values by 2 to get offsets from (x, y)
+    const xEven = ((x % 2) + 2) % 2 === 0
+    const yEven = ((y % 2) + 2) % 2 === 0
     
-    // Vertex coordinates from abologrid.h vertices[4][3], divided by 4 (2 for vertex centre, 2 for vertexToGrid)
+    // Vertex coordinates from abologrid.h vertices[4][3], divided by 2 (vertexToGrid scaling)
     if (xEven && yEven) {
-      // TRIANGLE_UR: {1, 1}, {1, -3}, {-3, 1}
-      return [[0.25, 0.25], [0.25, -0.75], [-0.75, 0.25]]
+      // TRIANGLE_UR: {1, 1}, {1, -3}, {-3, 1} -> /2 = {0.5, 0.5}, {0.5, -1.5}, {-1.5, 0.5}
+      return [[0.5, 0.5], [0.5, -1.5], [-1.5, 0.5]]
     } else if (!xEven && yEven) {
-      // TRIANGLE_UL: {-1, 1}, {3, 1}, {-1, -3}
-      return [[-0.25, 0.25], [0.75, 0.25], [-0.25, -0.75]]
+      // TRIANGLE_UL: {-1, 1}, {3, 1}, {-1, -3} -> /2 = {-0.5, 0.5}, {1.5, 0.5}, {-0.5, -1.5}
+      return [[-0.5, 0.5], [1.5, 0.5], [-0.5, -1.5]]
     } else if (!xEven && !yEven) {
-      // TRIANGLE_LL: {-1, -1}, {-1, 3}, {3, -1}
-      return [[-0.25, -0.25], [-0.25, 0.75], [0.75, -0.25]]
+      // TRIANGLE_LL: {-1, -1}, {-1, 3}, {3, -1} -> /2 = {-0.5, -0.5}, {-0.5, 1.5}, {1.5, -0.5}
+      return [[-0.5, -0.5], [-0.5, 1.5], [1.5, -0.5]]
     } else {
-      // TRIANGLE_LR: {1, -1}, {-3, -1}, {1, 3}
-      return [[0.25, -0.25], [-0.75, -0.25], [0.25, 0.75]]
+      // TRIANGLE_LR: {1, -1}, {-3, -1}, {1, 3} -> /2 = {0.5, -0.5}, {-1.5, -0.5}, {0.5, 1.5}
+      return [[0.5, -0.5], [-1.5, -0.5], [0.5, 1.5]]
     }
   },
   trihex: (x, y) => {
@@ -305,10 +315,13 @@ function generateCellPolygons(gridType, minX, maxX, minY, maxY) {
       }
     }
   } else if (gridType === 'iamond') {
-    // Triangular grids
+    // Triangular grids - only specific positions are valid
+    // TRIANGLE_UP: x ≡ 0 (mod 3) AND y ≡ 0 (mod 3)
+    // TRIANGLE_DOWN: x ≡ 1 (mod 3) AND y ≡ 1 (mod 3)
     for (let gx = gMinX; gx <= gMaxX; gx++) {
       for (let gy = gMinY; gy <= gMaxY; gy++) {
         const verts = getVerts(gx, gy)
+        if (!verts) continue  // Skip invalid positions
         const pageVerts = verts.map(([dx, dy]) => toPage(gx + dx, gy + dy))
         cells.push({
           coords: [gx, gy],
