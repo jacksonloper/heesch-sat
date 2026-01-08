@@ -83,7 +83,7 @@ ${uses}
 </svg>`
 }
 
-function WitnessViewer({ witness, onClose }) {
+function WitnessViewer({ witness, onClose, onViewInExplorer }) {
   const [showHoles, setShowHoles] = useState(false)
   const [showGrid, setShowGrid] = useState(false)
   const [showActiveUnitCells, setShowActiveUnitCells] = useState(false)
@@ -95,6 +95,12 @@ function WitnessViewer({ witness, onClose }) {
     ? witness.witness_with_holes
     : witness.witness_connected
   
+  const handleViewInExplorer = () => {
+    if (onViewInExplorer) {
+      onViewInExplorer(witness.grid_type, witness.coordinates)
+    }
+  }
+
   const handleDownloadSvg = () => {
     const svgContent = generateDownloadSvg(witness, activeWitness)
     if (!svgContent) return
@@ -297,6 +303,11 @@ function WitnessViewer({ witness, onClose }) {
               <button className="download-btn" onClick={handleDownloadJson}>
                 Download JSON
               </button>
+              {onViewInExplorer && (
+                <button className="download-btn explorer-btn" onClick={handleViewInExplorer}>
+                  🔍 View in Grid Explorer
+                </button>
+              )}
             </div>
 
             <div className="corona-legend">

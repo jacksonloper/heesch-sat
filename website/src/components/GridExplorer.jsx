@@ -128,30 +128,34 @@ const getCellVertices = {
   },
   abolo: (x, y) => {
     // Right triangles - 4 types based on parity (from abologrid.h)
-    // x%2==0, y%2==0 -> TRIANGLE_UR (origin {0, 0})
-    // x%2==1, y%2==0 -> TRIANGLE_UL (origin {1, 0})
-    // x%2==1, y%2==1 -> TRIANGLE_LL (origin {1, 1})
-    // x%2==0, y%2==1 -> TRIANGLE_LR (origin {0, 1})
+    // Valid positions form a lattice based on origins {0,0}, {1,0}, {1,1}, {0,1}
+    // and translation vectors V1={4,0} and V2={2,2}
     // 
-    // getVertexCentre(p) = p + p (doubles the position)
-    // vertexToGrid divides by 2
-    // Net effect: vertices are at (2*x + v_x)/2 = x + v_x/2
-    // So we divide C++ vertex values by 2 to get offsets from (x, y)
+    // Valid coords for each type:
+    // TRIANGLE_UR (origin {0,0}): x even, y even, (x-y) % 4 == 0
+    // TRIANGLE_UL (origin {1,0}): x odd, y even, (x-y) % 4 == 1 (or -3)
+    // TRIANGLE_LL (origin {1,1}): x odd, y odd, (x-y) % 4 == 0
+    // TRIANGLE_LR (origin {0,1}): x even, y odd, (x-y) % 4 == 3 (or -1)
     const xEven = x % 2 === 0
     const yEven = y % 2 === 0
+    const diff = ((x - y) % 4 + 4) % 4  // Safe modulo for negative numbers
     
-    // Vertex coordinates from abologrid.h vertices[4][3], divided by 2 (vertexToGrid scaling)
+    // Check if this is a valid position for the tile type
     if (xEven && yEven) {
-      // TRIANGLE_UR: {1, 1}, {1, -3}, {-3, 1} -> /2 = {0.5, 0.5}, {0.5, -1.5}, {-1.5, 0.5}
+      // TRIANGLE_UR: requires (x-y) % 4 == 0
+      if (diff !== 0) return null
       return [[0.5, 0.5], [0.5, -1.5], [-1.5, 0.5]]
     } else if (!xEven && yEven) {
-      // TRIANGLE_UL: {-1, 1}, {3, 1}, {-1, -3} -> /2 = {-0.5, 0.5}, {1.5, 0.5}, {-0.5, -1.5}
+      // TRIANGLE_UL: requires (x-y) % 4 == 1
+      if (diff !== 1) return null
       return [[-0.5, 0.5], [1.5, 0.5], [-0.5, -1.5]]
     } else if (!xEven && !yEven) {
-      // TRIANGLE_LL: {-1, -1}, {-1, 3}, {3, -1} -> /2 = {-0.5, -0.5}, {-0.5, 1.5}, {1.5, -0.5}
+      // TRIANGLE_LL: requires (x-y) % 4 == 0
+      if (diff !== 0) return null
       return [[-0.5, -0.5], [-0.5, 1.5], [1.5, -0.5]]
     } else {
-      // TRIANGLE_LR: {1, -1}, {-3, -1}, {1, 3} -> /2 = {0.5, -0.5}, {-1.5, -0.5}, {0.5, 1.5}
+      // TRIANGLE_LR: requires (x-y) % 4 == 3
+      if (diff !== 3) return null
       return [[0.5, -0.5], [-1.5, -0.5], [0.5, 1.5]]
     }
   },
@@ -393,10 +397,11 @@ function generateCellPolygons(gridType, minX, maxX, minY, maxY) {
     }
   } else if (gridType === 'abolo') {
     // Generate abolo cells - iterate over integer grid coordinates
-    // The C++ code uses integer x,y where tile type depends on parity
+    // Valid positions form a lattice based on origins and translation vectors
     for (let gx = gMinX; gx <= gMaxX; gx++) {
       for (let gy = gMinY; gy <= gMaxY; gy++) {
         const verts = getVerts(gx, gy)
+        if (!verts) continue  // Skip invalid positions
         // Transform vertices: add grid position (vertices are relative to cell center at (x,y))
         const pageVerts = verts.map(([dx, dy]) => [gx + dx, gy + dy])
         cells.push({
@@ -481,9 +486,9 @@ function pointInPolygon(px, py, vertices) {
 // Available zoom levels (1 = most zoomed in, up to 10 = most zoomed out)
 const ZOOM_LEVELS = [1, 1.5, 2, 3, 4, 5, 6, 7, 8, 10]
 
-function GridExplorer({ onBack }) {
-  const [gridType, setGridType] = useState('omino')
-  const [selectedCells, setSelectedCells] = useState([])
+function GridExplorer({ onBack, initialGridType, initialCoordinates }) {
+  const [gridType, setGridType] = useState(initialGridType || 'omino')
+  const [selectedCells, setSelectedCells] = useState(initialCoordinates || [])
   const [zoomLevel, setZoomLevel] = useState(1)
   const [jsonInput, setJsonInput] = useState('')
   const [jsonError, setJsonError] = useState('')
