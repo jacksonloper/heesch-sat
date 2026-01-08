@@ -561,9 +561,11 @@ function generateHalfcairoGrid(minX, maxX, minY, maxY) {
       const verts = tileVerts[tileType]
       const numVerts = verts.length
 
-      // Compute vertex center
-      const xc = gx >= 0 ? Math.floor((gx + 1) / 3) * 4 : Math.floor((gx - 1) / 3) * 4
-      const yc = gy >= 0 ? Math.floor((gy + 1) / 3) * 4 : Math.floor((gy - 1) / 3) * 4
+      // Compute vertex center using C++ integer division (rounds toward zero)
+      // C++ code: (p + {1,1}) / 3 * 4 for positive, (p - {1,1}) / 3 * 4 for negative
+      const intDiv = (a, b) => Math.trunc(a / b)
+      const xc = gx >= 0 ? intDiv(gx + 1, 3) * 4 : intDiv(gx - 1, 3) * 4
+      const yc = gy >= 0 ? intDiv(gy + 1, 3) * 4 : intDiv(gy - 1, 3) * 4
 
       for (let i = 0; i < numVerts; i++) {
         const [dx1, dy1] = verts[i]

@@ -92,15 +92,23 @@ const getCellVertices = {
     [-1/3, -1/3], [1/3, -2/3], [2/3, -1/3]
   ],
   iamond: (x, y) => {
-    // Triangular grid - cell type depends on position
-    // Type determined by (x - y) mod 3
-    const mod3 = ((x - y) % 3 + 3) % 3
-    if (mod3 === 0) {
-      // Up-pointing triangle
-      return [[-1/3, 2/3], [-1/3, -1/3], [2/3, -1/3]]
+    // Triangular grid from iamondgrid.h
+    // Valid cell positions based on origins {0,0} and {1,-2} with translations {3,0} and {0,3}:
+    // - TRIANGLE_UP: x ≡ 0 (mod 3) AND y ≡ 0 (mod 3)
+    // - TRIANGLE_DOWN: x ≡ 1 (mod 3) AND y ≡ 1 (mod 3)
+    const mod3 = (n) => ((n % 3) + 3) % 3
+    const xm = mod3(x)
+    const ym = mod3(y)
+    
+    if (xm === 0 && ym === 0) {
+      // Up-pointing triangle (black) - vertices: {-1, 2}, {-1, -1}, {2, -1}
+      return [[-1, 2], [-1, -1], [2, -1]]
+    } else if (xm === 1 && ym === 1) {
+      // Down-pointing triangle (grey) - vertices: {1, 1}, {-2, 1}, {1, -2}
+      return [[1, 1], [-2, 1], [1, -2]]
     } else {
-      // Down-pointing triangle
-      return [[1/3, 1/3], [-2/3, 1/3], [1/3, -2/3]]
+      // Invalid position - not a valid iamond cell
+      return null
     }
   },
   kite: (x, y, cellType) => {
@@ -119,33 +127,36 @@ const getCellVertices = {
     return kiteVerts[safeIndex]
   },
   abolo: (x, y) => {
-    // Right triangles - 4 types based on diagonal orientation
-    const i = Math.floor((x + 1.5) / 2)
-    const j = Math.floor((y - 0.5) / 2)
-    const localX = ((x + 1.5) % 2 + 2) % 2
-    const localY = ((y - 0.5) % 2 + 2) % 2
-    const diagType = (i + j) % 2
-    const cellX = 2 * i - 1.5
-    const cellY = 2 * j + 0.5
-
-    if (diagType === 0) {
-      // / diagonal
-      if (localX < 1 && localY < 1 + localX) {
-        // Lower-left triangle
-        return [[cellX, cellY], [cellX + 2, cellY], [cellX, cellY + 2]]
-      } else {
-        // Upper-right triangle
-        return [[cellX + 2, cellY], [cellX + 2, cellY + 2], [cellX, cellY + 2]]
-      }
+    // Right triangles - 4 types based on parity (from abologrid.h)
+    // Valid positions form a lattice based on origins {0,0}, {1,0}, {1,1}, {0,1}
+    // and translation vectors V1={4,0} and V2={2,2}
+    // 
+    // Valid coords for each type:
+    // TRIANGLE_UR (origin {0,0}): x even, y even, (x-y) % 4 == 0
+    // TRIANGLE_UL (origin {1,0}): x odd, y even, (x-y) % 4 == 1 (or -3)
+    // TRIANGLE_LL (origin {1,1}): x odd, y odd, (x-y) % 4 == 0
+    // TRIANGLE_LR (origin {0,1}): x even, y odd, (x-y) % 4 == 3 (or -1)
+    const xEven = x % 2 === 0
+    const yEven = y % 2 === 0
+    const diff = ((x - y) % 4 + 4) % 4  // Safe modulo for negative numbers
+    
+    // Check if this is a valid position for the tile type
+    if (xEven && yEven) {
+      // TRIANGLE_UR: requires (x-y) % 4 == 0
+      if (diff !== 0) return null
+      return [[0.5, 0.5], [0.5, -1.5], [-1.5, 0.5]]
+    } else if (!xEven && yEven) {
+      // TRIANGLE_UL: requires (x-y) % 4 == 1
+      if (diff !== 1) return null
+      return [[-0.5, 0.5], [1.5, 0.5], [-0.5, -1.5]]
+    } else if (!xEven && !yEven) {
+      // TRIANGLE_LL: requires (x-y) % 4 == 0
+      if (diff !== 0) return null
+      return [[-0.5, -0.5], [-0.5, 1.5], [1.5, -0.5]]
     } else {
-      // \ diagonal
-      if (localY < localX) {
-        // Lower-right triangle
-        return [[cellX, cellY], [cellX + 2, cellY], [cellX + 2, cellY + 2]]
-      } else {
-        // Upper-left triangle
-        return [[cellX, cellY], [cellX + 2, cellY + 2], [cellX, cellY + 2]]
-      }
+      // TRIANGLE_LR: requires (x-y) % 4 == 3
+      if (diff !== 3) return null
+      return [[0.5, -0.5], [-1.5, -0.5], [0.5, 1.5]]
     }
   },
   trihex: (x, y) => {
@@ -215,12 +226,45 @@ const getCellVertices = {
 
     return tileVerts[tileType].map(([vx, vy]) => [vx * 0.75, vy * 0.75])
   },
-  bevelhex: () => {
-    // Simplified bevelhex - hexagon approximation
-    return [
-      [1/3, 1/3], [-1/3, 2/3], [-2/3, 1/3],
-      [-1/3, -1/3], [1/3, -2/3], [2/3, -1/3]
+  bevelhex: (x, y) => {
+    // 4.6.12 Archimedean tiling - only specific positions are valid
+    // Tile type constants from bevelhexgrid.h
+    const INVALID = -1
+    const SQUARE_E = 0
+    const SQUARE_NE = 1
+    const SQUARE_NW = 2
+    const HEXAGON_A = 3
+    const HEXAGON_Y = 4
+    const DODECAGON = 5
+    
+    const cx = ((x % 6) + 6) % 6
+    const cy = ((y % 6) + 6) % 6
+    
+    // Types array from bevelhexgrid.h (row major: types[cy * 6 + cx])
+    const types = [
+      DODECAGON, INVALID, INVALID, SQUARE_E, INVALID, INVALID,   // cy=0
+      INVALID, INVALID, INVALID, INVALID, INVALID, INVALID,      // cy=1
+      INVALID, INVALID, HEXAGON_Y, INVALID, INVALID, INVALID,    // cy=2
+      SQUARE_NE, INVALID, INVALID, SQUARE_NW, INVALID, INVALID,  // cy=3
+      INVALID, INVALID, INVALID, INVALID, HEXAGON_A, INVALID,    // cy=4
+      INVALID, INVALID, INVALID, INVALID, INVALID, INVALID       // cy=5
     ]
+    
+    const tileType = types[cy * 6 + cx]
+    if (tileType < 0) return null
+    
+    // Vertices from bevelhexgrid.h cell_vertices (offset relative to tile origin)
+    const cellVerts = {
+      [SQUARE_E]: [[0, -1], [1, -1], [0, 1], [-1, 1]],
+      [SQUARE_NE]: [[1, -1], [1, 0], [-1, 1], [-1, 0]],
+      [SQUARE_NW]: [[0, -1], [1, 0], [0, 1], [-1, 0]],
+      [HEXAGON_A]: [[1, 0], [0, 1], [-1, 1], [-1, 0], [0, -1], [1, -1]],
+      [HEXAGON_Y]: [[0, -1], [1, -1], [1, 0], [0, 1], [-1, 1], [-1, 0]],
+      [DODECAGON]: [[2, 1], [1, 2], [-1, 3], [-2, 3], [-3, 2], [-3, 1],
+                    [-2, -1], [-1, -2], [1, -3], [2, -3], [3, -2], [3, -1]]
+    }
+    
+    return cellVerts[tileType]
   },
 }
 
@@ -250,7 +294,7 @@ function generateCellPolygons(gridType, minX, maxX, minY, maxY) {
   if (!getVerts) return cells
 
   // Special handling for certain grid types
-  if (gridType === 'omino' || gridType === 'hex' || gridType === 'bevelhex') {
+  if (gridType === 'omino' || gridType === 'hex') {
     for (let gx = gMinX; gx <= gMaxX; gx++) {
       for (let gy = gMinY; gy <= gMaxY; gy++) {
         const verts = getVerts(gx, gy)
@@ -261,11 +305,27 @@ function generateCellPolygons(gridType, minX, maxX, minY, maxY) {
         })
       }
     }
-  } else if (gridType === 'iamond') {
-    // Triangular grids
+  } else if (gridType === 'bevelhex') {
+    // Bevelhex has sparse tiles - only specific positions within 6x6 periods are valid
     for (let gx = gMinX; gx <= gMaxX; gx++) {
       for (let gy = gMinY; gy <= gMaxY; gy++) {
         const verts = getVerts(gx, gy)
+        if (!verts) continue  // Skip invalid positions
+        const pageVerts = verts.map(([dx, dy]) => toPage(gx + dx, gy + dy))
+        cells.push({
+          coords: [gx, gy],
+          vertices: pageVerts,
+        })
+      }
+    }
+  } else if (gridType === 'iamond') {
+    // Triangular grids - only specific positions are valid
+    // TRIANGLE_UP: x ≡ 0 (mod 3) AND y ≡ 0 (mod 3)
+    // TRIANGLE_DOWN: x ≡ 1 (mod 3) AND y ≡ 1 (mod 3)
+    for (let gx = gMinX; gx <= gMaxX; gx++) {
+      for (let gy = gMinY; gy <= gMaxY; gy++) {
+        const verts = getVerts(gx, gy)
+        if (!verts) continue  // Skip invalid positions
         const pageVerts = verts.map(([dx, dy]) => toPage(gx + dx, gy + dy))
         cells.push({
           coords: [gx, gy],
@@ -336,44 +396,30 @@ function generateCellPolygons(gridType, minX, maxX, minY, maxY) {
       }
     }
   } else if (gridType === 'abolo') {
-    // Generate abolo cells - 4 triangles per 2x2 cell
-    for (let i = Math.floor(gMinX / 2) - 1; i <= Math.ceil(gMaxX / 2) + 1; i++) {
-      for (let j = Math.floor(gMinY / 2) - 1; j <= Math.ceil(gMaxY / 2) + 1; j++) {
-        const cellX = 2 * i - 1.5
-        const cellY = 2 * j + 0.5
-        const diagType = (i + j) % 2
-
-        if (diagType === 0) {
-          // / diagonal - two triangles
-          cells.push({
-            coords: [i * 2 - 1, j * 2],
-            vertices: [[cellX, cellY], [cellX + 2, cellY], [cellX, cellY + 2]],
-          })
-          cells.push({
-            coords: [i * 2, j * 2 + 1],
-            vertices: [[cellX + 2, cellY], [cellX + 2, cellY + 2], [cellX, cellY + 2]],
-          })
-        } else {
-          // \ diagonal - two triangles
-          cells.push({
-            coords: [i * 2, j * 2],
-            vertices: [[cellX, cellY], [cellX + 2, cellY], [cellX + 2, cellY + 2]],
-          })
-          cells.push({
-            coords: [i * 2 - 1, j * 2 + 1],
-            vertices: [[cellX, cellY], [cellX + 2, cellY + 2], [cellX, cellY + 2]],
-          })
-        }
+    // Generate abolo cells - iterate over integer grid coordinates
+    // Valid positions form a lattice based on origins and translation vectors
+    for (let gx = gMinX; gx <= gMaxX; gx++) {
+      for (let gy = gMinY; gy <= gMaxY; gy++) {
+        const verts = getVerts(gx, gy)
+        if (!verts) continue  // Skip invalid positions
+        // Transform vertices: add grid position (vertices are relative to cell center at (x,y))
+        const pageVerts = verts.map(([dx, dy]) => [gx + dx, gy + dy])
+        cells.push({
+          coords: [gx, gy],
+          vertices: pageVerts,
+        })
       }
     }
   } else if (gridType === 'halfcairo') {
     // Period 3 grid with kites and triangles
+    // C++ uses integer division which rounds toward zero, not Math.floor
+    const intDiv = (a, b) => Math.trunc(a / b)  // Match C++ integer division behavior
     for (let gx = gMinX * 3; gx <= gMaxX * 3 + 3; gx++) {
       for (let gy = gMinY * 3; gy <= gMaxY * 3 + 3; gy++) {
         const verts = getVerts(gx, gy)
         if (!verts) continue
-        const xc = gx >= 0 ? Math.floor((gx + 1) / 3) * 4 : Math.floor((gx - 1) / 3) * 4
-        const yc = gy >= 0 ? Math.floor((gy + 1) / 3) * 4 : Math.floor((gy - 1) / 3) * 4
+        const xc = gx >= 0 ? intDiv(gx + 1, 3) * 4 : intDiv(gx - 1, 3) * 4
+        const yc = gy >= 0 ? intDiv(gy + 1, 3) * 4 : intDiv(gy - 1, 3) * 4
         const pageVerts = verts.map(([dx, dy]) => [xc * 0.75 + dx, yc * 0.75 + dy])
         cells.push({
           coords: [gx, gy],
@@ -440,9 +486,9 @@ function pointInPolygon(px, py, vertices) {
 // Available zoom levels (1 = most zoomed in, up to 10 = most zoomed out)
 const ZOOM_LEVELS = [1, 1.5, 2, 3, 4, 5, 6, 7, 8, 10]
 
-function GridExplorer({ onBack }) {
-  const [gridType, setGridType] = useState('omino')
-  const [selectedCells, setSelectedCells] = useState([])
+function GridExplorer({ onBack, initialGridType, initialCoordinates }) {
+  const [gridType, setGridType] = useState(initialGridType || 'omino')
+  const [selectedCells, setSelectedCells] = useState(initialCoordinates || [])
   const [zoomLevel, setZoomLevel] = useState(1)
   const [jsonInput, setJsonInput] = useState('')
   const [jsonError, setJsonError] = useState('')
@@ -589,7 +635,7 @@ function GridExplorer({ onBack }) {
       <div className="explorer-header">
         <button className="back-btn" onClick={onBack}>← Back to Gallery</button>
         <h2>Grid Explorer</h2>
-        <p className="instructions">Click on cells to select them. Click again to deselect.  Currently broken for iamond, half cairo, abolo, and bevelhex.</p>
+        <p className="instructions">Click on cells to select them. Click again to deselect.</p>
       </div>
 
       <div className="explorer-content">

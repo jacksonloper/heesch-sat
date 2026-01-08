@@ -10,6 +10,14 @@ function App() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [showExplorer, setShowExplorer] = useState(false)
+  const [explorerInitialState, setExplorerInitialState] = useState(null)
+
+  // Handle navigation to Grid Explorer with prefilled data
+  const handleViewInExplorer = (gridType, coordinates) => {
+    setExplorerInitialState({ gridType, coordinates })
+    setShowExplorer(true)
+    setSelected(null)  // Close the viewer modal
+  }
 
   useEffect(() => {
     // Load from static JSONL file built at build time
@@ -43,7 +51,16 @@ function App() {
 
   // Show Grid Explorer view
   if (showExplorer) {
-    return <GridExplorer onBack={() => setShowExplorer(false)} />
+    return (
+      <GridExplorer
+        onBack={() => {
+          setShowExplorer(false)
+          setExplorerInitialState(null)
+        }}
+        initialGridType={explorerInitialState?.gridType}
+        initialCoordinates={explorerInitialState?.coordinates}
+      />
+    )
   }
 
   return (
@@ -56,7 +73,10 @@ function App() {
               A gallery of some notable polyforms and their Heesch numbers
             </p>
           </div>
-          <button className="explorer-button" onClick={() => setShowExplorer(true)}>
+          <button className="explorer-button" onClick={() => {
+            setExplorerInitialState(null)
+            setShowExplorer(true)
+          }}>
             🔍 Grid Explorer
           </button>
         </div>
@@ -73,6 +93,7 @@ function App() {
           <WitnessViewer
             witness={selected}
             onClose={() => setSelected(null)}
+            onViewInExplorer={handleViewInExplorer}
           />
         )}
       </main>
