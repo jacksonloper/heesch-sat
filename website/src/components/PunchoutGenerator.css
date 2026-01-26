@@ -366,6 +366,11 @@
   );
 }
 
+.legend-swatch.gap {
+  background: #f0f0f0;
+  border: 1px dashed #999;
+}
+
 /* Error state */
 .punchout-generator .error {
   padding: 2rem;

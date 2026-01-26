@@ -200,7 +200,7 @@ function PunchoutGenerator({ witness, onClose }) {
     if (!hasValidData) return new Map()
     
     const edgeMap = new Map() // key -> { midX, midY, length, nicks: [{pos, size}] }
-    const precision = 6 // decimal places for coordinate rounding
+    const precision = 4 // decimal places for coordinate rounding (reduced for floating point tolerance)
     
     // Helper to create a normalized edge key (smaller point first)
     const makeEdgeKey = (x1, y1, x2, y2) => {
@@ -287,7 +287,7 @@ function PunchoutGenerator({ witness, onClose }) {
    * don't cut through each other's nicks.
    */
   const generatePathWithNicks = useCallback((boundary, transform, nickSizeParam) => {
-    const precision = 6
+    const precision = 4 // Match the precision used in globalEdgeNicks
     
     // Helper to create a normalized edge key (smaller point first)
     const makeEdgeKey = (x1, y1, x2, y2) => {
@@ -884,21 +884,20 @@ function PunchoutGenerator({ witness, onClose }) {
                     </g>
                   )}
 
-                  {/* Draw cut lines with nicks */}
+                  {/* Draw cut lines only (no nick indicators) */}
                   {(previewMode === 'combined' || previewMode === 'cuts') && (
                     <g className="cuts-layer">
                       {patch.map((tile, idx) => {
                         const segments = generatePathWithNicks(tile_boundary, tile.transform, nickSize)
+                        const cutPolylines = generateCutPolylines(segments)
                         return (
                           <g key={idx}>
-                            {segments.map((seg, segIdx) => (
-                              <line
-                                key={segIdx}
-                                x1={seg.x1}
-                                y1={seg.y1}
-                                x2={seg.x2}
-                                y2={seg.y2}
-                                className={seg.type === 'cut' ? 'cut-line' : 'nick-line'}
+                            {cutPolylines.map((polyline, polyIdx) => (
+                              <path
+                                key={polyIdx}
+                                d={polylineToPath(polyline)}
+                                className="cut-line"
+                                fill="none"
                               />
                             ))}
                           </g>
@@ -1040,8 +1039,8 @@ function PunchoutGenerator({ witness, onClose }) {
                   <span>Cut line (red)</span>
                 </div>
                 <div className="legend-item">
-                  <span className="legend-swatch nick"></span>
-                  <span>Nick/tie (green dashed)</span>
+                  <span className="legend-swatch gap"></span>
+                  <span>Gap = nick/tie (uncut)</span>
                 </div>
               </div>
             </div>
