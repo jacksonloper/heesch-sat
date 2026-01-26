@@ -119,15 +119,36 @@ function PunchoutGenerator({ witness, onClose }) {
 
   // Compute the image bounds based on scale and offset
   // The image is scaled around the center of the puzzle, then offset
+  // We use the full original image and position it so that scaling/shifting allows
+  // the user to access any part of the image
   const imageBounds = useMemo(() => {
+    const img = imageRef.current
     const centerX = (minX + maxX) / 2
     const centerY = (minY + maxY) / 2
     
-    // Scale the image dimensions (larger scale = more zoom in = smaller coverage area)
-    const scaledWidth = puzzleWidth / imageScale
-    const scaledHeight = puzzleHeight / imageScale
+    // Get image aspect ratio (fall back to 1:1 if image not loaded)
+    const imgAspect = img ? img.naturalWidth / img.naturalHeight : 1
+    const puzzleAspect = puzzleWidth / puzzleHeight
+    
+    // Calculate base dimensions to cover the puzzle area while preserving aspect ratio
+    // Start by fitting the image to cover the entire puzzle bounds
+    let baseWidth, baseHeight
+    if (imgAspect > puzzleAspect) {
+      // Image is wider than puzzle - fit by height, extend width
+      baseHeight = puzzleHeight
+      baseWidth = puzzleHeight * imgAspect
+    } else {
+      // Image is taller than puzzle - fit by width, extend height
+      baseWidth = puzzleWidth
+      baseHeight = puzzleWidth / imgAspect
+    }
+    
+    // Apply scale (larger scale = zoom in = image appears larger relative to puzzle)
+    const scaledWidth = baseWidth * imageScale
+    const scaledHeight = baseHeight * imageScale
     
     // Apply offset (as fraction of puzzle dimensions)
+    // Positive offset moves image right/down, which means pieces show left/up part of image
     const offsetXUnits = imageOffsetX * puzzleWidth
     const offsetYUnits = imageOffsetY * puzzleHeight
     
@@ -137,7 +158,7 @@ function PunchoutGenerator({ witness, onClose }) {
       width: scaledWidth,
       height: scaledHeight
     }
-  }, [minX, maxX, minY, maxY, puzzleWidth, puzzleHeight, imageScale, imageOffsetX, imageOffsetY])
+  }, [minX, maxX, minY, maxY, puzzleWidth, puzzleHeight, imageScale, imageOffsetX, imageOffsetY, imageLoaded])
 
   // Compute individual piece bounds for the "individual" preview mode
   const pieceBounds = useMemo(() => {
@@ -718,7 +739,7 @@ function PunchoutGenerator({ witness, onClose }) {
                             y={imageBounds.y}
                             width={imageBounds.width}
                             height={imageBounds.height}
-                            preserveAspectRatio="xMidYMid slice"
+                            preserveAspectRatio="none"
                             clipPath={`url(#piece-bbox-clip-${idx})`}
                           />
                         )}
@@ -769,7 +790,7 @@ function PunchoutGenerator({ witness, onClose }) {
                               y={imageBounds.y}
                               width={imageBounds.width}
                               height={imageBounds.height}
-                              preserveAspectRatio="xMidYMid slice"
+                              preserveAspectRatio="none"
                               clipPath={`url(#piece-clip-combined-${i})`}
                             />
                           )}
