@@ -192,66 +192,147 @@ function PunchoutGenerator({ witness, onClose }) {
     `matrix(${a} ${d} ${b} ${e} ${c} ${f})`
 
   /**
+   * Build a global edge map where edges are identified by their endpoint coordinates.
+   * This ensures that two tiles sharing the same edge will have the same nick positions.
+   * An edge is normalized so that its key is the same regardless of direction.
+   */
+  const globalEdgeNicks = useMemo(() => {
+    if (!hasValidData) return new Map()
+    
+    const edgeMap = new Map() // key -> { midX, midY, length, nicks: [{pos, size}] }
+    const precision = 6 // decimal places for coordinate rounding
+    
+    // Helper to create a normalized edge key (smaller point first)
+    const makeEdgeKey = (x1, y1, x2, y2) => {
+      const p1 = `${x1.toFixed(precision)},${y1.toFixed(precision)}`
+      const p2 = `${x2.toFixed(precision)},${y2.toFixed(precision)}`
+      return p1 < p2 ? `${p1}-${p2}` : `${p2}-${p1}`
+    }
+    
+    // First pass: gather all unique edges across all tiles
+    patch.forEach(tile => {
+      tile_boundary.forEach(([[x1, y1], [x2, y2]]) => {
+        const [tx1, ty1] = transformPoint([x1, y1], tile.transform)
+        const [tx2, ty2] = transformPoint([x2, y2], tile.transform)
+        const key = makeEdgeKey(tx1, ty1, tx2, ty2)
+        
+        if (!edgeMap.has(key)) {
+          const dx = tx2 - tx1
+          const dy = ty2 - ty1
+          const length = Math.sqrt(dx * dx + dy * dy)
+          edgeMap.set(key, {
+            x1: tx1, y1: ty1, x2: tx2, y2: ty2,
+            length,
+            nicks: [] // will be populated below
+          })
+        }
+      })
+    })
+    
+    // Calculate total perimeter across all unique edges
+    let totalUniqueEdgeLength = 0
+    edgeMap.forEach(edge => {
+      totalUniqueEdgeLength += edge.length
+    })
+    
+    // Target: ~NICKS_PER_PIECE nicks per piece, but nicks are on edges
+    // Since each edge is typically shared by ~2 pieces (except boundary edges),
+    // we want roughly (NICKS_PER_PIECE * numPieces / 2) total nicks
+    const totalPieces = patch.length
+    const targetTotalNicks = Math.ceil(NICKS_PER_PIECE * totalPieces / 2)
+    
+    // Distribute nicks to edges proportionally to their length
+    // Each edge gets at least 1 nick if it's long enough
+    const avgEdgeLength = totalUniqueEdgeLength / edgeMap.size
+    const actualNickLength = nickSize * avgEdgeLength
+    
+    // Calculate nick positions evenly distributed across all edges
+    const nickSpacing = totalUniqueEdgeLength / targetTotalNicks
+    
+    // Place nicks along the total edge perimeter
+    let cumulativeLength = 0
+    let nickIdx = 0
+    const nickPositions = []
+    for (let i = 0; i < targetTotalNicks; i++) {
+      nickPositions.push((i + 0.5) * nickSpacing)
+    }
+    
+    // Assign nicks to edges
+    edgeMap.forEach((edge, key) => {
+      const edgeStart = cumulativeLength
+      const edgeEnd = cumulativeLength + edge.length
+      
+      while (nickIdx < nickPositions.length && nickPositions[nickIdx] < edgeEnd) {
+        const nickCenter = nickPositions[nickIdx]
+        if (nickCenter >= edgeStart) {
+          // Position along this edge (0 to 1)
+          const posOnEdge = (nickCenter - edgeStart) / edge.length
+          edge.nicks.push({
+            pos: posOnEdge,
+            halfSize: (actualNickLength / 2) / edge.length
+          })
+        }
+        nickIdx++
+      }
+      
+      cumulativeLength = edgeEnd
+    })
+    
+    return edgeMap
+  }, [patch, tile_boundary, nickSize, hasValidData])
+
+  /**
    * Generate a path with nicks (uncut sections) along edges
-   * Nicks are small gaps in the cut line that hold pieces together until popped apart
-   * We place ~NICKS_PER_PIECE nicks distributed evenly around the perimeter
+   * Nicks are defined globally per-edge so that adjacent tiles sharing an edge
+   * don't cut through each other's nicks.
    */
   const generatePathWithNicks = useCallback((boundary, transform, nickSizeParam) => {
-    // First, calculate total perimeter and gather edge info
-    const edges = boundary.map(([[x1, y1], [x2, y2]]) => {
+    const precision = 6
+    
+    // Helper to create a normalized edge key (smaller point first)
+    const makeEdgeKey = (x1, y1, x2, y2) => {
+      const p1 = `${x1.toFixed(precision)},${y1.toFixed(precision)}`
+      const p2 = `${x2.toFixed(precision)},${y2.toFixed(precision)}`
+      return p1 < p2 ? `${p1}-${p2}` : `${p2}-${p1}`
+    }
+    
+    const segments = []
+    
+    boundary.forEach(([[x1, y1], [x2, y2]]) => {
       const [tx1, ty1] = transformPoint([x1, y1], transform)
       const [tx2, ty2] = transformPoint([x2, y2], transform)
       const dx = tx2 - tx1
       const dy = ty2 - ty1
       const length = Math.sqrt(dx * dx + dy * dy)
-      return { tx1, ty1, tx2, ty2, dx, dy, length }
-    })
-    
-    const totalPerimeter = edges.reduce((sum, e) => sum + e.length, 0)
-    
-    // Calculate nick positions evenly distributed around the perimeter
-    const nickSpacing = totalPerimeter / NICKS_PER_PIECE
-    const nickPositions = [] // positions along the perimeter where nicks should be
-    
-    for (let i = 0; i < NICKS_PER_PIECE; i++) {
-      nickPositions.push((i + 0.5) * nickSpacing)
-    }
-    
-    // The nick size is controlled by the slider (nickSizeParam is a fraction 0-0.5)
-    // Convert to actual length: nickSizeParam * average edge length
-    const avgEdgeLength = totalPerimeter / edges.length
-    const actualNickLength = nickSizeParam * avgEdgeLength
-    
-    // Now generate segments, placing nicks at the calculated positions
-    const segments = []
-    let cumulativeLength = 0
-    let nickIdx = 0
-    
-    edges.forEach((edge) => {
-      const { tx1, ty1, dx, dy, length } = edge
-      const edgeStart = cumulativeLength
-      const edgeEnd = cumulativeLength + length
       
-      // Find all nicks that fall on this edge
-      const nicksOnEdge = []
-      while (nickIdx < nickPositions.length && nickPositions[nickIdx] < edgeEnd) {
-        const nickCenter = nickPositions[nickIdx]
-        if (nickCenter >= edgeStart) {
-          // Position along this edge (0 to 1)
-          const posOnEdge = (nickCenter - edgeStart) / length
-          nicksOnEdge.push(posOnEdge)
-        }
-        nickIdx++
+      // Look up this edge in the global edge map
+      const key = makeEdgeKey(tx1, ty1, tx2, ty2)
+      const globalEdge = globalEdgeNicks.get(key)
+      
+      // Get nick positions for this edge (if any)
+      let nicksOnEdge = []
+      if (globalEdge && globalEdge.nicks.length > 0) {
+        // Check if edge direction matches global edge direction
+        const globalDx = globalEdge.x2 - globalEdge.x1
+        const globalDy = globalEdge.y2 - globalEdge.y1
+        const dotProduct = dx * globalDx + dy * globalDy
+        const sameDirection = dotProduct > 0
+        
+        nicksOnEdge = globalEdge.nicks.map(nick => ({
+          pos: sameDirection ? nick.pos : (1 - nick.pos),
+          halfSize: nick.halfSize
+        }))
+        
+        // Sort by position along this edge's direction
+        nicksOnEdge.sort((a, b) => a.pos - b.pos)
       }
       
       // Generate segments for this edge with the nicks
       let lastPos = 0
       
-      nicksOnEdge.forEach((nickCenterPos) => {
-        // Nick spans from (center - halfSize) to (center + halfSize)
-        const halfNickFrac = (actualNickLength / 2) / length
-        const nickStart = Math.max(0, nickCenterPos - halfNickFrac)
-        const nickEnd = Math.min(1, nickCenterPos + halfNickFrac)
+      nicksOnEdge.forEach((nick) => {
+        const nickStart = Math.max(0, nick.pos - nick.halfSize)
+        const nickEnd = Math.min(1, nick.pos + nick.halfSize)
         
         // Cut segment before nick
         if (nickStart > lastPos) {
@@ -286,12 +367,10 @@ function PunchoutGenerator({ witness, onClose }) {
           y2: ty1 + dy * 1
         })
       }
-      
-      cumulativeLength = edgeEnd
     })
     
     return segments
-  }, [])
+  }, [globalEdgeNicks])
 
   /**
    * Generate contiguous cut polylines from segments
@@ -554,28 +633,26 @@ function PunchoutGenerator({ witness, onClose }) {
 
   /**
    * Download combined SVG with all cuts
+   * Only includes cut lines (red), no nick indicators (green dashed)
+   * Nicks are simply gaps in the cut lines where the laser doesn't cut
    */
   const handleDownloadCombinedCuts = useCallback(() => {
     if (!hasValidData) return
     
-    // Generate all cut paths with nicks
+    // Generate all cut paths (only cuts, no nick indicators)
     let allCutPaths = ''
-    let allNickPaths = ''
     
     patch.forEach((_, idx) => {
-      const { cutPaths, nickPaths } = generateCutSvg(idx)
+      const { cutPaths } = generateCutSvg(idx)
       allCutPaths += cutPaths + ' '
-      allNickPaths += nickPaths + ' '
     })
 
     const svgContent = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}" width="${width * 50}" height="${height * 50}">
   <style>
     .cut-line { fill: none; stroke: #ff0000; stroke-width: 0.05; }
-    .nick-line { fill: none; stroke: #00ff00; stroke-width: 0.05; stroke-dasharray: 0.1 0.05; }
   </style>
   <path class="cut-line" d="${allCutPaths.trim()}"/>
-  <path class="nick-line" d="${allNickPaths.trim()}"/>
 </svg>`
 
     const blob = new Blob([svgContent], { type: 'image/svg+xml' })
