@@ -34,25 +34,53 @@ function transformPoint([x, y], [a, b, c, d, e, f]) {
   ]
 }
 
-// Get all transformed tile edges from witness data
+// Precision for floating point comparison when deduplicating edges
+// Using 6 decimal places which is sufficient for typical coordinate values
+const EDGE_PRECISION = 6
+
+// Create a canonical key for an edge that is the same regardless of direction
+// This allows detecting duplicate edges that may be stored in opposite directions
+function getEdgeKey(p1, p2) {
+  // Round coordinates to fixed precision to handle floating point comparison
+  const x1 = p1[0].toFixed(EDGE_PRECISION)
+  const y1 = p1[1].toFixed(EDGE_PRECISION)
+  const x2 = p2[0].toFixed(EDGE_PRECISION)
+  const y2 = p2[1].toFixed(EDGE_PRECISION)
+  
+  // Create canonical form by sorting the points lexicographically
+  // This ensures edge (A,B) and edge (B,A) produce the same key
+  const key1 = `${x1},${y1}-${x2},${y2}`
+  const key2 = `${x2},${y2}-${x1},${y1}`
+  return key1 < key2 ? key1 : key2
+}
+
+// Get all transformed tile edges from witness data, with duplicates removed
 function getTileEdges(witness, patch) {
   const { tile_boundary } = witness
   if (!tile_boundary || tile_boundary.length === 0 || !patch) {
     return []
   }
 
-  const edges = []
+  const edgeMap = new Map()  // Use Map to deduplicate edges
+  
   patch.forEach(tile => {
     const transform = tile.transform
     // Each segment in tile_boundary is [[x1, y1], [x2, y2]]
     tile_boundary.forEach(([[x1, y1], [x2, y2]]) => {
       const p1 = transformPoint([x1, y1], transform)
       const p2 = transformPoint([x2, y2], transform)
-      edges.push([p1, p2])
+      
+      // Create canonical key for deduplication
+      const key = getEdgeKey(p1, p2)
+      
+      // Only add if not already present
+      if (!edgeMap.has(key)) {
+        edgeMap.set(key, [p1, p2])
+      }
     })
   })
 
-  return edges
+  return Array.from(edgeMap.values())
 }
 
 // Calculate bounds of all tile edges
