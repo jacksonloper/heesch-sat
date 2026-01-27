@@ -1,17 +1,29 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import './PunchoutGenerator.css'
 
-// Output dimensions for PNG (print-ready image at 300dpi)
-const OUTPUT_WIDTH = 2475
-const OUTPUT_HEIGHT = 3150
-
-// SVG cut file dimensions for Game Crafter (Large Punchout @ 72dpi)
-// These must maintain the same 8.25:10.5 aspect ratio as the image
-const SVG_WIDTH = 594
-const SVG_HEIGHT = 756
-
-// Scale factor to convert from image coordinates to SVG coordinates
-const SVG_SCALE = SVG_WIDTH / OUTPUT_WIDTH  // = 0.24
+// Mode configurations for different Game Crafter product types
+const MODES = {
+  punchout: {
+    name: 'Large Punchout',
+    // PNG dimensions (print-ready image at 300dpi)
+    pngWidth: 2475,
+    pngHeight: 3150,
+    // SVG cut file dimensions (@ 72dpi)
+    // Per template: https://s3.amazonaws.com/www.thegamecrafter.com/templates/CustomLargePunchout.svg
+    svgWidth: 594,
+    svgHeight: 756,
+  },
+  acrylic: {
+    name: 'Large Acrylic Shape',
+    // PNG dimensions (print-ready image at 300dpi)
+    pngWidth: 3150,
+    pngHeight: 2700,
+    // SVG cut file dimensions (@ 72dpi)
+    // Per template: https://s3.amazonaws.com/www.thegamecrafter.com/templates/LargeAcrylicShape.svg
+    svgWidth: 756,
+    svgHeight: 648,
+  }
+}
 
 // Default image URL
 const DEFAULT_IMAGE_URL = '/assets/download.webp'
@@ -22,8 +34,8 @@ const DEFAULT_NICK_PERCENT = 5
 const MIN_NICK_PERCENT = 0
 // Maximum nick percentage
 const MAX_NICK_PERCENT = 20
-// Default bleed in SVG units (scaled from image units)
-const DEFAULT_BLEED = Math.round(36 * SVG_SCALE)  // ~9 pixels at SVG scale
+// Default bleed in SVG units
+const DEFAULT_BLEED = 9
 
 // Transform a point using the affine matrix [a, b, c, d, e, f]
 // New point: (a*x + b*y + c, d*x + e*y + f)
@@ -152,27 +164,28 @@ function generateCutlineSegments(edges, nickPercent, transform) {
 }
 
 // Generate SVG content for download (at Game Crafter SVG dimensions)
-// Per official template: https://s3.amazonaws.com/www.thegamecrafter.com/templates/CustomLargePunchout.svg
-// SVG must be exactly 594pt x 756pt with viewBox="0 0 594 756"
-function generateSvgContent(cutlineSegments, bleed) {
+// Supports both punchout and acrylic modes with different dimensions
+function generateSvgContent(cutlineSegments, bleed, modeConfig) {
   // Game Crafter requires exact dimensions - bleed is internal, not added to canvas
-  const width = SVG_WIDTH
-  const height = SVG_HEIGHT
+  const { svgWidth, svgHeight, pngWidth } = modeConfig
+  
+  // Scale factor to convert from PNG/image coordinates to SVG coordinates
+  const svgScale = svgWidth / pngWidth
 
   // Scale and offset cutlines from image coordinates to SVG coordinates
   // Bleed creates an internal margin where cutlines don't reach the edge
   const paths = cutlineSegments.map(([p1, p2]) => {
     // Scale from image space to SVG space, then add bleed offset
-    const x1 = p1[0] * SVG_SCALE + bleed
-    const y1 = p1[1] * SVG_SCALE + bleed
-    const x2 = p2[0] * SVG_SCALE + bleed
-    const y2 = p2[1] * SVG_SCALE + bleed
+    const x1 = p1[0] * svgScale + bleed
+    const y1 = p1[1] * svgScale + bleed
+    const x2 = p2[0] * svgScale + bleed
+    const y2 = p2[1] * svgScale + bleed
     return `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="red" stroke-width="0.24" />`
   }).join('\n    ')
 
   // Use "pt" units to match official Game Crafter template exactly
   return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${width}pt" height="${height}pt" viewBox="0 0 ${width} ${height}">
+<svg xmlns="http://www.w3.org/2000/svg" width="${svgWidth}pt" height="${svgHeight}pt" viewBox="0 0 ${svgWidth} ${svgHeight}">
   <g id="cutlines">
     ${paths}
   </g>
@@ -180,6 +193,14 @@ function generateSvgContent(cutlineSegments, bleed) {
 }
 
 function PunchoutGenerator({ witness, patch, onClose }) {
+  // Mode state (punchout or acrylic)
+  const [mode, setMode] = useState('punchout')
+  const modeConfig = MODES[mode]
+  
+  // Get current dimensions based on mode
+  const OUTPUT_WIDTH = modeConfig.pngWidth
+  const OUTPUT_HEIGHT = modeConfig.pngHeight
+
   // Image state
   const [imageUrl, setImageUrl] = useState(DEFAULT_IMAGE_URL)
   const [imageLoaded, setImageLoaded] = useState(false)
@@ -231,6 +252,22 @@ function PunchoutGenerator({ witness, patch, onClose }) {
 
   // Generate cutline segments
   const cutlineSegments = generateCutlineSegments(edges, nickPercent, tileTransform)
+
+  // Re-center image when mode changes
+  useEffect(() => {
+    if (imageLoaded && imageRef.current) {
+      const img = imageRef.current
+      // Calculate initial scale to fit image in output area
+      const scaleX = OUTPUT_WIDTH / img.naturalWidth
+      const scaleY = OUTPUT_HEIGHT / img.naturalHeight
+      const initialScale = Math.max(scaleX, scaleY) // Cover the area
+      setImageScale(initialScale)
+
+      // Center the image
+      setImageOffsetX((OUTPUT_WIDTH - img.naturalWidth * initialScale) / 2)
+      setImageOffsetY((OUTPUT_HEIGHT - img.naturalHeight * initialScale) / 2)
+    }
+  }, [mode, imageLoaded, OUTPUT_WIDTH, OUTPUT_HEIGHT])
 
   // Handle image upload
   const handleImageUpload = useCallback((e) => {
@@ -350,27 +387,27 @@ function PunchoutGenerator({ witness, patch, onClose }) {
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `punchout-${witness.cell_count}-${witness.grid_type}-${witness.hash}.png`
+      a.download = `${mode}-${witness.cell_count}-${witness.grid_type}-${witness.hash}.png`
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
     }, 'image/png')
-  }, [imageLoaded, imageOffsetX, imageOffsetY, imageScale, imageNaturalSize, witness])
+  }, [imageLoaded, imageOffsetX, imageOffsetY, imageScale, imageNaturalSize, witness, mode, OUTPUT_WIDTH, OUTPUT_HEIGHT])
 
   // Generate and download SVG
   const handleDownloadSvg = useCallback(() => {
-    const svgContent = generateSvgContent(cutlineSegments, bleed)
+    const svgContent = generateSvgContent(cutlineSegments, bleed, modeConfig)
     const blob = new Blob([svgContent], { type: 'image/svg+xml' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `punchout-cutlines-${witness.cell_count}-${witness.grid_type}-${witness.hash}.svg`
+    a.download = `${mode}-cutlines-${witness.cell_count}-${witness.grid_type}-${witness.hash}.svg`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
-  }, [cutlineSegments, bleed, witness])
+  }, [cutlineSegments, bleed, witness, mode, modeConfig])
 
   // Generate preview URLs
   const [previewPngUrl, setPreviewPngUrl] = useState(null)
@@ -403,13 +440,13 @@ function PunchoutGenerator({ witness, patch, onClose }) {
     }, 'image/png')
 
     // Generate SVG preview
-    const svgContent = generateSvgContent(cutlineSegments, bleed)
+    const svgContent = generateSvgContent(cutlineSegments, bleed, modeConfig)
     const svgBlob = new Blob([svgContent], { type: 'image/svg+xml' })
     if (previewSvgUrl) URL.revokeObjectURL(previewSvgUrl)
     setPreviewSvgUrl(URL.createObjectURL(svgBlob))
 
     setShowPreview(true)
-  }, [imageLoaded, imageOffsetX, imageOffsetY, imageScale, imageNaturalSize, cutlineSegments, bleed, previewPngUrl, previewSvgUrl])
+  }, [imageLoaded, imageOffsetX, imageOffsetY, imageScale, imageNaturalSize, cutlineSegments, bleed, previewPngUrl, previewSvgUrl, modeConfig, OUTPUT_WIDTH, OUTPUT_HEIGHT])
 
   // Cleanup URLs on unmount
   useEffect(() => {
@@ -436,7 +473,7 @@ function PunchoutGenerator({ witness, patch, onClose }) {
         <button className="close-btn" onClick={onClose}>×</button>
 
         <div className="punchout-header">
-          <h2>Punchout Generator</h2>
+          <h2>Cutout Generator</h2>
           <p className="subtitle">
             {witness.cell_count}-{witness.grid_type} ({witness.hash})
           </p>
@@ -454,7 +491,10 @@ function PunchoutGenerator({ witness, patch, onClose }) {
             />
 
             {/* Editor canvas */}
-            <div className="canvas-container">
+            <div 
+              className="canvas-container"
+              style={{ '--canvas-aspect-ratio': `${OUTPUT_WIDTH} / ${OUTPUT_HEIGHT}` }}
+            >
               <canvas
                 ref={canvasRef}
                 className="editor-canvas"
@@ -466,6 +506,33 @@ function PunchoutGenerator({ witness, patch, onClose }) {
           </div>
 
           <div className="punchout-controls">
+            {/* Product Type Selector */}
+            <div className="control-section">
+              <h3>Product Type</h3>
+              <div className="mode-selector">
+                <label className={`mode-option ${mode === 'punchout' ? 'active' : ''}`}>
+                  <input
+                    type="radio"
+                    name="mode"
+                    value="punchout"
+                    checked={mode === 'punchout'}
+                    onChange={(e) => setMode(e.target.value)}
+                  />
+                  Large Punchout
+                </label>
+                <label className={`mode-option ${mode === 'acrylic' ? 'active' : ''}`}>
+                  <input
+                    type="radio"
+                    name="mode"
+                    value="acrylic"
+                    checked={mode === 'acrylic'}
+                    onChange={(e) => setMode(e.target.value)}
+                  />
+                  Large Acrylic
+                </label>
+              </div>
+            </div>
+
             {/* Image upload */}
             <div className="control-section">
               <h3>Image</h3>
@@ -579,8 +646,9 @@ function PunchoutGenerator({ witness, patch, onClose }) {
             <div className="control-section">
               <h3>Output</h3>
               <p className="output-info">
+                <strong>{modeConfig.name}</strong><br />
                 PNG: {OUTPUT_WIDTH} × {OUTPUT_HEIGHT}px (300dpi)<br />
-                SVG: {SVG_WIDTH}pt × {SVG_HEIGHT}pt (Game Crafter spec)
+                SVG: {modeConfig.svgWidth}pt × {modeConfig.svgHeight}pt
               </p>
             </div>
 
@@ -611,7 +679,7 @@ function PunchoutGenerator({ witness, patch, onClose }) {
                   {previewPngUrl && (
                     <>
                       <img src={previewPngUrl} alt="PNG Preview" className="preview-image" />
-                      <a href={previewPngUrl} download={`punchout-${witness.cell_count}-${witness.grid_type}-${witness.hash}.png`} className="download-link">
+                      <a href={previewPngUrl} download={`${mode}-${witness.cell_count}-${witness.grid_type}-${witness.hash}.png`} className="download-link">
                         📥 Download PNG
                       </a>
                     </>
@@ -622,7 +690,7 @@ function PunchoutGenerator({ witness, patch, onClose }) {
                   {previewSvgUrl && (
                     <>
                       <img src={previewSvgUrl} alt="SVG Preview" className="preview-image" />
-                      <a href={previewSvgUrl} download={`punchout-cutlines-${witness.cell_count}-${witness.grid_type}-${witness.hash}.svg`} className="download-link">
+                      <a href={previewSvgUrl} download={`${mode}-cutlines-${witness.cell_count}-${witness.grid_type}-${witness.hash}.svg`} className="download-link">
                         📥 Download SVG
                       </a>
                     </>

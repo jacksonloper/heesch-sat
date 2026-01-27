@@ -79,7 +79,7 @@
 .canvas-container {
   position: relative;
   width: 100%;
-  aspect-ratio: 2475 / 3150;
+  aspect-ratio: var(--canvas-aspect-ratio, 2475 / 3150);
 }
 
 .editor-canvas {
@@ -217,6 +217,45 @@
   font-size: 0.85rem;
   color: #555;
   line-height: 1.5;
+}
+
+.output-info strong {
+  color: #333;
+}
+
+/* Mode selector */
+.mode-selector {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.mode-option {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  background: #e8e8e8;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: #555;
+  transition: all 0.2s;
+}
+
+.mode-option input[type="radio"] {
+  display: none;
+}
+
+.mode-option.active {
+  background: #4a90d9;
+  color: white;
+  font-weight: 500;
+}
+
+.mode-option:hover:not(.active) {
+  background: #ddd;
 }
 
 .action-buttons {
