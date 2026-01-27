@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import './WitnessViewer.css'
 import { generateGridLines, getPeriodicRegionOutline, getTranslationVectorsPage } from '../utils/gridUtils'
+import PunchoutGenerator from './PunchoutGenerator'
 
 // Color palette for corona levels
 const CORONA_COLORS = [
@@ -69,7 +70,7 @@ function generateDownloadSvg(witness, patch) {
     `matrix(${a} ${d} ${b} ${e} ${c} ${f})`
 
   // Build the SVG string
-  const uses = patch.map((tile, i) => {
+  const uses = patch.map((tile) => {
     const transform = getSvgTransform(tile.transform)
     return `  <use href="#tile" transform="${transform}" fill="${CORONA_COLORS[tile.corona % CORONA_COLORS.length]}" stroke="#333" stroke-width="0.05" opacity="0.8"/>`
   }).join('\n')
@@ -88,6 +89,7 @@ function WitnessViewer({ witness, onClose, onViewInExplorer }) {
   const [showGrid, setShowGrid] = useState(false)
   const [showActiveUnitCells, setShowActiveUnitCells] = useState(false)
   const [showPeriodicCopies, setShowPeriodicCopies] = useState(false)
+  const [showPunchout, setShowPunchout] = useState(false)
   const [gridOffsetX] = useState(-1.5)
   const [gridOffsetY] = useState(0.5)
 
@@ -308,6 +310,9 @@ function WitnessViewer({ witness, onClose, onViewInExplorer }) {
                   🔍 View in Grid Explorer
                 </button>
               )}
+              <button className="download-btn punchout-btn" onClick={() => setShowPunchout(true)}>
+                ✂️ Punchout
+              </button>
             </div>
 
             <div className="corona-legend">
@@ -324,6 +329,15 @@ function WitnessViewer({ witness, onClose, onViewInExplorer }) {
             </div>
           </div>
         </div>
+
+        {/* Punchout Generator Modal */}
+        {showPunchout && (
+          <PunchoutGenerator
+            witness={witness}
+            patch={activeWitness}
+            onClose={() => setShowPunchout(false)}
+          />
+        )}
       </div>
     </div>
   )
