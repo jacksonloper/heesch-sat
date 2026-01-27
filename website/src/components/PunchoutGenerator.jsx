@@ -4,7 +4,9 @@ import './PunchoutGenerator.css'
 // Output dimensions (print-ready)
 const OUTPUT_WIDTH = 2475
 const OUTPUT_HEIGHT = 3150
-const ASPECT_RATIO = OUTPUT_WIDTH / OUTPUT_HEIGHT
+
+// Default image URL
+const DEFAULT_IMAGE_URL = '/assets/download.webp'
 
 // Default nick size as percentage of edge length
 const DEFAULT_NICK_PERCENT = 5
@@ -138,7 +140,7 @@ function generateSvgContent(cutlineSegments, bleed) {
 
 function PunchoutGenerator({ witness, patch, onClose }) {
   // Image state
-  const [imageUrl, setImageUrl] = useState('/assets/download.webp')
+  const [imageUrl, setImageUrl] = useState(DEFAULT_IMAGE_URL)
   const [imageLoaded, setImageLoaded] = useState(false)
   const [imageNaturalSize, setImageNaturalSize] = useState({ width: 0, height: 0 })
 
@@ -193,11 +195,15 @@ function PunchoutGenerator({ witness, patch, onClose }) {
   const handleImageUpload = useCallback((e) => {
     const file = e.target.files?.[0]
     if (file) {
+      // Revoke previous blob URL to prevent memory leak (only if it's a blob URL)
+      if (imageUrl && imageUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(imageUrl)
+      }
       const url = URL.createObjectURL(file)
       setImageUrl(url)
       setImageLoaded(false)
     }
-  }, [])
+  }, [imageUrl])
 
   // Handle image load
   const handleImageLoad = useCallback((e) => {
@@ -374,6 +380,15 @@ function PunchoutGenerator({ witness, patch, onClose }) {
     }
   }, [previewPngUrl, previewSvgUrl])
 
+  // Cleanup image blob URL on unmount
+  useEffect(() => {
+    return () => {
+      if (imageUrl && imageUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(imageUrl)
+      }
+    }
+  }, [imageUrl])
+
   return (
     <div className="punchout-overlay" onClick={onClose}>
       <div className="punchout-generator" onClick={e => e.stopPropagation()}>
@@ -428,7 +443,13 @@ function PunchoutGenerator({ witness, patch, onClose }) {
               </button>
               <button
                 className="reset-btn"
-                onClick={() => setImageUrl('/assets/download.webp')}
+                onClick={() => {
+                  // Revoke previous blob URL to prevent memory leak
+                  if (imageUrl && imageUrl.startsWith('blob:')) {
+                    URL.revokeObjectURL(imageUrl)
+                  }
+                  setImageUrl(DEFAULT_IMAGE_URL)
+                }}
               >
                 Reset to Default
               </button>

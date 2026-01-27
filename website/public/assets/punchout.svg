@@ -1,1 +1,6 @@
-
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Punchout SVG Template - This is a placeholder that can be used as a reference for cutline SVG output -->
+<svg xmlns="http://www.w3.org/2000/svg" width="2547" height="3222" viewBox="0 0 2547 3222">
+  <rect x="0" y="0" width="2547" height="3222" fill="white" />
+  <!-- Cutlines are generated dynamically by the PunchoutGenerator component -->
+</svg>
