@@ -244,12 +244,22 @@ function PunchoutGenerator({ witness, patch, onClose }) {
   // Image state
   const [imageUrl, setImageUrl] = useState(DEFAULT_IMAGE_URL)
   const [imageLoaded, setImageLoaded] = useState(false)
-  const [imageNaturalSize, setImageNaturalSize] = useState({ width: 0, height: 0 })
+  const [imageNaturalSize, setImageNaturalSize] = useState({ width: 1, height: 1 })
 
   // Transform state for image
   const [imageOffsetX, setImageOffsetX] = useState(0)
   const [imageOffsetY, setImageOffsetY] = useState(0)
-  const [imageScale, setImageScale] = useState(1)
+  // Scale multiplier relative to "fit to fill" base scale (1.0 = image fills output area)
+  const [imageScaleMultiplier, setImageScaleMultiplier] = useState(1)
+  
+  // Calculate base scale that makes the image fill the output area
+  // This is the scale where the image covers the entire output PNG dimensions
+  const baseScale = imageNaturalSize.width > 0 && imageNaturalSize.height > 0
+    ? Math.max(OUTPUT_WIDTH / imageNaturalSize.width, OUTPUT_HEIGHT / imageNaturalSize.height)
+    : 1
+  
+  // Actual scale applied to image = baseScale * multiplier
+  const imageScale = baseScale * imageScaleMultiplier
 
   // Nick size state in millimeters
   const [nickSizeMm, setNickSizeMm] = useState(DEFAULT_NICK_MM)
@@ -297,15 +307,15 @@ function PunchoutGenerator({ witness, patch, onClose }) {
   useEffect(() => {
     if (imageLoaded && imageRef.current) {
       const img = imageRef.current
-      // Calculate initial scale to fit image in output area
-      const scaleX = OUTPUT_WIDTH / img.naturalWidth
-      const scaleY = OUTPUT_HEIGHT / img.naturalHeight
-      const initialScale = Math.max(scaleX, scaleY) // Cover the area
-      setImageScale(initialScale)
+      // Reset multiplier to 1 (which means "fill the output area")
+      setImageScaleMultiplier(1)
 
-      // Center the image
-      setImageOffsetX((OUTPUT_WIDTH - img.naturalWidth * initialScale) / 2)
-      setImageOffsetY((OUTPUT_HEIGHT - img.naturalHeight * initialScale) / 2)
+      // Calculate base scale for centering (same formula as the computed baseScale)
+      const newBaseScale = Math.max(OUTPUT_WIDTH / img.naturalWidth, OUTPUT_HEIGHT / img.naturalHeight)
+      
+      // Center the image with the new scale
+      setImageOffsetX((OUTPUT_WIDTH - img.naturalWidth * newBaseScale) / 2)
+      setImageOffsetY((OUTPUT_HEIGHT - img.naturalHeight * newBaseScale) / 2)
     }
   }, [mode, imageLoaded, OUTPUT_WIDTH, OUTPUT_HEIGHT])
 
@@ -329,16 +339,16 @@ function PunchoutGenerator({ witness, patch, onClose }) {
     setImageNaturalSize({ width: img.naturalWidth, height: img.naturalHeight })
     setImageLoaded(true)
 
-    // Calculate initial scale to fit image in output area
-    const scaleX = OUTPUT_WIDTH / img.naturalWidth
-    const scaleY = OUTPUT_HEIGHT / img.naturalHeight
-    const initialScale = Math.max(scaleX, scaleY) // Cover the area
-    setImageScale(initialScale)
+    // Reset multiplier to 1 (which means "fill the output area")
+    setImageScaleMultiplier(1)
 
+    // Calculate base scale for centering
+    const newBaseScale = Math.max(OUTPUT_WIDTH / img.naturalWidth, OUTPUT_HEIGHT / img.naturalHeight)
+    
     // Center the image
-    setImageOffsetX((OUTPUT_WIDTH - img.naturalWidth * initialScale) / 2)
-    setImageOffsetY((OUTPUT_HEIGHT - img.naturalHeight * initialScale) / 2)
-  }, [])
+    setImageOffsetX((OUTPUT_WIDTH - img.naturalWidth * newBaseScale) / 2)
+    setImageOffsetY((OUTPUT_HEIGHT - img.naturalHeight * newBaseScale) / 2)
+  }, [OUTPUT_WIDTH, OUTPUT_HEIGHT])
 
   // Render the editor canvas
   useEffect(() => {
@@ -635,12 +645,12 @@ function PunchoutGenerator({ witness, patch, onClose }) {
                 <input
                   type="range"
                   min={0.1}
-                  max={5}
+                  max={10}
                   step={0.01}
-                  value={imageScale}
-                  onChange={(e) => setImageScale(Number(e.target.value))}
+                  value={imageScaleMultiplier}
+                  onChange={(e) => setImageScaleMultiplier(Number(e.target.value))}
                 />
-                <span className="value">{imageScale.toFixed(2)}×</span>
+                <span className="value">{imageScaleMultiplier.toFixed(2)}× (1× = fill)</span>
               </div>
             </div>
 
