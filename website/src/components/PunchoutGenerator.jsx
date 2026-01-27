@@ -395,12 +395,13 @@ function PunchoutGenerator({ witness, onClose }) {
       maxHeight = Math.max(maxHeight, pb.height)
     })
     
-    // Add padding
-    const pad = 1.0
+    // Add padding for print bleed - larger buffer around pieces
+    // Use at least 20% of piece size as padding for proper bleed area
+    const bleedPad = Math.max(2.0, Math.max(maxWidth, maxHeight) * 0.2)
     return { 
-      width: maxWidth + pad * 2, 
-      height: maxHeight + pad * 2,
-      pad 
+      width: maxWidth + bleedPad * 2, 
+      height: maxHeight + bleedPad * 2,
+      pad: bleedPad 
     }
   }, [pieceBounds, hasValidData])
 
@@ -715,7 +716,8 @@ function PunchoutGenerator({ witness, onClose }) {
                   const pBounds = pieceBounds[idx]
                   if (!pBounds) return null
                   
-                  const pPad = 0.5
+                  // Use larger padding for print bleed - 20% of piece size or at least 1.0
+                  const pPad = Math.max(1.0, Math.max(pBounds.width, pBounds.height) * 0.2)
                   const pViewBox = `${pBounds.minX - pPad} ${pBounds.minY - pPad} ${pBounds.width + pPad * 2} ${pBounds.height + pPad * 2}`
                   const segments = generatePathWithNicks(tile_boundary, tile.transform, nickSize, idx)
                   const cutPolylines = generateCutPolylines(segments)
@@ -799,14 +801,16 @@ function PunchoutGenerator({ witness, onClose }) {
                               clipPath={`url(#piece-clip-combined-${i})`}
                             />
                           )}
-                          {/* Piece outline */}
-                          <use
-                            href={`#punchout-tile-${witness.hash}`}
-                            transform={getSvgTransform(tile.transform)}
-                            fill={imageLoaded ? 'none' : '#e0e0e0'}
-                            stroke="#999"
-                            strokeWidth={0.02}
-                          />
+                          {/* Piece outline - only show in combined mode, not in Image Pieces mode */}
+                          {previewMode === 'combined' && (
+                            <use
+                              href={`#punchout-tile-${witness.hash}`}
+                              transform={getSvgTransform(tile.transform)}
+                              fill={imageLoaded ? 'none' : '#e0e0e0'}
+                              stroke="#999"
+                              strokeWidth={0.02}
+                            />
+                          )}
                         </g>
                       ))}
                     </g>
