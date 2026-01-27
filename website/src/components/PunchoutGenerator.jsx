@@ -108,7 +108,9 @@ function PunchoutGenerator({ witness, onClose }) {
   }, [patch, tile_boundary, hasValidData])
 
   const { minX, maxX, minY, maxY } = bounds
-  const padding = 2
+  // Use larger padding for print bleed - at least 10% of the puzzle size
+  const puzzleSize = Math.max(maxX - minX, maxY - minY)
+  const padding = Math.max(2, puzzleSize * 0.1)
   const width = maxX - minX + padding * 2
   const height = maxY - minY + padding * 2
   const viewBox = `${minX - padding} ${minY - padding} ${width} ${height}`
@@ -385,7 +387,7 @@ function PunchoutGenerator({ witness, onClose }) {
    * Used to ensure all output files have the same dimensions
    */
   const maxPieceDimensions = useMemo(() => {
-    if (!hasValidData || pieceBounds.length === 0) return { width: 0, height: 0 }
+    if (!hasValidData || pieceBounds.length === 0) return { width: 0, height: 0, pad: 0 }
     
     let maxWidth = 0
     let maxHeight = 0
@@ -396,8 +398,8 @@ function PunchoutGenerator({ witness, onClose }) {
     })
     
     // Add padding for print bleed - larger buffer around pieces
-    // Use at least 20% of piece size as padding for proper bleed area
-    const bleedPad = Math.max(2.0, Math.max(maxWidth, maxHeight) * 0.2)
+    // Use 25% of piece size as padding to match Individual Pieces preview
+    const bleedPad = Math.max(1.5, Math.max(maxWidth, maxHeight) * 0.25)
     return { 
       width: maxWidth + bleedPad * 2, 
       height: maxHeight + bleedPad * 2,
@@ -488,25 +490,29 @@ function PunchoutGenerator({ witness, onClose }) {
       canvas.height = canvasHeight
       const ctx = canvas.getContext('2d')
 
-      // Calculate the offset to center the piece's bounding box in the canvas
-      const pieceCanvasX = (pad + (svgWidth - 2 * pad - pBounds.width) / 2) * pixelScale
-      const pieceCanvasY = (pad + (svgHeight - 2 * pad - pBounds.height) / 2) * pixelScale
-      const pieceCanvasWidth = pBounds.width * pixelScale
-      const pieceCanvasHeight = pBounds.height * pixelScale
+      // Calculate the canvas area including padding for print bleed
+      // The piece is centered in the canvas, with padding on all sides
+      const pieceCenterX = pad + (svgWidth - 2 * pad - pBounds.width) / 2 + pBounds.width / 2
+      const pieceCenterY = pad + (svgHeight - 2 * pad - pBounds.height) / 2 + pBounds.height / 2
+      
+      // Include padding in the drawn area for print bleed
+      const drawX = (pieceCenterX - pBounds.width / 2 - pad) * pixelScale
+      const drawY = (pieceCenterY - pBounds.height / 2 - pad) * pixelScale
+      const drawWidth = (pBounds.width + pad * 2) * pixelScale
+      const drawHeight = (pBounds.height + pad * 2) * pixelScale
 
       // Calculate source rectangle in image coordinates using imageBounds
-      // Maps piece bounds to the corresponding region of the original image
-      const srcX = ((pBounds.minX - imageBounds.x) / imageBounds.width) * imgWidth
-      const srcY = ((pBounds.minY - imageBounds.y) / imageBounds.height) * imgHeight
-      const srcWidth = (pBounds.width / imageBounds.width) * imgWidth
-      const srcHeight = (pBounds.height / imageBounds.height) * imgHeight
+      // Include padding area in the source region
+      const srcX = ((pBounds.minX - pad - imageBounds.x) / imageBounds.width) * imgWidth
+      const srcY = ((pBounds.minY - pad - imageBounds.y) / imageBounds.height) * imgHeight
+      const srcWidth = ((pBounds.width + pad * 2) / imageBounds.width) * imgWidth
+      const srcHeight = ((pBounds.height + pad * 2) / imageBounds.height) * imgHeight
 
-      // Draw the rectangular image portion (not clipped to piece shape)
-      // This is the full square that will be printed and then punched out
+      // Draw the rectangular image portion including padding for print bleed
       ctx.drawImage(
         img,
         srcX, srcY, srcWidth, srcHeight,  // Source rect (in image coordinates)
-        pieceCanvasX, pieceCanvasY, pieceCanvasWidth, pieceCanvasHeight   // Dest rect (in canvas coordinates)
+        drawX, drawY, drawWidth, drawHeight   // Dest rect (in canvas coordinates)
       )
 
       // Convert to blob
@@ -716,8 +722,8 @@ function PunchoutGenerator({ witness, onClose }) {
                   const pBounds = pieceBounds[idx]
                   if (!pBounds) return null
                   
-                  // Use larger padding for print bleed - 20% of piece size or at least 1.0
-                  const pPad = Math.max(1.0, Math.max(pBounds.width, pBounds.height) * 0.2)
+                  // Use larger padding for print bleed - 25% of piece size or at least 1.5
+                  const pPad = Math.max(1.5, Math.max(pBounds.width, pBounds.height) * 0.25)
                   const pViewBox = `${pBounds.minX - pPad} ${pBounds.minY - pPad} ${pBounds.width + pPad * 2} ${pBounds.height + pPad * 2}`
                   const segments = generatePathWithNicks(tile_boundary, tile.transform, nickSize, idx)
                   const cutPolylines = generateCutPolylines(segments)
@@ -726,19 +732,18 @@ function PunchoutGenerator({ witness, onClose }) {
                     <div key={idx} className="individual-piece-card">
                       <svg viewBox={pViewBox} className="individual-piece-svg">
                         <defs>
-                          {/* Clip path for the piece's bounding box - shows the full square, not just the piece shape */}
+                          {/* Clip path includes padding area for print bleed */}
                           <clipPath id={`piece-bbox-clip-${idx}`}>
                             <rect 
-                              x={pBounds.minX} 
-                              y={pBounds.minY} 
-                              width={pBounds.width} 
-                              height={pBounds.height} 
+                              x={pBounds.minX - pPad} 
+                              y={pBounds.minY - pPad} 
+                              width={pBounds.width + pPad * 2} 
+                              height={pBounds.height + pPad * 2} 
                             />
                           </clipPath>
                         </defs>
                         
-                        {/* Draw the full image clipped to the piece's bounding box */}
-                        {/* This shows the entire square that would be printed and punched out */}
+                        {/* Draw the full image with padding for print bleed */}
                         {imageLoaded && (
                           <image
                             href={imageUrl}
