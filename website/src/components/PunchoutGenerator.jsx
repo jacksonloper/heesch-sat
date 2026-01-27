@@ -40,32 +40,42 @@ function transformPoint([x, y], [a, b, c, d, e, f]) {
   ]
 }
 
-// Precision for floating point comparison when deduplicating edges
-// Using 2 decimal places to be more forgiving of floating point errors from transforms
-const EDGE_PRECISION = 2
+// DPI constants
+const PRINT_DPI = 300  // PNG image output at 300dpi
+const SVG_DPI = 72     // SVG cut files at 72dpi (per Game Crafter)
 
-// DPI for print output - Game Crafter uses 300dpi
-const PRINT_DPI = 300
-// Pixels per millimeter at 300dpi
-const PIXELS_PER_MM = PRINT_DPI / 25.4  // ≈ 11.81
+// Pixels per millimeter at 300dpi for PNG
+const PIXELS_PER_MM_300DPI = PRINT_DPI / 25.4  // ≈ 11.81
 
 // Default nick size in millimeters
 const DEFAULT_NICK_MM = 2
 
+// Grid size for edge deduplication - round coordinates to this precision
+// This handles floating point errors from transform matrix multiplication
+const DEDUP_GRID_SIZE = 1000  // Round to 3 decimal places effectively
+
 // Create a canonical key for an edge that is the same regardless of direction
 // This allows detecting duplicate edges that may be stored in opposite directions
+// Edge A→B and B→A will produce the same key
 function getEdgeKey(p1, p2) {
-  // Round coordinates to fixed precision to handle floating point comparison
-  const x1 = p1[0].toFixed(EDGE_PRECISION)
-  const y1 = p1[1].toFixed(EDGE_PRECISION)
-  const x2 = p2[0].toFixed(EDGE_PRECISION)
-  const y2 = p2[1].toFixed(EDGE_PRECISION)
+  // Round coordinates to integers by multiplying by grid size
+  // This handles floating point comparison issues
+  const x1 = Math.round(p1[0] * DEDUP_GRID_SIZE)
+  const y1 = Math.round(p1[1] * DEDUP_GRID_SIZE)
+  const x2 = Math.round(p2[0] * DEDUP_GRID_SIZE)
+  const y2 = Math.round(p2[1] * DEDUP_GRID_SIZE)
   
-  // Create canonical form by sorting the points lexicographically
+  // Create canonical form by sorting the two points
+  // Compare by x first, then y to determine which point comes "first"
   // This ensures edge (A,B) and edge (B,A) produce the same key
-  const key1 = `${x1},${y1}-${x2},${y2}`
-  const key2 = `${x2},${y2}-${x1},${y1}`
-  return key1 < key2 ? key1 : key2
+  let firstX, firstY, secondX, secondY
+  if (x1 < x2 || (x1 === x2 && y1 < y2)) {
+    firstX = x1; firstY = y1; secondX = x2; secondY = y2
+  } else {
+    firstX = x2; firstY = y2; secondX = x1; secondY = y1
+  }
+  
+  return `${firstX},${firstY}-${secondX},${secondY}`
 }
 
 // Get all transformed tile edges from witness data, with duplicates removed
@@ -163,9 +173,9 @@ function splitEdgeWithNick([p1, p2], nickSizePixels) {
 function generateCutlineSegments(edges, nickSizeMm, transform) {
   const segments = []
   
-  // Convert nick size from mm to pixels at the current scale
-  // The scale factor accounts for how much the tiles are scaled to fit the output area
-  const nickSizePixels = nickSizeMm * PIXELS_PER_MM
+  // Convert nick size from mm to pixels at 300dpi (for PNG output space)
+  // The nick is applied in output pixel space after transforming edges
+  const nickSizePixels = nickSizeMm * PIXELS_PER_MM_300DPI
 
   edges.forEach(edge => {
     // First transform the edge to output coordinates
@@ -189,20 +199,23 @@ function generateCutlineSegments(edges, nickSizeMm, transform) {
   return segments
 }
 
-// Generate SVG content for download (at Game Crafter SVG dimensions)
+// Generate SVG content for download (at Game Crafter SVG dimensions @ 72dpi)
 // Supports both punchout and acrylic modes with different dimensions
 function generateSvgContent(cutlineSegments, bleed, modeConfig) {
   // Game Crafter requires exact dimensions - bleed is internal, not added to canvas
+  // SVG files are at 72dpi while PNG images are at 300dpi
   const { svgWidth, svgHeight, pngWidth } = modeConfig
   
-  // Scale factor to convert from PNG/image coordinates to SVG coordinates
+  // Scale factor to convert from PNG coordinates (300dpi) to SVG coordinates (72dpi)
+  // This is simply the ratio of SVG width to PNG width (e.g., 594/2475 for punchout)
+  // The DPI difference is already accounted for in the Game Crafter template dimensions
   const svgScale = svgWidth / pngWidth
 
   // Scale and offset cutlines from image coordinates to SVG coordinates
   // Bleed creates an internal margin where cutlines don't reach the edge
   // Using 70% alpha and wider stroke to make any duplicate edges visible (overlaps appear darker)
   const paths = cutlineSegments.map(([p1, p2]) => {
-    // Scale from image space to SVG space, then add bleed offset
+    // Scale from image space (300dpi) to SVG space (72dpi), then add bleed offset
     const x1 = p1[0] * svgScale + bleed
     const y1 = p1[1] * svgScale + bleed
     const x2 = p2[0] * svgScale + bleed
@@ -210,7 +223,7 @@ function generateSvgContent(cutlineSegments, bleed, modeConfig) {
     return `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="rgba(255,0,0,0.7)" stroke-width="1.2" stroke-linecap="round" />`
   }).join('\n    ')
 
-  // Use "pt" units to match official Game Crafter template exactly
+  // Use "pt" units to match official Game Crafter template exactly (72 points = 1 inch)
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${svgWidth}pt" height="${svgHeight}pt" viewBox="0 0 ${svgWidth} ${svgHeight}">
   <g id="cutlines">
@@ -643,11 +656,11 @@ function PunchoutGenerator({ witness, patch, onClose }) {
                   type="range"
                   min={0}
                   max={10}
-                  step={0.5}
+                  step={0.125}
                   value={nickSizeMm}
                   onChange={(e) => setNickSizeMm(Number(e.target.value))}
                 />
-                <span className="value">{nickSizeMm.toFixed(1)} mm</span>
+                <span className="value">{nickSizeMm.toFixed(3)} mm</span>
               </div>
             </div>
 
