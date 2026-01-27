@@ -1,9 +1,17 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import './PunchoutGenerator.css'
 
-// Output dimensions (print-ready)
+// Output dimensions for PNG (print-ready image at 300dpi)
 const OUTPUT_WIDTH = 2475
 const OUTPUT_HEIGHT = 3150
+
+// SVG cut file dimensions for Game Crafter (Large Punchout @ 72dpi)
+// These must maintain the same 8.25:10.5 aspect ratio as the image
+const SVG_WIDTH = 594
+const SVG_HEIGHT = 756
+
+// Scale factor to convert from image coordinates to SVG coordinates
+const SVG_SCALE = SVG_WIDTH / OUTPUT_WIDTH  // = 0.24
 
 // Default image URL
 const DEFAULT_IMAGE_URL = '/assets/download.webp'
@@ -14,8 +22,8 @@ const DEFAULT_NICK_PERCENT = 5
 const MIN_NICK_PERCENT = 0
 // Maximum nick percentage
 const MAX_NICK_PERCENT = 20
-// Default bleed in output units
-const DEFAULT_BLEED = 36
+// Default bleed in SVG units (scaled from image units)
+const DEFAULT_BLEED = Math.round(36 * SVG_SCALE)  // ~9 pixels at SVG scale
 
 // Transform a point using the affine matrix [a, b, c, d, e, f]
 // New point: (a*x + b*y + c, d*x + e*y + f)
@@ -115,18 +123,20 @@ function generateCutlineSegments(edges, nickPercent, transform) {
   return segments
 }
 
-// Generate SVG content for download
+// Generate SVG content for download (at Game Crafter SVG dimensions)
 function generateSvgContent(cutlineSegments, bleed) {
-  const width = OUTPUT_WIDTH + bleed * 2
-  const height = OUTPUT_HEIGHT + bleed * 2
+  // SVG dimensions with bleed (bleed is already in SVG-scale units)
+  const width = SVG_WIDTH + bleed * 2
+  const height = SVG_HEIGHT + bleed * 2
 
-  // Offset cutlines by bleed amount
+  // Scale and offset cutlines from image coordinates to SVG coordinates
   const paths = cutlineSegments.map(([p1, p2]) => {
-    const x1 = p1[0] + bleed
-    const y1 = p1[1] + bleed
-    const x2 = p2[0] + bleed
-    const y2 = p2[1] + bleed
-    return `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="red" stroke-width="1" />`
+    // Scale from image space to SVG space, then add bleed offset
+    const x1 = p1[0] * SVG_SCALE + bleed
+    const y1 = p1[1] * SVG_SCALE + bleed
+    const x2 = p2[0] * SVG_SCALE + bleed
+    const y2 = p2[1] * SVG_SCALE + bleed
+    return `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="red" stroke-width="0.24" />`
   }).join('\n    ')
 
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -525,7 +535,7 @@ function PunchoutGenerator({ witness, patch, onClose }) {
                 <input
                   type="range"
                   min={0}
-                  max={100}
+                  max={24}
                   step={1}
                   value={bleed}
                   onChange={(e) => setBleed(Number(e.target.value))}
@@ -538,8 +548,8 @@ function PunchoutGenerator({ witness, patch, onClose }) {
             <div className="control-section">
               <h3>Output</h3>
               <p className="output-info">
-                PNG: {OUTPUT_WIDTH} × {OUTPUT_HEIGHT}px<br />
-                SVG: {OUTPUT_WIDTH + bleed * 2} × {OUTPUT_HEIGHT + bleed * 2}px (with bleed)
+                PNG: {OUTPUT_WIDTH} × {OUTPUT_HEIGHT}px (300dpi)<br />
+                SVG: {SVG_WIDTH + bleed * 2} × {SVG_HEIGHT + bleed * 2}px (72dpi, with bleed)
               </p>
             </div>
 
