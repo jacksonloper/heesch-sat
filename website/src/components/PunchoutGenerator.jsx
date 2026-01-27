@@ -124,12 +124,15 @@ function generateCutlineSegments(edges, nickPercent, transform) {
 }
 
 // Generate SVG content for download (at Game Crafter SVG dimensions)
+// Per official template: https://s3.amazonaws.com/www.thegamecrafter.com/templates/CustomLargePunchout.svg
+// SVG must be exactly 594pt x 756pt with viewBox="0 0 594 756"
 function generateSvgContent(cutlineSegments, bleed) {
-  // SVG dimensions with bleed (bleed is already in SVG-scale units)
-  const width = SVG_WIDTH + bleed * 2
-  const height = SVG_HEIGHT + bleed * 2
+  // Game Crafter requires exact dimensions - bleed is internal, not added to canvas
+  const width = SVG_WIDTH
+  const height = SVG_HEIGHT
 
   // Scale and offset cutlines from image coordinates to SVG coordinates
+  // Bleed creates an internal margin where cutlines don't reach the edge
   const paths = cutlineSegments.map(([p1, p2]) => {
     // Scale from image space to SVG space, then add bleed offset
     const x1 = p1[0] * SVG_SCALE + bleed
@@ -139,9 +142,9 @@ function generateSvgContent(cutlineSegments, bleed) {
     return `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="red" stroke-width="0.24" />`
   }).join('\n    ')
 
+  // Use "pt" units to match official Game Crafter template exactly
   return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-  <rect x="0" y="0" width="${width}" height="${height}" fill="white" />
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}pt" height="${height}pt" viewBox="0 0 ${width} ${height}">
   <g id="cutlines">
     ${paths}
   </g>
@@ -549,7 +552,7 @@ function PunchoutGenerator({ witness, patch, onClose }) {
               <h3>Output</h3>
               <p className="output-info">
                 PNG: {OUTPUT_WIDTH} × {OUTPUT_HEIGHT}px (300dpi)<br />
-                SVG: {SVG_WIDTH + bleed * 2} × {SVG_HEIGHT + bleed * 2}px (72dpi, with bleed)
+                SVG: {SVG_WIDTH}pt × {SVG_HEIGHT}pt (Game Crafter spec)
               </p>
             </div>
 
