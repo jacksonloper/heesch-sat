@@ -174,13 +174,14 @@ function generateSvgContent(cutlineSegments, bleed, modeConfig) {
 
   // Scale and offset cutlines from image coordinates to SVG coordinates
   // Bleed creates an internal margin where cutlines don't reach the edge
+  // Using 70% alpha and wider stroke to make any duplicate edges visible (overlaps appear darker)
   const paths = cutlineSegments.map(([p1, p2]) => {
     // Scale from image space to SVG space, then add bleed offset
     const x1 = p1[0] * svgScale + bleed
     const y1 = p1[1] * svgScale + bleed
     const x2 = p2[0] * svgScale + bleed
     const y2 = p2[1] * svgScale + bleed
-    return `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="red" stroke-width="0.24" />`
+    return `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="rgba(255,0,0,0.7)" stroke-width="1.2" stroke-linecap="round" />`
   }).join('\n    ')
 
   // Use "pt" units to match official Game Crafter template exactly
@@ -342,9 +343,11 @@ function PunchoutGenerator({ witness, patch, onClose }) {
       ctx.restore()
     }
 
-    // Draw cutlines
-    ctx.strokeStyle = 'red'
-    ctx.lineWidth = 2
+    // Draw cutlines with 70% alpha and wider stroke to make duplicates visible
+    // If edges are duplicated, overlapping areas will appear darker
+    ctx.strokeStyle = 'rgba(255, 0, 0, 0.7)'
+    ctx.lineWidth = 5
+    ctx.lineCap = 'round'
     ctx.beginPath()
     cutlineSegments.forEach(([p1, p2]) => {
       ctx.moveTo(p1[0] * displayScale, p1[1] * displayScale)
