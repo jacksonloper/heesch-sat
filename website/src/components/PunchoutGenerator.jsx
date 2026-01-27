@@ -28,12 +28,6 @@ const MODES = {
 // Default image URL
 const DEFAULT_IMAGE_URL = '/assets/download.webp'
 
-// Default nick size as percentage of edge length
-const DEFAULT_NICK_PERCENT = 5
-// Minimum nick percentage
-const MIN_NICK_PERCENT = 0
-// Maximum nick percentage
-const MAX_NICK_PERCENT = 20
 // Default bleed in SVG units
 const DEFAULT_BLEED = 9
 
@@ -47,8 +41,16 @@ function transformPoint([x, y], [a, b, c, d, e, f]) {
 }
 
 // Precision for floating point comparison when deduplicating edges
-// Using 6 decimal places which is sufficient for typical coordinate values
-const EDGE_PRECISION = 6
+// Using 2 decimal places to be more forgiving of floating point errors from transforms
+const EDGE_PRECISION = 2
+
+// DPI for print output - Game Crafter uses 300dpi
+const PRINT_DPI = 300
+// Pixels per millimeter at 300dpi
+const PIXELS_PER_MM = PRINT_DPI / 25.4  // ≈ 11.81
+
+// Default nick size in millimeters
+const DEFAULT_NICK_MM = 2
 
 // Create a canonical key for an edge that is the same regardless of direction
 // This allows detecting duplicate edges that may be stored in opposite directions
@@ -110,14 +112,29 @@ function calculateBounds(edges) {
   return { minX, maxX, minY, maxY }
 }
 
+// Calculate edge length in pixels
+function getEdgeLength([p1, p2]) {
+  const dx = p2[0] - p1[0]
+  const dy = p2[1] - p1[1]
+  return Math.sqrt(dx * dx + dy * dy)
+}
+
 // Split an edge into two segments with a nick (gap) in the middle
-function splitEdgeWithNick([p1, p2], nickPercent) {
-  if (nickPercent <= 0) {
+// nickSizePixels is the absolute size of the nick in pixels
+function splitEdgeWithNick([p1, p2], nickSizePixels) {
+  if (nickSizePixels <= 0) {
     return [[p1, p2]]
   }
 
-  // Calculate the nick position (centered)
-  const nickFraction = nickPercent / 100
+  const edgeLength = getEdgeLength([p1, p2])
+  
+  // If nick is larger than or equal to edge, don't draw the edge at all
+  if (nickSizePixels >= edgeLength) {
+    return []
+  }
+
+  // Calculate the nick position (centered) as a fraction of edge length
+  const nickFraction = nickSizePixels / edgeLength
   const startFraction = (1 - nickFraction) / 2
   const endFraction = 1 - startFraction
 
@@ -141,22 +158,31 @@ function splitEdgeWithNick([p1, p2], nickPercent) {
 }
 
 // Generate a list of line segments for cutlines with nicks
-function generateCutlineSegments(edges, nickPercent, transform) {
+// nickSizeMm is the nick size in millimeters
+// transform contains scale factor to convert from tile coords to output pixels
+function generateCutlineSegments(edges, nickSizeMm, transform) {
   const segments = []
+  
+  // Convert nick size from mm to pixels at the current scale
+  // The scale factor accounts for how much the tiles are scaled to fit the output area
+  const nickSizePixels = nickSizeMm * PIXELS_PER_MM
 
   edges.forEach(edge => {
-    const splitSegs = splitEdgeWithNick(edge, nickPercent)
-    splitSegs.forEach(([p1, p2]) => {
-      // Apply transform to points
-      const tp1 = [
-        p1[0] * transform.scale + transform.offsetX,
-        p1[1] * transform.scale + transform.offsetY
-      ]
-      const tp2 = [
-        p2[0] * transform.scale + transform.offsetX,
-        p2[1] * transform.scale + transform.offsetY
-      ]
-      segments.push([tp1, tp2])
+    // First transform the edge to output coordinates
+    const [p1, p2] = edge
+    const tp1 = [
+      p1[0] * transform.scale + transform.offsetX,
+      p1[1] * transform.scale + transform.offsetY
+    ]
+    const tp2 = [
+      p2[0] * transform.scale + transform.offsetX,
+      p2[1] * transform.scale + transform.offsetY
+    ]
+    
+    // Then split with nick (nick is in output pixel space)
+    const splitSegs = splitEdgeWithNick([tp1, tp2], nickSizePixels)
+    splitSegs.forEach(seg => {
+      segments.push(seg)
     })
   })
 
@@ -212,8 +238,8 @@ function PunchoutGenerator({ witness, patch, onClose }) {
   const [imageOffsetY, setImageOffsetY] = useState(0)
   const [imageScale, setImageScale] = useState(1)
 
-  // Nick size state
-  const [nickPercent, setNickPercent] = useState(DEFAULT_NICK_PERCENT)
+  // Nick size state in millimeters
+  const [nickSizeMm, setNickSizeMm] = useState(DEFAULT_NICK_MM)
 
   // Bleed state
   const [bleed, setBleed] = useState(DEFAULT_BLEED)
@@ -252,7 +278,7 @@ function PunchoutGenerator({ witness, patch, onClose }) {
   }
 
   // Generate cutline segments
-  const cutlineSegments = generateCutlineSegments(edges, nickPercent, tileTransform)
+  const cutlineSegments = generateCutlineSegments(edges, nickSizeMm, tileTransform)
 
   // Re-center image when mode changes
   useEffect(() => {
@@ -609,19 +635,19 @@ function PunchoutGenerator({ witness, patch, onClose }) {
             <div className="control-section">
               <h3>Nick Size</h3>
               <p className="control-description">
-                Gap in cutlines to keep pieces connected
+                Gap in cutlines to keep pieces connected (in millimeters)
               </p>
               <div className="control-row">
-                <label>Nick %:</label>
+                <label>Nick (mm):</label>
                 <input
                   type="range"
-                  min={MIN_NICK_PERCENT}
-                  max={MAX_NICK_PERCENT}
+                  min={0}
+                  max={10}
                   step={0.5}
-                  value={nickPercent}
-                  onChange={(e) => setNickPercent(Number(e.target.value))}
+                  value={nickSizeMm}
+                  onChange={(e) => setNickSizeMm(Number(e.target.value))}
                 />
-                <span className="value">{nickPercent.toFixed(1)}%</span>
+                <span className="value">{nickSizeMm.toFixed(1)} mm</span>
               </div>
             </div>
 
